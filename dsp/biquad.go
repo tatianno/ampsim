@@ -147,25 +147,35 @@ func HighShelf(fs, f, q, gainDB float64) Coefs {
 
 // ---- Butterworth de ordem N como cascata (equivalente a scipy.signal.butter) ----
 
+// ButterworthSections devolve quantos estágios tem um Butterworth de ordem N.
+func ButterworthSections(order int) int { return order/2 + order%2 }
+
 func butterworth(order int, fs, f float64, high bool) []Coefs {
-	var cs []Coefs
+	cs := make([]Coefs, ButterworthSections(order))
+	butterworthOrderInto(cs, order, fs, f, high)
+	return cs
+}
+
+func butterworthOrderInto(cs []Coefs, order int, fs, f float64, high bool) {
+	i := 0
 	if order%2 == 1 {
 		if high {
-			cs = append(cs, OnePoleHighpass(fs, f))
+			cs[i] = OnePoleHighpass(fs, f)
 		} else {
-			cs = append(cs, OnePoleLowpass(fs, f))
+			cs[i] = OnePoleLowpass(fs, f)
 		}
+		i++
 	}
 	for k := 0; k < order/2; k++ {
 		// Q de cada par de polos: 1 / (2 sen(θ)), θ = π(2k+1)/(2N)
 		q := 1 / (2 * math.Sin(math.Pi*float64(2*k+1)/float64(2*order)))
 		if high {
-			cs = append(cs, Highpass2(fs, f, q))
+			cs[i] = Highpass2(fs, f, q)
 		} else {
-			cs = append(cs, Lowpass2(fs, f, q))
+			cs[i] = Lowpass2(fs, f, q)
 		}
+		i++
 	}
-	return cs
 }
 
 // ButterworthLowpass devolve os estágios de um passa-baixa Butterworth de ordem N.
@@ -173,3 +183,13 @@ func ButterworthLowpass(order int, fs, f float64) []Coefs { return butterworth(o
 
 // ButterworthHighpass devolve os estágios de um passa-alta Butterworth de ordem N.
 func ButterworthHighpass(order int, fs, f float64) []Coefs { return butterworth(order, fs, f, true) }
+
+// ButterworthLowpassInto escreve os estágios em dst (len = ButterworthSections(order)), sem alocar.
+func ButterworthLowpassInto(dst []Coefs, order int, fs, f float64) {
+	butterworthOrderInto(dst, order, fs, f, false)
+}
+
+// ButterworthHighpassInto escreve os estágios em dst (len = ButterworthSections(order)), sem alocar.
+func ButterworthHighpassInto(dst []Coefs, order int, fs, f float64) {
+	butterworthOrderInto(dst, order, fs, f, true)
+}

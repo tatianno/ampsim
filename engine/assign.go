@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Set ajusta um parâmetro a partir de "modulo.param=valor" (ex.: "amp.gain=8").
+// Set ajusta um parâmetro a partir de "modulo.param=valor" (ex.: "pre.gain=8").
 func (c *Chain) Set(expr string) error {
 	k, v, ok := strings.Cut(strings.TrimSpace(expr), "=")
 	mod, par, ok2 := strings.Cut(strings.TrimSpace(k), ".")

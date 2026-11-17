@@ -37,13 +37,20 @@ Portar para Go os estudos de modulação e simulação de amplificador feitos em
          [thread da GUI] ◄── medidores (ring buffer) ── engine
 ```
 
-**Cadeia de sinal**
+**Cadeia de sinal (configurável)**
+
+O amp é dividido em três módulos, e a cadeia é uma lista ordenável (inclusive com o áudio rodando):
 
 ```
-entrada → trim → [Gate] → HP de aperto → GANHO → saturação (oversampling 4x)
-        → TONE STACK (grave/médio/agudo) → saturação de potência → PRESENÇA
-        → IR do gabinete → [Chorus] → [Flanger] → [Phaser] → [Delay] → [Reverb] → volume
+[pedais de entrada] → PRÉ-AMP → [loop de efeitos (send/return)] → POWER AMP → [pós-power] → GABINETE → [pós-gabinete]
 ```
+
+- **PRÉ-AMP** (`pre`): HP 70 Hz → GANHO/saturação 4x → tone stack (grave/médio/agudo)
+- **POWER AMP** (`power`): saturação suave (`tanh`) → PRESENÇA → VOLUME
+- **GABINETE** (`cab`): IR → low cut / high cut
+- Regra: `pre` antes de `power`, e `power` antes de `cab`. Os pedais podem ficar em qualquer posição.
+- Ordem padrão: `gate → pre → [chorus → flanger → phaser → delay → reverb] → power → cab` (pedais no loop).
+- Reordenar com som rolando faz uma rampa de 5 ms até o silêncio, troca a ordem e sobe de novo (sem estalo).
 
 ### Estrutura de pastas
 
@@ -83,22 +90,24 @@ type Processor interface {
 - **Sem estado global.** Várias instâncias precisam conviver.
 - **Parâmetros declarados numa tabela** (`ParamInfo{ID, Name, Min, Max, Default, Unit}`). Os valores ficam em atomics
   e são suavizados no DSP. A tabela gera os knobs da GUI e os parâmetros do plugin.
-- **Estado serializável em JSON** (parâmetros, efeitos ligados, caminho da IR). É o mesmo formato do preset do app e
-  do state do plugin.
+- **Estado serializável em JSON** (parâmetros, efeitos ligados, caminho da IR, ordem da cadeia). É o mesmo formato do
+  preset do app e do state do plugin.
 
 ## 4. Parâmetros
 
-### Amp (cabeçote)
+### Amp (cabeçote = pré-amp + power amp, e o gabinete)
 
-| Knob | Implementação inicial |
-|---|---|
-| Ganho | `drive` da saturação (de `main.py`) |
-| Grave | low shelf ~100 Hz |
-| Médio | peaking ~700 Hz |
-| Agudo | high shelf ~3 kHz |
-| Presença | shelf/peaking 3 a 5 kHz após o estágio de potência |
-| Volume | ganho de saída |
-| IR | seletor de arquivo (padrão: `testdata/gabinete_2x12_sm57.wav`) |
+| Módulo | Knob | ID | Implementação |
+|---|---|---|---|
+| Pré-amp | Ganho | `pre.gain` | `drive` da saturação (de `main.py`) |
+| Pré-amp | Grave | `pre.bass` | low shelf 100 Hz, ±12 dB |
+| Pré-amp | Médio | `pre.mid` | peaking 700 Hz, ±12 dB |
+| Pré-amp | Agudo | `pre.treble` | high shelf 3 kHz, ±12 dB |
+| Power amp | Presença | `power.presence` | peaking 4 kHz, ±10 dB, depois do `tanh` |
+| Power amp | Volume | `power.volume` | ganho de saída do amp (dB) |
+| Gabinete | IR | (estado extra `ir`) | seletor de arquivo (padrão: `testdata/gabinete_2x12_sm57.wav`) |
+| Gabinete | Low cut | `cab.lowcut` | passa-alta Butterworth 2ª ordem, 20–300 Hz (padrão 85) |
+| Gabinete | High cut | `cab.highcut` | passa-baixa Butterworth 3ª ordem, 2–12 kHz (padrão 6200) |
 
 ### Pedais (a partir de `referencia_python/`)
 
@@ -123,8 +132,9 @@ type Processor interface {
 │ AMP    Ganho   Grave   Médio   Agudo   Presença   Volume       │
 │        IR: [gabinete_2x12_sm57.wav ▾]                          │
 ├────────────────────────────────────────────────────────────────┤
-│ EFEITOS [Gate] [Chorus] [Flanger] [Phaser] [Delay] [Reverb]    │
-│         (clique abre o pedal; o LED mostra se está ligado)     │
+│ CADEIA  [Gate] ▸ PRÉ ▸ ┊[Chorus][Delay][Reverb]┊ ▸ POWER ▸ CAB  │
+│         (arrastar reordena; ┊…┊ = loop de efeitos; clique abre │
+│          o pedal; o LED mostra se está ligado)                  │
 ├────────────────────────────────────────────────────────────────┤
 │ [Bypass A/B]   [● Gravar]   [Exportar WAV]   Preset: [Clean ▾] │
 │ Saída ▮▮▮▮▯▯   Latência: 5,3 ms                                │
@@ -132,7 +142,11 @@ type Processor interface {
 ```
 
 **Janela do pedal** (overlay; fecha com Esc ou clique fora): corpo na cor do pedal, knobs gerados pela tabela de
-parâmetros, nome, LED e footswitch. Clicar no amp abre o cabeçote no mesmo estilo.
+parâmetros, nome, LED e footswitch. Clicar no amp abre o cabeçote (knobs do pré-amp e do power amp juntos) e o
+gabinete (IR, low cut, high cut) no mesmo estilo.
+
+**Cadeia na tela:** os pedais aparecem na ordem real, agrupados por trecho (`SectionOf`: entrada, loop, pós-power,
+pós-gabinete). Arrastar um pedal chama `Chain.Move`; soltar entre PRÉ e POWER coloca no loop.
 
 **Interação com os knobs:** arrastar na vertical, rodinha para ajuste fino, duplo clique para voltar ao padrão,
 valor exibido enquanto gira.
@@ -185,6 +199,7 @@ valor exibido enquanto gira.
 
 **Notas para as próximas fases**
 - O amp no engine é: HP 70 Hz → pré-amp → tone stack → power amp (`tanh`) → presença → IR → HP 85 Hz / LP 6,2 kHz → volume.
+  (Na Fase 2.5 virou três módulos: `pre`, `power`, `cab`.)
   O segundo gate do `main.py` (pós-amp) não entrou: com a normalização corrigida, o gate de entrada já basta.
 - Volume padrão do amp em -12 dB: com a DI de teste e os knobs padrão, o pico fica em -3 dBFS.
 - Desempenho: ~15x tempo real em um núcleo. Há folga, mas dá para ganhar com FFT real (metade do espectro) e uma
@@ -192,7 +207,7 @@ valor exibido enquanto gira.
 - Comandos úteis:
   - `go test ./...`
   - `go run ./cmd/ampcli -listar`
-  - `go run ./cmd/ampcli -in testdata/guitarra_di.wav -out saida/amp.wav -on chorus,delay -set amp.gain=8`
+  - `go run ./cmd/ampcli -in testdata/guitarra_di.wav -out saida/amp.wav -on chorus,delay -set pre.gain=8`
   - `venv/bin/python referencia_python/gerar_referencias.py` (regenera as referências)
 
 ### Fase 2: Standalone com fonte Arquivo ✅ (concluída em 17/11/2026)
@@ -217,12 +232,35 @@ valor exibido enquanto gira.
 - O malgo usa um mutex interno (sem disputa) em cada callback. Por enquanto não é problema; observar na Fase 4.
 - Uso: `go run ./cmd/ampapp` (toca a DI em loop) · `go run ./cmd/ampapp -listar-dispositivos` · `-buffer 128` · `-arquivo x.wav`
 
+### Fase 2.5: Cadeia configurável e loop de efeitos ✅ (concluída em 17/11/2026)
+**Meta:** ordem dos módulos livre, com loop de efeitos (send/return) entre pré-amp e power amp. Feita antes da GUI
+porque muda o modelo que a pedalboard e o cabeçote vão desenhar.
+
+- [x] Amp dividido em três módulos: `pre` (ganho, grave, médio, agudo), `power` (presença, volume), `cab` (IR, low cut, high cut)
+- [x] `Chain.SetOrder`, `Move`, `MoveBefore`, `MoveAfter`, `Order`, `SectionOf` (entrada / loop / pós-power / pós) e `String`
+- [x] Validação: todos os módulos uma vez, `pre` antes de `power`, `power` antes de `cab`
+- [x] Reordenar ao vivo: a ordem nova é trocada por `atomic.Pointer`, com rampa de 5 ms até o silêncio e de volta
+- [x] Low cut / high cut do gabinete ajustáveis ao vivo, sem alocar
+- [x] Preset versão 2: a lista de módulos vem na ordem da cadeia; presets da versão 1 (módulo `amp` único) são convertidos
+- [x] CLI: `-ordem a,b,c...` e `-mover id:antes|depois:ref`; console do app: `ordem` e `mover <id> antes|depois <ref>`
+- [x] Testes: validação da ordem, reordenar ao vivo (rampa + sem NaN + latência constante), loop × pós-gabinete,
+  preset com ordem, migração v1 → v2, filtros do gabinete ao vivo sem alocação, descrição da cadeia
+
+**Nota de DSP (medida com o delay):** mudar um efeito de lugar só faz diferença se houver algo **não linear** entre as
+duas posições. Delay no loop × depois do gabinete: diferença de -30 dB (só a saturação leve do power amp separa os dois,
+porque IR e filtros são lineares e comutam com o delay). Delay na frente do amp × no loop: -11,5 dB (as repetições passam
+pela distorção do pré-amp). É por isso que, em amp com distorção, delay e reverb costumam ir no loop.
+
+**Ideias para depois:** mais de uma instância do mesmo pedal (ex.: dois delays); um "master" do power amp que controle
+o quanto ele satura.
+
 ### Fase 3: GUI (~2 a 3 semanas)
 **Meta:** tela principal completa com knobs e pedais, mexendo no som com o loop tocando.
 
 - [ ] Componente **Knob** em Gio (desenho, arrastar, rodinha, duplo clique, valor)
 - [ ] Tela principal: seção de entrada, cabeçote do amp e seletor de IR
-- [ ] Pedalboard com botões e LEDs
+- [ ] Pedalboard com botões e LEDs, na ordem real da cadeia, com o loop de efeitos destacado
+- [ ] Arrastar pedais para reordenar (inclusive para dentro e para fora do loop)
 - [ ] Componente **Pedal** genérico (corpo, layout dos knobs a partir da tabela, LED, footswitch, chave de estágios)
 - [ ] Overlay de abrir e fechar pedal; estilo de cada pedal (cor e nome); cabeçote do amp no mesmo padrão
 - [ ] Medidores de entrada e saída e indicador de latência

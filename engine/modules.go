@@ -78,22 +78,94 @@ func (m *Gate) Process(buf []float64) {
 }
 
 // ---------------------------------------------------------------- Amp
-
-// Amp é o cabeçote + gabinete:
 //
-//	HP 70 Hz → GANHO/saturação 4x → tone stack → power amp (tanh) → presença
-//	→ IR do gabinete → HP 85 Hz / LP 6,2 kHz → volume
-type Amp struct {
-	base
-	fs float64
+// O amp é dividido em três módulos para permitir o loop de efeitos (send/return):
+//
+//	PRÉ-AMP (pre) → [loop: pedais] → POWER AMP (power) → GABINETE (cab)
+//
+// A cadeia garante a ordem pre → power → cab; os pedais podem ficar em qualquer posição.
 
-	tight    dsp.Biquad
-	pre      *dsp.Preamp
-	tone     *dsp.ToneStack
+// Pre é o pré-amp: HP 70 Hz → GANHO/saturação 4x → tone stack (grave/médio/agudo).
+type Pre struct {
+	base
+	tight dsp.Biquad
+	pre   *dsp.Preamp
+	tone  *dsp.ToneStack
+}
+
+// NewPre cria o pré-amp.
+func NewPre() *Pre {
+	return &Pre{base: base{id: "pre", name: "Pré-amp", paramSet: newParamSet(
+		ParamInfo{ID: "gain", Name: "Ganho", Min: 0, Max: 10, Default: 6.5},
+		ParamInfo{ID: "bass", Name: "Grave", Min: 0, Max: 10, Default: 5},
+		ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
+		ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
+	)}}
+}
+
+func (m *Pre) Prepare(fs float64, _ int) {
+	m.tight.SetCoefs(dsp.OnePoleHighpass(fs, 70))
+	m.pre = dsp.NewPreamp(fs)
+	m.tone = dsp.NewToneStack(fs)
+}
+
+func (m *Pre) Reset() {
+	m.tight.Reset()
+	m.pre.Reset()
+	m.tone.Reset()
+}
+
+func (m *Pre) Latency() int { return dsp.PreampLatency }
+
+func (m *Pre) Process(buf []float64) {
+	m.pre.SetDrive(m.get("gain") / 10)
+	m.tone.Set(m.get("bass"), m.get("mid"), m.get("treble"))
+	m.tight.ProcessBlock(buf)
+	m.pre.ProcessBlock(buf)
+	m.tone.ProcessBlock(buf)
+}
+
+// Power é o power amp: saturação suave (tanh) → presença → volume.
+type Power struct {
+	base
 	presence *dsp.Presence
-	cabHP    dsp.Cascade
-	cabLP    dsp.Cascade
 	volume   dsp.Smoother
+}
+
+// NewPower cria o power amp.
+func NewPower() *Power {
+	return &Power{base: base{id: "power", name: "Power amp", paramSet: newParamSet(
+		ParamInfo{ID: "presence", Name: "Presença", Min: 0, Max: 10, Default: 5},
+		ParamInfo{ID: "volume", Name: "Volume", Unit: "dB", Min: -40, Max: 12, Default: -12},
+	)}}
+}
+
+func (m *Power) Prepare(fs float64, _ int) {
+	m.presence = dsp.NewPresence(fs)
+	m.volume = dsp.NewSmoother(fs, 20)
+}
+
+func (m *Power) Reset()       { m.presence.Reset() }
+func (m *Power) Latency() int { return 0 }
+
+func (m *Power) Process(buf []float64) {
+	m.presence.Set(m.get("presence"))
+	m.volume.SetTarget(math.Pow(10, m.get("volume")/20))
+	for i, x := range buf {
+		buf[i] = math.Tanh(x)
+	}
+	m.presence.ProcessBlock(buf)
+	for i := range buf {
+		buf[i] *= m.volume.Next()
+	}
+}
+
+// Cab é o gabinete: IR (convolução) → low cut / high cut (o "microfone").
+type Cab struct {
+	base
+	fs              float64
+	hp, lp          dsp.Cascade
+	lowCut, highCut float64 // valores aplicados nos filtros
 
 	conv    *dsp.Convolver                // usado só pela thread de áudio
 	pending atomic.Pointer[dsp.Convolver] // nova IR preparada fora da thread de áudio
@@ -111,27 +183,19 @@ const IRMaxMs = 150.0
 // IRPartition é o tamanho de partição da convolução.
 const IRPartition = 64
 
-// NewAmp cria o amp.
-func NewAmp() *Amp {
-	return &Amp{base: base{id: "amp", name: "Amp", paramSet: newParamSet(
-		ParamInfo{ID: "gain", Name: "Ganho", Min: 0, Max: 10, Default: 6.5},
-		ParamInfo{ID: "bass", Name: "Grave", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "presence", Name: "Presença", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "volume", Name: "Volume", Unit: "dB", Min: -40, Max: 12, Default: -12},
+// NewCab cria o gabinete (sem IR: só os filtros, até LoadIR).
+func NewCab() *Cab {
+	return &Cab{base: base{id: "cab", name: "Gabinete", paramSet: newParamSet(
+		ParamInfo{ID: "lowcut", Name: "Low cut", Unit: "Hz", Min: 20, Max: 300, Default: 85},
+		ParamInfo{ID: "highcut", Name: "High cut", Unit: "Hz", Min: 2000, Max: 12000, Default: 6200},
 	)}}
 }
 
-func (m *Amp) Prepare(fs float64, _ int) {
+func (m *Cab) Prepare(fs float64, _ int) {
 	m.fs = fs
-	m.tight.SetCoefs(dsp.OnePoleHighpass(fs, 70))
-	m.pre = dsp.NewPreamp(fs)
-	m.tone = dsp.NewToneStack(fs)
-	m.presence = dsp.NewPresence(fs)
-	m.cabHP = dsp.NewCascade(dsp.ButterworthHighpass(2, fs, 85))
-	m.cabLP = dsp.NewCascade(dsp.ButterworthLowpass(3, fs, 6200))
-	m.volume = dsp.NewSmoother(fs, 20)
+	m.hp = dsp.NewCascade(dsp.ButterworthHighpass(cabHPOrder, fs, m.get("lowcut")))
+	m.lp = dsp.NewCascade(dsp.ButterworthLowpass(cabLPOrder, fs, m.get("highcut")))
+	m.lowCut, m.highCut = m.get("lowcut"), m.get("highcut")
 
 	m.mu.Lock()
 	m.prepFS = fs
@@ -143,49 +207,54 @@ func (m *Amp) Prepare(fs float64, _ int) {
 	m.mu.Unlock()
 }
 
-func (m *Amp) Reset() {
-	m.tight.Reset()
-	m.pre.Reset()
-	m.tone.Reset()
-	m.presence.Reset()
-	m.cabHP.Reset()
-	m.cabLP.Reset()
+func (m *Cab) Reset() {
+	m.hp.Reset()
+	m.lp.Reset()
 	if m.conv != nil {
 		m.conv.Reset()
 	}
 }
 
-func (m *Amp) Latency() int { return dsp.PreampLatency }
+func (m *Cab) Latency() int { return 0 }
 
-func (m *Amp) Process(buf []float64) {
+func (m *Cab) Process(buf []float64) {
 	if c := m.pending.Swap(nil); c != nil {
 		m.conv = c
 	}
-	m.pre.SetDrive(m.get("gain") / 10)
-	m.tone.Set(m.get("bass"), m.get("mid"), m.get("treble"))
-	m.presence.Set(m.get("presence"))
-	m.volume.SetTarget(math.Pow(10, m.get("volume")/20))
-
-	m.tight.ProcessBlock(buf)
-	m.pre.ProcessBlock(buf)
-	m.tone.ProcessBlock(buf)
-	for i, x := range buf {
-		buf[i] = math.Tanh(x) // power amp
+	// Filtros recalculados só quando o knob muda (sem alocar: os estágios já existem).
+	if f := m.get("lowcut"); f != m.lowCut {
+		setCascade(m.hp, dsp.ButterworthHighpassInto, cabHPOrder, f, m.fs)
+		m.lowCut = f
 	}
-	m.presence.ProcessBlock(buf)
+	if f := m.get("highcut"); f != m.highCut {
+		setCascade(m.lp, dsp.ButterworthLowpassInto, cabLPOrder, f, m.fs)
+		m.highCut = f
+	}
 	if m.conv != nil {
 		m.conv.ProcessBlock(buf)
 	}
-	m.cabHP.ProcessBlock(buf)
-	m.cabLP.ProcessBlock(buf)
-	for i := range buf {
-		buf[i] *= m.volume.Next()
+	m.hp.ProcessBlock(buf)
+	m.lp.ProcessBlock(buf)
+}
+
+// Ordens dos filtros do gabinete (as mesmas do main.py).
+const (
+	cabHPOrder = 2
+	cabLPOrder = 3
+)
+
+func setCascade(c dsp.Cascade, design func(dst []dsp.Coefs, order int, fs, f float64), order int, f, fs float64) {
+	var tmp [4]dsp.Coefs
+	cs := tmp[:len(c)]
+	design(cs, order, fs, f)
+	for i := range c {
+		c[i].SetCoefs(cs[i])
 	}
 }
 
 // LoadIR carrega uma IR (amostras brutas e sua taxa). Pode ser chamado com o áudio
 // rodando: a IR é preparada aqui e trocada de forma atômica no próximo bloco.
-func (m *Amp) LoadIR(raw []float64, fsIR int, path string) {
+func (m *Cab) LoadIR(raw []float64, fsIR int, path string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.irRaw, m.irFS, m.irPath = raw, fsIR, path
@@ -195,7 +264,7 @@ func (m *Amp) LoadIR(raw []float64, fsIR int, path string) {
 }
 
 // LoadIRFile carrega a IR de um arquivo WAV.
-func (m *Amp) LoadIRFile(path string) error {
+func (m *Cab) LoadIRFile(path string) error {
 	fs, raw, err := wav.ReadMonoFile(path)
 	if err != nil {
 		return fmt.Errorf("carregando IR: %w", err)
@@ -205,20 +274,20 @@ func (m *Amp) LoadIRFile(path string) error {
 }
 
 // IRPath devolve o caminho da IR carregada ("" se nenhuma).
-func (m *Amp) IRPath() string {
+func (m *Cab) IRPath() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.irPath
 }
 
-func (m *Amp) ExtraState() map[string]string {
+func (m *Cab) ExtraState() map[string]string {
 	if p := m.IRPath(); p != "" {
 		return map[string]string{"ir": p}
 	}
 	return nil
 }
 
-func (m *Amp) ApplyExtraState(s map[string]string) error {
+func (m *Cab) ApplyExtraState(s map[string]string) error {
 	if p := s["ir"]; p != "" && p != m.IRPath() {
 		return m.LoadIRFile(p)
 	}

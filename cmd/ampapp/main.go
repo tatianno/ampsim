@@ -43,7 +43,7 @@ func run() error {
 		listar   = flag.Bool("listar-dispositivos", false, "lista as saídas de áudio e sai")
 		tocar    = flag.Bool("tocar", true, "começa tocando")
 		semLoop  = flag.Bool("sem-loop", false, "toca uma vez só")
-		comandos = flag.String("comandos", "", "comandos iniciais separados por ';' (ex.: \"set amp.gain=8; on delay\")")
+		comandos = flag.String("comandos", "", "comandos iniciais separados por ';' (ex.: \"set pre.gain=8; on delay\")")
 	)
 	flag.Parse()
 
@@ -64,7 +64,7 @@ func run() error {
 
 	chain := engine.NewDefaultChain()
 	if *ir != "" {
-		if err := chain.Amp().LoadIRFile(*ir); err != nil {
+		if err := chain.Cab().LoadIRFile(*ir); err != nil {
 			return err
 		}
 	}
@@ -213,8 +213,11 @@ const ajuda = `comandos:
   loop <início> <fim>            trecho do loop em segundos (fim 0 = até o fim)
   abrir <arquivo.wav>            troca o arquivo
   ir <arquivo.wav>               troca a IR do gabinete (ao vivo)
-  set modulo.param=valor ...     ex.: set amp.gain=8 amp.treble=6
+  set modulo.param=valor ...     ex.: set pre.gain=8 pre.treble=6 power.volume=-9
   on <módulos> | off <módulos>   liga/desliga pedais, ex.: on chorus delay
+  ordem                          mostra a cadeia (com o loop de efeitos)
+  ordem <id> <id> ...            define a ordem completa
+  mover <id> antes|depois <ref>  ex.: mover delay antes power (loop) / mover delay depois cab
   listar                         módulos, parâmetros e valores
   status                         estado e medidores
   medir [segundos]               medidores ao vivo (padrão 5 s)
@@ -267,13 +270,31 @@ func (a *app) exec(line string) bool {
 	case "abrir":
 		err = a.player.Load(rest)
 	case "ir":
-		err = a.chain.Amp().LoadIRFile(rest)
+		err = a.chain.Cab().LoadIRFile(rest)
 	case "set":
 		err = a.chain.SetList(rest)
 	case "on":
 		err = a.chain.EnableList(rest, true)
 	case "off":
 		err = a.chain.EnableList(rest, false)
+	case "ordem":
+		if len(args) > 0 {
+			err = a.chain.SetOrder(engine.SplitList(rest))
+		}
+		if err == nil {
+			fmt.Println("cadeia:", a.chain)
+		}
+	case "mover":
+		if len(args) != 3 || (args[1] != "antes" && args[1] != "depois") {
+			err = fmt.Errorf("use: mover <id> antes|depois <ref>")
+		} else if args[1] == "antes" {
+			err = a.chain.MoveBefore(args[0], args[2])
+		} else {
+			err = a.chain.MoveAfter(args[0], args[2])
+		}
+		if err == nil {
+			fmt.Println("cadeia:", a.chain)
+		}
 	case "listar":
 		a.listar()
 	case "status", "s":
@@ -320,13 +341,7 @@ func (a *app) status() {
 		}
 		fmt.Printf("arquivo: %s  %.2f/%.2f s  %s, %s\n", c.Name, a.player.Position(), c.Duration(), estado, loop)
 	}
-	var ligados []string
-	for _, m := range a.chain.Modules() {
-		if a.chain.Enabled(m.ID()) {
-			ligados = append(ligados, m.Name())
-		}
-	}
-	fmt.Printf("cadeia: %s\n", strings.Join(ligados, " → "))
+	fmt.Printf("cadeia: %s\n", a.chain)
 	in, out, clips, load, gate := a.mon.take()
 	g := "fechado"
 	if gate {
@@ -352,6 +367,7 @@ func (a *app) medir(secs float64) {
 }
 
 func (a *app) listar() {
+	fmt.Println("cadeia:", a.chain)
 	for _, m := range a.chain.Modules() {
 		estado := "off"
 		if a.chain.Enabled(m.ID()) {

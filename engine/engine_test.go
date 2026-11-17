@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"ampsim/wav"
@@ -30,7 +31,7 @@ func cadeiaCompleta(t *testing.T, fs float64, maxBlock int) *Chain {
 	for _, m := range c.Modules() {
 		c.SetEnabled(m.ID(), true)
 	}
-	if err := c.Amp().LoadIRFile(irPath); err != nil {
+	if err := c.Cab().LoadIRFile(irPath); err != nil {
 		t.Fatal(err)
 	}
 	c.Prepare(fs, maxBlock)
@@ -92,8 +93,9 @@ func TestCadeiaSemAlocacao(t *testing.T) {
 func TestBypassMantemLatencia(t *testing.T) {
 	fs, di := lerDI(t)
 	c := NewDefaultChain()
-	c.SetEnabled("gate", false)
-	c.SetEnabled("amp", false)
+	for _, id := range []string{"gate", PreID, PowerID, CabID} {
+		c.SetEnabled(id, false)
+	}
 	c.Prepare(fs, 128)
 	lat := c.Latency()
 	if lat != 32 {
@@ -113,7 +115,7 @@ func TestBypassMantemLatencia(t *testing.T) {
 func TestFimSemRuido(t *testing.T) {
 	fs, di := lerDI(t)
 	c := NewDefaultChain() // gate + amp
-	if err := c.Amp().LoadIRFile(irPath); err != nil {
+	if err := c.Cab().LoadIRFile(irPath); err != nil {
 		t.Fatal(err)
 	}
 	c.Prepare(fs, 256)
@@ -144,7 +146,7 @@ func peak(x []float64) float64 {
 func TestAutomacaoAoVivo(t *testing.T) {
 	fs, di := lerDI(t)
 	c := cadeiaCompleta(t, fs, 128)
-	ids := []string{"gate", "amp", "chorus", "flanger", "phaser", "delay", "reverb"}
+	ids := c.Order()
 	out := append([]float64(nil), di...)
 	for i, k := 0, 0; i < len(out); i, k = i+128, k+1 {
 		if k%20 == 0 {
@@ -165,11 +167,11 @@ func TestAutomacaoAoVivo(t *testing.T) {
 
 func TestPresetIdaEVolta(t *testing.T) {
 	a := NewDefaultChain()
-	a.Module("amp").Param("gain").Set(8.2)
+	a.Module(PreID).Param("gain").Set(8.2)
 	a.Module("delay").Param("time").Set(450)
 	a.SetEnabled("delay", true)
 	a.SetEnabled("gate", false)
-	if err := a.Amp().LoadIRFile(irPath); err != nil {
+	if err := a.Cab().LoadIRFile(irPath); err != nil {
 		t.Fatal(err)
 	}
 	b, err := json.Marshal(a.State())
@@ -185,14 +187,14 @@ func TestPresetIdaEVolta(t *testing.T) {
 	if err := c.ApplyState(st); err != nil {
 		t.Fatal(err)
 	}
-	if g := c.Module("amp").Param("gain").Get(); g != 8.2 {
+	if g := c.Module(PreID).Param("gain").Get(); g != 8.2 {
 		t.Errorf("gain = %v", g)
 	}
 	if !c.Enabled("delay") || c.Enabled("gate") {
 		t.Error("estado ligado/desligado não foi restaurado")
 	}
-	if c.Amp().IRPath() != irPath {
-		t.Errorf("IR = %q", c.Amp().IRPath())
+	if c.Cab().IRPath() != irPath {
+		t.Errorf("IR = %q", c.Cab().IRPath())
 	}
 
 	st.Modules = append(st.Modules, ModuleState{ID: "wah"})
@@ -223,7 +225,7 @@ func TestTrocaDeIRAoVivo(t *testing.T) {
 	go func() {
 		defer close(done)
 		for i := 0; i < 5; i++ {
-			c.Amp().LoadIR(raw[:len(raw)/(i+1)], fsIR, "")
+			c.Cab().LoadIR(raw[:len(raw)/(i+1)], fsIR, "")
 		}
 	}()
 	out := append([]float64(nil), di[:44100]...)
@@ -255,5 +257,190 @@ func TestCrossfadeDeBypass(t *testing.T) {
 	}
 	if buf[fade+10] != 0 {
 		t.Errorf("depois do crossfade deveria ser só o efeito (0), veio %.3f", buf[fade+10])
+	}
+}
+
+func TestOrdemValidacao(t *testing.T) {
+	c := NewDefaultChain()
+	ruins := map[string][]string{
+		"faltando":        {"gate", PreID, PowerID, CabID},
+		"repetido":        {"gate", PreID, "chorus", "chorus", "phaser", "delay", "reverb", PowerID, CabID},
+		"desconhecido":    {"gate", PreID, "chorus", "wah", "phaser", "delay", "reverb", PowerID, CabID},
+		"power antes pre": {"gate", PowerID, "chorus", "flanger", "phaser", "delay", "reverb", PreID, CabID},
+		"cab antes power": {"gate", PreID, "chorus", "flanger", "phaser", "delay", "reverb", CabID, PowerID},
+	}
+	for nome, ids := range ruins {
+		if err := c.SetOrder(ids); err == nil {
+			t.Errorf("%s: deveria dar erro", nome)
+		}
+	}
+	if err := c.Move(PowerID, 0); err == nil {
+		t.Error("mover o power para antes do pré deveria dar erro")
+	}
+	if got := c.Order(); !slices.Equal(got, DefaultOrder) {
+		t.Errorf("ordem inválida não pode mudar nada: %v", got)
+	}
+
+	// delay depois do gabinete, chorus na frente do amp
+	if err := c.MoveAfter("delay", CabID); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.MoveBefore("chorus", PreID); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"gate", "chorus", PreID, "flanger", "phaser", "reverb", PowerID, CabID, "delay"}
+	if got := c.Order(); !slices.Equal(got, want) {
+		t.Errorf("ordem %v, esperava %v", got, want)
+	}
+	secoes := map[string]Section{"chorus": SectionInput, "reverb": SectionLoop, "delay": SectionPost, PreID: SectionAmp}
+	for id, s := range secoes {
+		if got := c.SectionOf(id); got != s {
+			t.Errorf("%s está em %q, esperava %q", id, got, s)
+		}
+	}
+}
+
+// Reordenar com o áudio rodando: a troca acontece com rampa até o silêncio, sem NaN.
+func TestReordenarAoVivo(t *testing.T) {
+	fs, di := lerDI(t)
+	c := cadeiaCompleta(t, fs, 128)
+	lat := c.Latency()
+	out := append([]float64(nil), di[:44100]...)
+	troca := 20000
+	for i := 0; i < len(out); i += 128 {
+		if i == troca/128*128 {
+			if err := c.MoveAfter("delay", CabID); err != nil { // tira o delay do loop
+				t.Fatal(err)
+			}
+		}
+		c.ProcessMono(out[i:min(i+128, len(out))])
+	}
+	if c.Latency() != lat {
+		t.Error("a latência não pode mudar com a ordem")
+	}
+	// procura o ponto de silêncio da rampa logo depois do pedido
+	fade := int(ReorderFadeMs / 1000 * fs)
+	zeros := 0
+	for i := troca; i < troca+3*fade+256; i++ {
+		if out[i] == 0 {
+			zeros++
+		}
+	}
+	if zeros == 0 {
+		t.Error("esperava a rampa até o silêncio na troca de ordem")
+	}
+	// depois da rampa o som volta
+	if rmsDB(out[troca+4*fade+256:troca+4*fade+2256]) < -60 {
+		t.Error("o som não voltou depois da troca de ordem")
+	}
+	for i, v := range out {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			t.Fatalf("amostra %d inválida", i)
+		}
+	}
+}
+
+// O mesmo delay no loop e depois do gabinete soa diferente (o loop passa pelo power e pela IR).
+func TestLoopDeEfeitos(t *testing.T) {
+	fs, di := lerDI(t)
+	render := func(mover func(c *Chain) error) []float64 {
+		c := NewDefaultChain()
+		if err := c.Cab().LoadIRFile(irPath); err != nil {
+			t.Fatal(err)
+		}
+		c.SetEnabled("delay", true)
+		if err := mover(c); err != nil {
+			t.Fatal(err)
+		}
+		c.Prepare(fs, 256)
+		out := append([]float64(nil), di...)
+		c.ProcessMono(out)
+		return out
+	}
+	noLoop := render(func(c *Chain) error { return c.MoveBefore("delay", PowerID) })
+	depois := render(func(c *Chain) error { return c.MoveAfter("delay", CabID) })
+	diff := make([]float64, len(noLoop))
+	for i := range diff {
+		diff[i] = noLoop[i] - depois[i]
+	}
+	t.Logf("diferença loop × pós-gabinete: %.1f dB", rmsDB(diff)-rmsDB(noLoop))
+	if rmsDB(diff)-rmsDB(noLoop) < -40 {
+		t.Error("loop e pós-gabinete deram exatamente o mesmo resultado")
+	}
+}
+
+func TestPresetGuardaOrdem(t *testing.T) {
+	a := NewDefaultChain()
+	if err := a.MoveAfter("reverb", CabID); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.MoveBefore("phaser", PreID); err != nil {
+		t.Fatal(err)
+	}
+	b := NewDefaultChain()
+	if err := b.ApplyState(a.State()); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(a.Order(), b.Order()) {
+		t.Errorf("ordem %v, esperava %v", b.Order(), a.Order())
+	}
+}
+
+func TestPresetV1Migracao(t *testing.T) {
+	v1 := `{"version":1,"modules":[
+	  {"id":"gate","enabled":false,"params":{"threshold":-50}},
+	  {"id":"amp","enabled":true,"params":{"gain":8,"bass":6,"presence":7,"volume":-9},"extra":{"ir":"` + irPath + `"}},
+	  {"id":"delay","enabled":true,"params":{"time":500}}]}`
+	var st State
+	if err := json.Unmarshal([]byte(v1), &st); err != nil {
+		t.Fatal(err)
+	}
+	c := NewDefaultChain()
+	if err := c.ApplyState(st); err != nil {
+		t.Fatal(err)
+	}
+	checa := func(mod, par string, want float64) {
+		if got := c.Module(mod).Param(par).Get(); got != want {
+			t.Errorf("%s.%s = %v, esperava %v", mod, par, got, want)
+		}
+	}
+	checa(PreID, "gain", 8)
+	checa(PreID, "bass", 6)
+	checa(PowerID, "presence", 7)
+	checa(PowerID, "volume", -9)
+	checa("delay", "time", 500)
+	if c.Cab().IRPath() != irPath {
+		t.Errorf("IR = %q", c.Cab().IRPath())
+	}
+	if !slices.Equal(c.Order(), DefaultOrder) {
+		t.Error("preset v1 não define ordem: tem que ficar a padrão")
+	}
+}
+
+// Girar o low cut / high cut do gabinete ao vivo não aloca.
+func TestCabFiltrosAoVivoSemAlocacao(t *testing.T) {
+	c := NewChain(NewCab())
+	c.Prepare(48000, 256)
+	buf := make([]float64, 256)
+	k := 0.0
+	if a := testing.AllocsPerRun(50, func() {
+		k++
+		c.Module(CabID).Param("lowcut").Set(60 + k)
+		c.Module(CabID).Param("highcut").Set(5000 + 10*k)
+		c.ProcessMono(buf)
+	}); a != 0 {
+		t.Errorf("aloca %.0f vezes", a)
+	}
+}
+
+func TestDescricaoDaCadeia(t *testing.T) {
+	c := NewDefaultChain()
+	c.SetEnabled("delay", true)
+	if err := c.MoveAfter("reverb", CabID); err != nil {
+		t.Fatal(err)
+	}
+	want := "Gate → Pré-amp → [loop: Chorus (off) → Flanger (off) → Phaser (off) → Delay] → Power amp → Gabinete → Reverb (off)"
+	if got := c.String(); got != want {
+		t.Errorf("\n got: %s\nwant: %s", got, want)
 	}
 }

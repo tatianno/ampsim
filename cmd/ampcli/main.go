@@ -3,10 +3,12 @@
 // Exemplos:
 //
 //	ampcli -in testdata/guitarra_di.wav -out saida/amp.wav
-//	ampcli -in di.wav -out out.wav -on chorus,delay -set amp.gain=8,delay.time=420
+//	ampcli -in di.wav -out out.wav -on chorus,delay -set pre.gain=8,delay.time=420
+//	ampcli -in di.wav -out out.wav -on delay -mover delay:depois:cab   # delay depois do gabinete
+//	ampcli -in di.wav -out out.wav -ordem gate,chorus,pre,flanger,phaser,delay,reverb,power,cab
 //	ampcli -in di.wav -out out.wav -preset clean.json
 //	ampcli -listar
-//	ampcli -salvar-preset meu.json -set amp.gain=3
+//	ampcli -salvar-preset meu.json -set pre.gain=3
 package main
 
 import (
@@ -45,6 +47,8 @@ func run() error {
 		format    = flag.String("formato", "pcm16", "formato de saída: pcm16 ou float32")
 		normalize = flag.Float64("normalizar", 0, "se > 0, normaliza o pico para este valor em dBFS negativo (ex.: 1 → -1 dBFS)")
 		list      = flag.Bool("listar", false, "lista módulos e parâmetros e sai")
+		ordem     = flag.String("ordem", "", "ordem completa da cadeia, separada por vírgula")
+		mover     = flag.String("mover", "", "move módulos: id:antes|depois:ref, separados por vírgula (ex.: delay:depois:cab)")
 	)
 	flag.Parse()
 
@@ -54,7 +58,7 @@ func run() error {
 		return nil
 	}
 	if *ir != "" {
-		if err := chain.Amp().LoadIRFile(*ir); err != nil {
+		if err := chain.Cab().LoadIRFile(*ir); err != nil {
 			return err
 		}
 	}
@@ -64,6 +68,9 @@ func run() error {
 		}
 	}
 	if err := aplicarFlags(chain, *on, *off, *set); err != nil {
+		return err
+	}
+	if err := aplicarOrdem(chain, *ordem, *mover); err != nil {
 		return err
 	}
 	if *savePre != "" {
@@ -135,16 +142,10 @@ func run() error {
 	fmt.Printf("  %d Hz, %.2f s, latência %d amostras (%.2f ms, compensada)\n",
 		fs, dur, lat, 1000*float64(lat)/float64(fs))
 	fmt.Printf("  processado em %v (%.0fx tempo real)\n", elapsed.Round(time.Millisecond), dur/elapsed.Seconds())
-	var ligados []string
-	for _, m := range chain.Modules() {
-		if chain.Enabled(m.ID()) {
-			ligados = append(ligados, m.Name())
-		}
-	}
-	fmt.Printf("  cadeia: %s\n", strings.Join(ligados, " → "))
+	fmt.Printf("  cadeia: %s\n", chain)
 	fmt.Printf("  pico: %.1f dBFS\n", 20*math.Log10(pk+1e-12))
 	if pk > 1 && wf == wav.PCM16 {
-		fmt.Println("  AVISO: pico acima de 0 dBFS, vai clipar em PCM16 (baixe amp.volume ou use -normalizar 1)")
+		fmt.Println("  AVISO: pico acima de 0 dBFS, vai clipar em PCM16 (baixe power.volume ou use -normalizar 1)")
 	}
 	return nil
 }
@@ -162,7 +163,36 @@ func aplicarFlags(c *engine.Chain, on, off, set string) error {
 	return nil
 }
 
+func aplicarOrdem(c *engine.Chain, ordem, mover string) error {
+	if ordem != "" {
+		if err := c.SetOrder(engine.SplitList(ordem)); err != nil {
+			return fmt.Errorf("-ordem: %w", err)
+		}
+	}
+	for _, mv := range engine.SplitList(mover) {
+		p := strings.Split(mv, ":")
+		if len(p) != 3 {
+			return fmt.Errorf("-mover: use id:antes|depois:ref, veio %q", mv)
+		}
+		var err error
+		switch p[1] {
+		case "antes":
+			err = c.MoveBefore(p[0], p[2])
+		case "depois":
+			err = c.MoveAfter(p[0], p[2])
+		default:
+			err = fmt.Errorf("use antes ou depois, veio %q", p[1])
+		}
+		if err != nil {
+			return fmt.Errorf("-mover %s: %w", mv, err)
+		}
+	}
+	return nil
+}
+
 func listar(c *engine.Chain) {
+	fmt.Println("cadeia:", c)
+	fmt.Println()
 	for _, m := range c.Modules() {
 		estado := "desligado"
 		if c.Enabled(m.ID()) {

@@ -18,7 +18,7 @@ func novoRender(t *testing.T) (*Renderer, *source.FilePlayer, *engine.Chain) {
 	t.Helper()
 	const fs = 48000
 	chain := engine.NewDefaultChain()
-	if err := chain.Amp().LoadIRFile(irPath); err != nil {
+	if err := chain.Cab().LoadIRFile(irPath); err != nil {
 		t.Fatal(err)
 	}
 	chain.Prepare(fs, MaxBlock)
@@ -64,7 +64,7 @@ func TestRenderEstereoEMedidores(t *testing.T) {
 
 func TestRenderClipDeSeguranca(t *testing.T) {
 	r, _, chain := novoRender(t)
-	chain.Module("amp").Param("volume").Set(12) // força passar de 0 dBFS
+	chain.Module(engine.PowerID).Param("volume").Set(12) // força passar de 0 dBFS
 	out := make([]float32, 2*4096)
 	var clips uint32
 	for k := 0; k < 30; k++ {
