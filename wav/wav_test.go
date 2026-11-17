@@ -3,6 +3,7 @@ package wav
 import (
 	"bytes"
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -46,6 +47,7 @@ func TestRoundTripPCM16Clip(t *testing.T) {
 
 // A DI de teste é estéreo int16: a média precisa ficar na faixa ±1 (o bug do protótipo Python).
 func TestDIEstereoNormalizada(t *testing.T) {
+	precisa(t, filepath.Join("..", "testdata", "guitarra_di.wav"))
 	a, err := ReadFile(filepath.Join("..", "testdata", "guitarra_di.wav"))
 	if err != nil {
 		t.Fatal(err)
@@ -64,11 +66,23 @@ func TestDIEstereoNormalizada(t *testing.T) {
 
 // A IR é PCM 32 bits a 48 kHz e tem chunks extras que precisam ser pulados.
 func TestIR32Bits(t *testing.T) {
+	precisa(t, filepath.Join("..", "testdata", "gabinete_2x12_sm57.wav"))
 	fs, ir, err := ReadMonoFile(filepath.Join("..", "testdata", "gabinete_2x12_sm57.wav"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if fs != 48000 || len(ir) != 24000 {
 		t.Fatalf("esperava 24000 amostras a 48 kHz, veio %d a %d Hz", len(ir), fs)
+	}
+}
+
+// precisa pula o teste se algum arquivo de testdata/ não existir
+// (os WAVs não vão para o repositório; veja o README).
+func precisa(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
+		}
 	}
 }

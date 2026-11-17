@@ -2,6 +2,7 @@ package dsp
 
 import (
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -82,6 +83,7 @@ func TestReferenciaGate(t *testing.T) {
 }
 
 func TestReferenciaIR(t *testing.T) {
+	precisa(t, filepath.Join("..", "testdata", "gabinete_2x12_sm57.wav"))
 	fs, want := lerRef(t, "ir_preparada.wav")
 	fsIR, raw, err := wav.ReadMonoFile(filepath.Join("..", "testdata", "gabinete_2x12_sm57.wav"))
 	if err != nil {
@@ -95,6 +97,7 @@ func TestReferenciaIR(t *testing.T) {
 }
 
 func TestReferenciaGabinete(t *testing.T) {
+	precisa(t, filepath.Join("..", "testdata", "gabinete_2x12_sm57.wav"))
 	fs, in := lerRef(t, "gate2.wav")
 	_, want := lerRef(t, "cab.wav")
 	fsIR, raw, err := wav.ReadMonoFile(filepath.Join("..", "testdata", "gabinete_2x12_sm57.wav"))
@@ -172,5 +175,16 @@ func TestReferenciaEfeitos(t *testing.T) {
 		}
 		emBlocos(got, 37, c.proc)
 		comparar(t, c.nome, got, want, -100)
+	}
+}
+
+// precisa pula o teste se algum arquivo de testdata/ não existir
+// (os WAVs não vão para o repositório; veja o README).
+func precisa(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
+		}
 	}
 }

@@ -138,7 +138,7 @@ func (k *Knob) Layout(gtx layout.Context, th *Theme, size unit.Dp, cap, ink, acc
 		}),
 		layout.Rigid(spacer(0, 2)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			c := withAlpha(ink, 170)
+			c := withAlpha(ink, 215)
 			if k.Active() {
 				c = ink
 			}
@@ -157,7 +157,13 @@ func (k *Knob) draw(gtx layout.Context, sz image.Point, cap, accent color.NRGBA)
 
 	// trilho e arco do valor
 	strokeArc(ops, c, r-track/2, track, knobA0, knobA0+knobSweep, withAlpha(rgb(0x000000), 110))
-	strokeArc(ops, c, r-track/2, track, knobA0, a, accent)
+	if in := k.P.Info(); in.Min < 0 && in.Max > 0 && in.Unit != "dB" {
+		// parâmetro bipolar (ex.: feedback −90..+90%): o arco parte do zero, no meio
+		z := knobA0 + knobSweep*(-in.Min/(in.Max-in.Min))
+		strokeArc(ops, c, r-track/2, track, math.Min(z, a), math.Max(z, a), accent)
+	} else {
+		strokeArc(ops, c, r-track/2, track, knobA0, a, accent)
+	}
 	// corpo do botão
 	body := r - track*2.2
 	fillCircle(ops, f32.Pt(c.X, c.Y+body*0.06), body, darken(cap, 0.5)) // sombra

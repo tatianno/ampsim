@@ -2,6 +2,7 @@ package source
 
 import (
 	"math"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -18,6 +19,7 @@ func rampa(n int) *Clip {
 }
 
 func TestCarregaEReamostra(t *testing.T) {
+	precisa(t, diPath)
 	p := NewFilePlayer(48000)
 	if err := p.Load(diPath); err != nil {
 		t.Fatal(err)
@@ -113,6 +115,7 @@ func TestSeekEPausaComRampa(t *testing.T) {
 }
 
 func TestReadSemAlocacao(t *testing.T) {
+	precisa(t, diPath)
 	p := NewFilePlayer(48000)
 	if err := p.Load(diPath); err != nil {
 		t.Fatal(err)
@@ -121,5 +124,16 @@ func TestReadSemAlocacao(t *testing.T) {
 	buf := make([]float64, 256)
 	if a := testing.AllocsPerRun(100, func() { p.Read(buf) }); a != 0 {
 		t.Errorf("Read aloca %.0f vezes", a)
+	}
+}
+
+// precisa pula o teste se algum arquivo de testdata/ não existir
+// (os WAVs não vão para o repositório; veja o README).
+func precisa(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
+		}
 	}
 }

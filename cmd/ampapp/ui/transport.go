@@ -175,8 +175,8 @@ func (t *Transport) bar(gtx layout.Context, th *Theme, dur float64) layout.Dimen
 	fillRRect(gtx.Ops, image.Rect(0, trackY0, w, trackY1), gtx.Dp(4), th.Line)
 	if dur > 0 {
 		px := func(sec float64) int { return int(sec / dur * float64(w)) }
-		if t.player.Loop() {
-			ls, le := t.player.LoopRegion()
+		if ls, le := t.player.LoopRegion(); t.player.Loop() && (ls > 0 || le < dur-1e-6) {
+			// só destaca quando o loop é um trecho (no arquivo inteiro, a barra toda ficaria dourada)
 			fillRRect(gtx.Ops, image.Rect(px(ls), trackY0-gtx.Dp(3), px(le), trackY1+gtx.Dp(3)), gtx.Dp(3), withAlpha(th.Gold, 70))
 		}
 		pos := px(t.player.Position())

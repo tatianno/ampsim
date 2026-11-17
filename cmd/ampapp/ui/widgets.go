@@ -4,6 +4,8 @@ import (
 	"image"
 	"image/color"
 
+	"gioui.org/f32"
+
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -56,4 +58,23 @@ func recordText(gtx layout.Context, th *Theme, s string, size unit.Sp, c color.N
 	d := drawText(gtx, th, s, textOpts{size: size, color: c})
 	m.Stop()
 	return d.Size.X
+}
+
+// closeButton é um botão redondo com um X desenhado (sem depender de glifo da fonte).
+func closeButton(gtx layout.Context, c *widget.Clickable, size unit.Dp) layout.Dimensions {
+	return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		pointer.CursorPointer.Add(gtx.Ops)
+		d := gtx.Dp(size)
+		r := float32(d) / 2
+		bg := withAlpha(rgb(0x000000), 90)
+		if c.Hovered() {
+			bg = withAlpha(rgb(0x000000), 150)
+		}
+		fillCircle(gtx.Ops, f32.Pt(r, r), r, bg)
+		k := r * 0.42
+		w := float32(gtx.Dp(2))
+		strokeLine(gtx.Ops, f32.Pt(r-k, r-k), f32.Pt(r+k, r+k), w, rgb(0xffffff))
+		strokeLine(gtx.Ops, f32.Pt(r-k, r+k), f32.Pt(r+k, r-k), w, rgb(0xffffff))
+		return layout.Dimensions{Size: image.Pt(d, d)}
+	})
 }

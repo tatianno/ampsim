@@ -107,6 +107,11 @@ func spacer(w, h unit.Dp) layout.Widget {
 	}
 }
 
+// fill ocupa todo o espaço que receber (para empurrar o que vem depois num Flex).
+func fill(gtx layout.Context) layout.Dimensions {
+	return layout.Dimensions{Size: gtx.Constraints.Max}
+}
+
 func offset(ops *op.Ops, x, y int) op.TransformStack {
 	return op.Offset(image.Pt(x, y)).Push(ops)
 }

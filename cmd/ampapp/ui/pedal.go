@@ -54,8 +54,12 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 
 	return panel(gtx, st.Body, 18, 18, func(gtx layout.Context) layout.Dimensions {
 		var rows []layout.FlexChild
-		for i := 0; i < len(p.knobs); i += 3 {
-			row := p.knobs[i:min(i+3, len(p.knobs))]
+		perRow := 3
+		if len(p.knobs) == 4 {
+			perRow = 2 // 2 + 2 fica melhor que 3 + 1
+		}
+		for i := 0; i < len(p.knobs); i += perRow {
+			row := p.knobs[i:min(i+perRow, len(p.knobs))]
 			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				var ch []layout.FlexChild
 				for _, k := range row {

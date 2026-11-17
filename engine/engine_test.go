@@ -3,6 +3,7 @@ package engine
 import (
 	"encoding/json"
 	"math"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -17,6 +18,7 @@ var (
 
 func lerDI(t *testing.T) (float64, []float64) {
 	t.Helper()
+	precisa(t, diPath, irPath)
 	fs, x, err := wav.ReadMonoFile(diPath)
 	if err != nil {
 		t.Fatal(err)
@@ -166,6 +168,7 @@ func TestAutomacaoAoVivo(t *testing.T) {
 }
 
 func TestPresetIdaEVolta(t *testing.T) {
+	precisa(t, irPath)
 	a := NewDefaultChain()
 	a.Module(PreID).Param("gain").Set(8.2)
 	a.Module("delay").Param("time").Set(450)
@@ -387,6 +390,7 @@ func TestPresetGuardaOrdem(t *testing.T) {
 }
 
 func TestPresetV1Migracao(t *testing.T) {
+	precisa(t, irPath)
 	v1 := `{"version":1,"modules":[
 	  {"id":"gate","enabled":false,"params":{"threshold":-50}},
 	  {"id":"amp","enabled":true,"params":{"gain":8,"bass":6,"presence":7,"volume":-9},"extra":{"ir":"` + irPath + `"}},
@@ -442,5 +446,16 @@ func TestDescricaoDaCadeia(t *testing.T) {
 	want := "Gate → Pré-amp → [loop: Chorus (off) → Flanger (off) → Phaser (off) → Delay] → Power amp → Gabinete → Reverb (off)"
 	if got := c.String(); got != want {
 		t.Errorf("\n got: %s\nwant: %s", got, want)
+	}
+}
+
+// precisa pula o teste se algum arquivo de testdata/ não existir
+// (os WAVs não vão para o repositório; veja o README).
+func precisa(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
+		}
 	}
 }

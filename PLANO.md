@@ -255,7 +255,7 @@ pela distorção do pré-amp). É por isso que, em amp com distorção, delay e 
 **Ideias para depois:** mais de uma instância do mesmo pedal (ex.: dois delays); um "master" do power amp que controle
 o quanto ele satura.
 
-### Fase 3: GUI (em andamento: código e testes prontos; falta abrir a janela real)
+### Fase 3: GUI (janela funcionando; falta o teste de uso por você)
 **Meta:** tela principal completa com knobs e pedais, mexendo no som com o loop tocando.
 
 - [x] Componente **Knob** (`ui/knob.go`): arrastar na vertical (180 dp = faixa inteira; Shift = 5x mais fino),
@@ -281,7 +281,12 @@ o quanto ele satura.
   seek e trecho de loop na barra, sobreposição (clique dentro não fecha, fora fecha, Esc fecha), carregar arquivo
   escolhido, desenhar a tela em 4 tamanhos e todos os pedais abertos
 - [x] `-tags nogui` compila só o console (para máquinas sem as bibliotecas gráficas)
-- [ ] **Abrir a janela real e ajustar o visual** (precisa das bibliotecas de desenvolvimento do sistema, abaixo)
+- [x] Abrir a janela real e ajustar o visual (capturas de tela da janela com `import -window`):
+  rodapé preso embaixo, destaque do loop só quando é um trecho, medidor sem resto em silêncio, CPU só no rodapé,
+  botão de fechar desenhado (o "×" da fonte era cortado), pedal com 4 knobs em 2 + 2, valores com mais contraste,
+  arco a partir do zero em knobs bipolares (feedback −90..+90%)
+- [x] `AMPSIM_ABRIR=<pedal>` abre um pedal ao iniciar (para conferir o visual)
+- [ ] Teste de uso de verdade (arrastar knobs e pedais com o som tocando) e ajustes que aparecerem
 
 **Para compilar a janela no Ubuntu** (uma vez):
 ```

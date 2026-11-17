@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"os"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -16,6 +17,7 @@ var (
 
 func novoRender(t *testing.T) (*Renderer, *source.FilePlayer, *engine.Chain) {
 	t.Helper()
+	precisa(t, diPath, irPath)
 	const fs = 48000
 	chain := engine.NewDefaultChain()
 	if err := chain.Cab().LoadIRFile(irPath); err != nil {
@@ -163,5 +165,16 @@ type constSource float64
 func (c constSource) Read(buf []float64) {
 	for i := range buf {
 		buf[i] = float64(c)
+	}
+}
+
+// precisa pula o teste se algum arquivo de testdata/ não existir
+// (os WAVs não vão para o repositório; veja o README).
+func precisa(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
+		}
 	}
 }

@@ -100,7 +100,9 @@ func (m *Meters) bar(th *Theme, label string, v float32) layout.Widget {
 					return int(clamp01((db-meterFloorDB)/-meterFloorDB) * float64(w))
 				}
 				lv := x(toDB(v))
-				fillRRect(gtx.Ops, image.Rect(0, 0, min(lv, x(meterYellow)), h), gtx.Dp(3), th.Good)
+				if lv > 0 {
+					fillRRect(gtx.Ops, image.Rect(0, 0, min(lv, x(meterYellow)), h), gtx.Dp(3), th.Good)
+				}
 				if lv > x(meterYellow) {
 					fillRRect(gtx.Ops, image.Rect(x(meterYellow), 0, min(lv, x(meterRed)), h), 0, th.Warn)
 				}

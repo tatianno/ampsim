@@ -194,7 +194,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 					)
 				})
 			}),
-			layout.Flexed(1, spacer(0, 0)),
+			layout.Flexed(1, fill), // empurra o rodapé para baixo
 			layout.Rigid(a.footer),
 		)
 	})
@@ -227,12 +227,8 @@ func (a *App) keys(gtx layout.Context) {
 
 func (a *App) topBar(gtx layout.Context) layout.Dimensions {
 	th := a.th
-	load := ""
-	if a.meters.load > 0 {
-		load = fmt.Sprintf("  ·  CPU %.0f%%", 100*a.meters.load)
-	}
-	info := fmt.Sprintf("%s  ·  %.0f Hz  ·  buffer %d  ·  latência %.1f ms%s",
-		a.Info.Device, a.Info.SampleRate, a.Info.Buffer, a.Info.LatencyMs, load)
+	info := fmt.Sprintf("saída: %s  ·  %.0f Hz  ·  buffer %d  ·  latência %.1f ms",
+		a.Info.Device, a.Info.SampleRate, a.Info.Buffer, a.Info.LatencyMs)
 	return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, "ampsim", textOpts{size: 22, color: th.Gold, bold: true})
@@ -322,6 +318,6 @@ func (a *App) overlay(gtx layout.Context) {
 	// botão de fechar
 	func() {
 		defer offset(gtx.Ops, dims.Size.X-gtx.Dp(34), gtx.Dp(8)).Pop()
-		coloredButton(gtx, th, &a.closeBtn, "×", gtx.Dp(26), withAlpha(rgb(0x000000), 90), rgb(0xffffff))
+		closeButton(gtx, &a.closeBtn, 26)
 	}()
 }

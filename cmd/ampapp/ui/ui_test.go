@@ -3,6 +3,7 @@ package ui
 import (
 	"image"
 	"math"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -223,6 +224,7 @@ func TestBoardCliqueAbreELEDLiga(t *testing.T) {
 
 func novoApp(t *testing.T) (*App, *source.FilePlayer) {
 	t.Helper()
+	precisa(t, diPath, irPath)
 	const fs = 48000
 	chain := engine.NewDefaultChain()
 	if err := chain.Cab().LoadIRFile(irPath); err != nil {
@@ -305,7 +307,7 @@ func TestAppSobreposicaoDoPedal(t *testing.T) {
 
 func TestAppCarregaArquivoEscolhido(t *testing.T) {
 	a, p := novoApp(t)
-	outro := filepath.Join("..", "..", "..", "testdata", "referencia", "delay.wav")
+	outro := irPath // qualquer WAV serve
 	a.Pick = func(string) (string, error) { return outro, nil }
 	invalidou := make(chan struct{}, 1)
 	a.Invalidate = func() { invalidou <- struct{}{} }
@@ -317,10 +319,10 @@ func TestAppCarregaArquivoEscolhido(t *testing.T) {
 	}
 	h := newHarness(1280, 800)
 	h.frame(a.Layout)
-	if p.Clip().Name != "delay.wav" {
+	if p.Clip().Name != "gabinete_2x12_sm57.wav" {
 		t.Errorf("arquivo carregado: %q", p.Clip().Name)
 	}
-	if a.status != "carregado: delay.wav" || a.statusErr {
+	if a.status != "carregado: gabinete_2x12_sm57.wav" || a.statusErr {
 		t.Errorf("status %q (erro=%v)", a.status, a.statusErr)
 	}
 }
@@ -341,5 +343,16 @@ func TestAppDesenhaEmVariosTamanhos(t *testing.T) {
 		a.Open(id)
 		h := newHarness(1280, 800)
 		h.frame(a.Layout)
+	}
+}
+
+// precisa pula o teste se algum arquivo de testdata/ não existir
+// (os WAVs não vão para o repositório; veja o README).
+func precisa(t *testing.T, paths ...string) {
+	t.Helper()
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
+		}
 	}
 }

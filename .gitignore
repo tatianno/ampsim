@@ -11,3 +11,8 @@ referencia_python/saida/
 
 # Saídas geradas
 saida/
+
+# Áudios de teste ficam fora do repositório (podem ter licença de terceiros).
+# Veja o README, seção "testdata".
+testdata/*.wav
+testdata/referencia/
