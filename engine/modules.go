@@ -6,8 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"ampsim/dsp"
-	"ampsim/wav"
+	"github.com/tatianno/ampsim/dsp"
+	"github.com/tatianno/ampsim/wav"
 )
 
 // Module é um bloco da cadeia (o amp ou um pedal). Mono, processamento in-place.

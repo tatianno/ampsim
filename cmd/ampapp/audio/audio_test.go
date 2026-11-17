@@ -6,8 +6,8 @@ import (
 	"sync"
 	"testing"
 
-	"ampsim/cmd/ampapp/source"
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/cmd/ampapp/source"
+	"github.com/tatianno/ampsim/engine"
 )
 
 var (

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"sync/atomic"
 
-	"ampsim/dsp"
-	"ampsim/wav"
+	"github.com/tatianno/ampsim/dsp"
+	"github.com/tatianno/ampsim/wav"
 )
 
 // Source preenche um bloco mono com as próximas amostras.

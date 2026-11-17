@@ -1,4 +1,4 @@
-module ampsim
+module github.com/tatianno/ampsim
 
 go 1.26.2
 

@@ -15,7 +15,7 @@ import (
 	"gioui.org/text"
 	"gioui.org/widget"
 
-	"ampsim/cmd/ampapp/source"
+	"github.com/tatianno/ampsim/cmd/ampapp/source"
 )
 
 // Transport controla o arquivo: abrir, play/pause, stop, loop e a barra de posição.

@@ -10,7 +10,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/engine"
 )
 
 // Pedal desenha um pedal a partir da tabela de parâmetros do módulo:

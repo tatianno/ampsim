@@ -7,7 +7,7 @@ import (
 
 	"github.com/gen2brain/malgo"
 
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/engine"
 )
 
 // DeviceInfo descreve um dispositivo de saída.

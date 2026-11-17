@@ -17,9 +17,9 @@ import (
 	"gioui.org/text"
 	"gioui.org/widget"
 
-	"ampsim/cmd/ampapp/audio"
-	"ampsim/cmd/ampapp/source"
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/cmd/ampapp/audio"
+	"github.com/tatianno/ampsim/cmd/ampapp/source"
+	"github.com/tatianno/ampsim/engine"
 )
 
 // Info descreve a saída de áudio (só para exibição).

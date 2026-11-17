@@ -24,7 +24,7 @@ Portar para Go os estudos de modulação e simulação de amplificador feitos em
 | Plugin: binário | Um único `.so` com todos os efeitos | Só um runtime Go por processo |
 | Tone stack | Começa com biquads (RBJ); depois modelo Fender/Marshall | Funciona rápido; o modelo analógico é um ótimo estudo |
 | FFT (IR) | FFT radix-2 própria em `dsp/fft.go` (antes: gonum) | Mantém `dsp/` sem dependências; é pequena e testada contra a DFT |
-| Módulo Go | `ampsim` | Definido no início da Fase 1 |
+| Módulo Go | `github.com/tatianno/ampsim` | `ampsim` na Fase 1; renomeado ao publicar no GitHub (permite `go install`) |
 | Convolução | Particionada com **latência zero** (partição 0 no tempo, demais por FFT) | Não soma latência ao vivo e independe do bloco do host |
 | Oversampling | FIR polifásico 4x, 129 coeficientes, Kaiser β=7 | Latência inteira de 32 amostras (0,7 ms a 44,1 kHz) |
 
@@ -57,7 +57,7 @@ O amp é dividido em três módulos, e a cadeia é uma lista ordenável (inclusi
 ```
 .
 ├── PLANO.md
-├── go.mod            # módulo ampsim
+├── go.mod            # módulo github.com/tatianno/ampsim
 ├── wav/              # leitura/gravação de WAV (PCM 8/16/24/32, float 32/64)
 ├── dsp/              # Go puro, sem dependências: filtros, saturação, oversampling, convolução, efeitos
 ├── engine/           # cadeia, tabela de parâmetros, suavização, presets/estado

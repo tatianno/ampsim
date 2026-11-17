@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"ampsim/dsp"
+	"github.com/tatianno/ampsim/dsp"
 )
 
 // BypassFadeMs é a duração do crossfade ao ligar/desligar um módulo (evita estalo).

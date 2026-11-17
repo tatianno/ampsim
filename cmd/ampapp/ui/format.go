@@ -5,7 +5,7 @@ import (
 	"math"
 	"strings"
 
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/engine"
 )
 
 // FormatValue formata o valor de um parâmetro para exibição ("+3.0 dB", "1.20 Hz", "380 ms", "45%").

@@ -21,8 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"ampsim/engine"
-	"ampsim/wav"
+	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/wav"
 )
 
 func main() {

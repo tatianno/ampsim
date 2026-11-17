@@ -10,7 +10,7 @@ import (
 	"gioui.org/f32"
 	"gioui.org/layout"
 
-	"ampsim/cmd/ampapp/audio"
+	"github.com/tatianno/ampsim/cmd/ampapp/audio"
 )
 
 // Faixa dos medidores, em dBFS.

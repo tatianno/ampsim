@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"ampsim/wav"
+	"github.com/tatianno/ampsim/wav"
 )
 
 // Compara os blocos Go com as saídas do protótipo Python.

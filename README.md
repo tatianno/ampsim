@@ -33,6 +33,16 @@ para Go em streaming, validados contra as saídas do Python.
   Sem essas bibliotecas, compile só o console com `-tags nogui`.
 - Opcional: `zenity` (diálogo de abrir arquivo na GUI)
 
+## Instalação
+
+```sh
+go install github.com/tatianno/ampsim/cmd/ampcli@latest   # CLI (offline)
+go install github.com/tatianno/ampsim/cmd/ampapp@latest   # app em tempo real (precisa das bibliotecas acima)
+go install -tags nogui github.com/tatianno/ampsim/cmd/ampapp@latest   # app só console
+```
+
+Ou clone o repositório e use `go run`, como abaixo.
+
 ## Uso
 
 ```sh

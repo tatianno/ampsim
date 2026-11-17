@@ -16,7 +16,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/engine"
 )
 
 // Interação do knob.

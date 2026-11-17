@@ -8,7 +8,7 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/engine"
 )
 
 // Head é o cabeçote: knobs do pré-amp e do power amp num painel só, com chaves de liga/desliga.

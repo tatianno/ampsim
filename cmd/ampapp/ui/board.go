@@ -16,7 +16,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/text"
 
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/engine"
 )
 
 // Board mostra a cadeia na ordem real, com o loop de efeitos destacado.

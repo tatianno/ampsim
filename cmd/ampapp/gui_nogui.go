@@ -5,9 +5,9 @@ package main
 import (
 	"errors"
 
-	"ampsim/cmd/ampapp/audio"
-	"ampsim/cmd/ampapp/source"
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/cmd/ampapp/audio"
+	"github.com/tatianno/ampsim/cmd/ampapp/source"
+	"github.com/tatianno/ampsim/engine"
 )
 
 func runGUI(*engine.Chain, *audio.Output, *source.FilePlayer, *audio.Monitor, func()) error {

@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"ampsim/cmd/ampapp/source"
-	"ampsim/dsp"
-	"ampsim/engine"
+	"github.com/tatianno/ampsim/cmd/ampapp/source"
+	"github.com/tatianno/ampsim/dsp"
+	"github.com/tatianno/ampsim/engine"
 )
 
 // MaxBlock é o maior bloco processado de uma vez (callbacks maiores são divididos).

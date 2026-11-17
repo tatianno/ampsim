@@ -8,7 +8,7 @@ import (
 	"slices"
 	"testing"
 
-	"ampsim/wav"
+	"github.com/tatianno/ampsim/wav"
 )
 
 var (
