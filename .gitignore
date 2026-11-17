@@ -1,0 +1,13 @@
+# Python
+venv/
+__pycache__/
+referencia_python/saida/
+
+# Go
+/ampcli
+/ampapp
+*.test
+*.out
+
+# Saídas geradas
+saida/
