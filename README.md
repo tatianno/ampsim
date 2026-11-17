@@ -88,3 +88,7 @@ referencia_python/  protótipos originais e gerador de referências
 ```
 
 O plano de desenvolvimento, decisões e resultados medidos estão em [PLANO.md](PLANO.md).
+
+## Licença
+
+[MIT](LICENSE). Os arquivos de áudio usados nos testes não fazem parte do repositório nem desta licença.
