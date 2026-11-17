@@ -66,7 +66,8 @@ O amp é dividido em três módulos, e a cadeia é uma lista ordenável (inclusi
 │   └── ampapp/       # standalone: malgo + Gio
 │       ├── audio/    # saída malgo, Renderer (fonte → engine → placa), Ring dos medidores
 │       ├── source/   # LiveInput, FilePlayer
-│       └── ui/       # knob, pedal, cabeçote, pedalboard, medidores
+│       ├── ui/       # Gio: knob, pedal, cabeçote, gabinete, cadeia, transporte, medidores
+│       └── gui.go    # a janela (gioui.org/app); gui_nogui.go = build só console
 ├── plugin/lv2/       # (fase 2) camada C + cgo sobre engine/
 ├── testdata/         # WAVs de entrada (DI de guitarra, IR do gabinete)
 ├── referencia_python/  # protótipos Python arquivados (referência para testes)
@@ -254,17 +255,46 @@ pela distorção do pré-amp). É por isso que, em amp com distorção, delay e 
 **Ideias para depois:** mais de uma instância do mesmo pedal (ex.: dois delays); um "master" do power amp que controle
 o quanto ele satura.
 
-### Fase 3: GUI (~2 a 3 semanas)
+### Fase 3: GUI (em andamento: código e testes prontos; falta abrir a janela real)
 **Meta:** tela principal completa com knobs e pedais, mexendo no som com o loop tocando.
 
-- [ ] Componente **Knob** em Gio (desenho, arrastar, rodinha, duplo clique, valor)
-- [ ] Tela principal: seção de entrada, cabeçote do amp e seletor de IR
-- [ ] Pedalboard com botões e LEDs, na ordem real da cadeia, com o loop de efeitos destacado
-- [ ] Arrastar pedais para reordenar (inclusive para dentro e para fora do loop)
-- [ ] Componente **Pedal** genérico (corpo, layout dos knobs a partir da tabela, LED, footswitch, chave de estágios)
-- [ ] Overlay de abrir e fechar pedal; estilo de cada pedal (cor e nome); cabeçote do amp no mesmo padrão
-- [ ] Medidores de entrada e saída e indicador de latência
-- [ ] Bypass A/B com crossfade curto
+- [x] Componente **Knob** (`ui/knob.go`): arrastar na vertical (180 dp = faixa inteira; Shift = 5x mais fino),
+  rodinha (1% por clique), duplo clique volta ao padrão, valor formatado (`ui.FormatValue`) aparece forte ao passar o mouse
+- [x] **Selector** para parâmetros discretos (estágios do phaser 4/6/8)
+- [x] Tela principal (`ui/app.go`): barra de topo (dispositivo, taxa, buffer, latência, CPU), transporte, cabeçote,
+  gabinete, cadeia e rodapé
+- [x] Transporte (`ui/transport.go`): Abrir WAV… (zenity), Play/Pause (também na barra de espaço), Stop, Loop,
+  barra de posição (clicar/arrastar = seek; Shift + arrastar = trecho do loop; duplo clique = arquivo inteiro)
+- [x] Cabeçote (`ui/head.go`): knobs do pré-amp e do power amp num painel só, com liga/desliga de cada parte
+- [x] Gabinete: botão da IR (zenity), Low cut, High cut, liga/desliga
+- [x] Cadeia (`ui/board.go`) na ordem real, com o loop de efeitos destacado entre PRÉ e POWER
+- [x] Arrastar pedais para reordenar (inclusive para dentro e para fora do loop); blocos do amp ficam fixos;
+  marcador de onde o pedal vai cair e "fantasma" acompanhando o mouse; clique no LED liga/desliga
+- [x] Componente **Pedal** genérico (`ui/pedal.go`): knobs gerados pela tabela (3 por linha), chaves, nome, LED, footswitch
+- [x] Sobreposição: clicar no pedal da cadeia abre; fecha com Esc, clique fora ou "×"; cor por pedal (`ui/theme.go`)
+- [x] Medidores (`ui/meters.go`): entrada e saída com queda suave, LED de clip (1 s), LED do gate, CPU
+- [x] Bypass A/B global com crossfade de 10 ms, seco alinhado pela latência da cadeia (`audio.Renderer.SetBypass`);
+  comando `ab` no console
+- [x] `audio.Monitor` compartilhado entre console e GUI
+- [x] Testes sem janela (`ui/ui_test.go`, com `input.Router` simulando mouse e teclado): knob (arrasto, Shift, duplo
+  clique, rodinha), cadeia (arrastar para fora e para dentro do loop, bloco do amp não arrasta, clique abre, LED liga),
+  seek e trecho de loop na barra, sobreposição (clique dentro não fecha, fora fecha, Esc fecha), carregar arquivo
+  escolhido, desenhar a tela em 4 tamanhos e todos os pedais abertos
+- [x] `-tags nogui` compila só o console (para máquinas sem as bibliotecas gráficas)
+- [ ] **Abrir a janela real e ajustar o visual** (precisa das bibliotecas de desenvolvimento do sistema, abaixo)
+
+**Para compilar a janela no Ubuntu** (uma vez):
+```
+sudo apt install libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libgles2-mesa-dev \
+                 libegl1-mesa-dev libffi-dev libxcursor-dev libvulkan-dev
+```
+Depois: `go run ./cmd/ampapp` (janela) · `go run ./cmd/ampapp -console` (console).
+
+**Notas**
+- Bug achado pelos testes: a cadeia só registrava os filtros de evento dos blocos a partir do segundo quadro, e o
+  primeiro clique era perdido. Corrigido (a ordem é conhecida desde a criação).
+- A janela começa com o player pausado (Play ou barra de espaço); o console continua começando tocando.
+- Presets na GUI (salvar/carregar/de fábrica) ficaram para a Fase 5, como planejado.
 
 ### Fase 4: Entrada ao vivo pela guitarra (~1 semana)
 **Meta:** tocar ao vivo com latência total abaixo de ~10 ms.

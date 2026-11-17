@@ -1,11 +1,11 @@
-// ampapp é o app standalone do ampsim.
+// ampapp é o app standalone do ampsim: GUI (Gio) ou console, tocando um WAV pelo amp
+// em tempo real.
 //
-// Fase 2: console interativo tocando um WAV em loop pelo amp, em tempo real.
-// A GUI (Gio) entra na Fase 3 usando os mesmos pacotes audio/ e source/.
-//
-//	go run ./cmd/ampapp                       # toca testdata/guitarra_di.wav em loop
+//	go run ./cmd/ampapp                       # abre a janela com testdata/guitarra_di.wav
+//	go run ./cmd/ampapp -console              # console interativo
 //	go run ./cmd/ampapp -arquivo minha_di.wav -buffer 128
 //	go run ./cmd/ampapp -listar-dispositivos
+//	go build -tags nogui ./cmd/ampapp         # só console (sem as bibliotecas gráficas do sistema)
 package main
 
 import (
@@ -17,7 +17,6 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"ampsim/cmd/ampapp/audio"
@@ -41,7 +40,8 @@ func run() error {
 		taxa     = flag.Uint("taxa", 48000, "taxa de amostragem")
 		buffer   = flag.Uint("buffer", 256, "tamanho do buffer em quadros")
 		listar   = flag.Bool("listar-dispositivos", false, "lista as saídas de áudio e sai")
-		tocar    = flag.Bool("tocar", true, "começa tocando")
+		tocar    = flag.Bool("tocar", false, "começa tocando (padrão: sim no console, não na janela)")
+		console  = flag.Bool("console", false, "usa o console em vez da janela")
 		semLoop  = flag.Bool("sem-loop", false, "toca uma vez só")
 		comandos = flag.String("comandos", "", "comandos iniciais separados por ';' (ex.: \"set pre.gain=8; on delay\")")
 	)
@@ -91,14 +91,21 @@ func run() error {
 	}
 	out.Renderer().SetSource(player)
 
-	mon := newMonitor(out.Renderer())
-	go mon.run()
+	mon := audio.NewMonitor(out.Renderer())
+	defer mon.Close()
 
 	if err := out.Start(); err != nil {
 		return err
 	}
-	if *tocar {
+	tocarSet := false
+	flag.Visit(func(f *flag.Flag) { tocarSet = tocarSet || f.Name == "tocar" })
+	if *tocar || (*console && !tocarSet) {
 		player.Play()
+	}
+
+	if !*console {
+		// A janela assume o processo (app.Main não retorna); ao fechar, libera o áudio e sai.
+		return runGUI(chain, out, player, mon, func() { mon.Close(); out.Close() })
 	}
 
 	a := &app{chain: chain, out: out, player: player, mon: mon}
@@ -145,48 +152,6 @@ func run() error {
 
 // ---------------------------------------------------------------- medidores
 
-// monitor consome a fila de medidores e acumula picos entre leituras.
-type monitor struct {
-	r *audio.Renderer
-
-	mu       sync.Mutex
-	inPeak   float32
-	outPeak  float32
-	clips    uint64
-	maxLoad  float32
-	gateOpen bool
-}
-
-func newMonitor(r *audio.Renderer) *monitor { return &monitor{r: r} }
-
-func (m *monitor) run() {
-	t := time.NewTicker(20 * time.Millisecond)
-	for range t.C {
-		m.mu.Lock()
-		for {
-			v, ok := m.r.Meters().Pop()
-			if !ok {
-				break
-			}
-			m.inPeak = max(m.inPeak, v.InPeak)
-			m.outPeak = max(m.outPeak, v.OutPeak)
-			m.clips += uint64(v.OutClips)
-			m.maxLoad = max(m.maxLoad, v.Load)
-			m.gateOpen = v.GateOpen
-		}
-		m.mu.Unlock()
-	}
-}
-
-// take devolve os valores acumulados e zera os picos.
-func (m *monitor) take() (in, out float32, clips uint64, load float32, gate bool) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	in, out, clips, load, gate = m.inPeak, m.outPeak, m.clips, m.maxLoad, m.gateOpen
-	m.inPeak, m.outPeak, m.maxLoad = 0, 0, 0
-	return
-}
-
 func db(v float32) float64 { return 20 * math.Log10(float64(v)+1e-9) }
 
 // barra de -60 a 0 dBFS
@@ -203,7 +168,7 @@ type app struct {
 	chain  *engine.Chain
 	out    *audio.Output
 	player *source.FilePlayer
-	mon    *monitor
+	mon    *audio.Monitor
 }
 
 const ajuda = `comandos:
@@ -221,6 +186,7 @@ const ajuda = `comandos:
   listar                         módulos, parâmetros e valores
   status                         estado e medidores
   medir [segundos]               medidores ao vivo (padrão 5 s)
+  ab [on|off]                    bypass A/B: compara com o sinal seco
   salvar <arq.json> | carregar <arq.json>   presets
   sair`
 
@@ -295,6 +261,21 @@ func (a *app) exec(line string) bool {
 		if err == nil {
 			fmt.Println("cadeia:", a.chain)
 		}
+	case "ab":
+		r := a.out.Renderer()
+		switch rest {
+		case "on":
+			r.SetBypass(true)
+		case "off":
+			r.SetBypass(false)
+		default:
+			r.SetBypass(!r.Bypass())
+		}
+		if r.Bypass() {
+			fmt.Println("A/B: seco (bypass)")
+		} else {
+			fmt.Println("A/B: processado")
+		}
 	case "listar":
 		a.listar()
 	case "status", "s":
@@ -342,27 +323,27 @@ func (a *app) status() {
 		fmt.Printf("arquivo: %s  %.2f/%.2f s  %s, %s\n", c.Name, a.player.Position(), c.Duration(), estado, loop)
 	}
 	fmt.Printf("cadeia: %s\n", a.chain)
-	in, out, clips, load, gate := a.mon.take()
+	l := a.mon.Take()
 	g := "fechado"
-	if gate {
+	if l.GateOpen {
 		g = "aberto"
 	}
 	fmt.Printf("entrada %6.1f dBFS  saída %6.1f dBFS  clips %d  gate %s  CPU máx %.1f%%  callbacks %d\n",
-		db(in), db(out), clips, g, 100*load, a.out.Renderer().Callbacks())
+		db(l.InPeak), db(l.OutPeak), l.Clips, g, 100*l.MaxLoad, a.out.Renderer().Callbacks())
 }
 
 func (a *app) medir(secs float64) {
-	a.mon.take()
+	a.mon.Take()
 	end := time.Now().Add(time.Duration(secs * float64(time.Second)))
 	for time.Now().Before(end) {
 		time.Sleep(200 * time.Millisecond)
-		in, out, clips, load, gate := a.mon.take()
+		l := a.mon.Take()
 		g := "·"
-		if gate {
+		if l.GateOpen {
 			g = "G"
 		}
 		fmt.Printf("%5.2f s  in %s %6.1f  out %s %6.1f  %s  cpu %4.1f%%  clips %d\n",
-			a.player.Position(), bar(in), db(in), bar(out), db(out), g, 100*load, clips)
+			a.player.Position(), bar(l.InPeak), db(l.InPeak), bar(l.OutPeak), db(l.OutPeak), g, 100*l.MaxLoad, l.Clips)
 	}
 }
 

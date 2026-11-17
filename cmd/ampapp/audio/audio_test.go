@@ -137,3 +137,31 @@ func TestRingCheioDescarta(t *testing.T) {
 		t.Error("fila cheia deveria recusar")
 	}
 }
+
+// Bypass A/B: depois do crossfade, a saída é a entrada atrasada pela latência da cadeia.
+func TestBypassAB(t *testing.T) {
+	r, p, chain := novoRender(t)
+	p.Pause()
+	clip := p.Clip()
+	r.SetSource(constSource(0.25))
+	r.SetBypass(true)
+	out := make([]float32, 2*2048)
+	r.Render(out, 2, 2048)
+	lat := chain.Latency()
+	fade := int(ABFadeMs / 1000 * 48000)
+	// passado o crossfade e a latência, sai exatamente o seco
+	for i := fade + lat; i < 2048; i++ {
+		if out[2*i] != 0.25 {
+			t.Fatalf("quadro %d: %v, esperava o sinal seco 0,25", i, out[2*i])
+		}
+	}
+	_ = clip
+}
+
+type constSource float64
+
+func (c constSource) Read(buf []float64) {
+	for i := range buf {
+		buf[i] = float64(c)
+	}
+}

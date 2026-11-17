@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"ampsim/cmd/ampapp/source"
+	"ampsim/dsp"
 	"ampsim/engine"
 )
 
@@ -22,6 +23,7 @@ type Meter struct {
 	InPeak, OutPeak float32 // pico absoluto (linear)
 	OutClips        uint32  // amostras que passaram de ±1 (cortadas)
 	GateOpen        bool
+	Bypassed        bool    // bypass A/B global ligado
 	Load            float32 // tempo de processamento / duração do bloco
 	Frames          uint32
 }
@@ -37,14 +39,36 @@ type Renderer struct {
 	meters   *Ring[Meter]
 	dropped  atomic.Uint64
 	callback atomic.Uint64
+
+	// bypass A/B global: crossfade entre o processado e o seco (atrasado pela latência da cadeia)
+	bypass  atomic.Bool
+	abGain  float64 // 1 = processado, 0 = seco
+	abStep  float64
+	dry     []float64
+	dryLine *dsp.DelayLine
+	lat     int
 }
+
+// ABFadeMs é a duração do crossfade do bypass A/B.
+const ABFadeMs = 10.0
 
 // NewRenderer cria o render para a cadeia (já preparada em fs com blocos de MaxBlock).
 func NewRenderer(chain *engine.Chain, fs float64) *Renderer {
 	r := &Renderer{chain: chain, fs: fs, mono: make([]float64, MaxBlock), meters: NewRing[Meter](256)}
 	r.SetSource(source.Silence{})
+	r.abGain = 1
+	r.abStep = 1 / (ABFadeMs / 1000 * fs)
+	r.dry = make([]float64, MaxBlock)
+	r.lat = chain.Latency()
+	r.dryLine = dsp.NewDelayLine(max(1, r.lat))
 	return r
 }
+
+// SetBypass liga/desliga o bypass A/B (ouve o sinal sem processamento, alinhado no tempo).
+func (r *Renderer) SetBypass(on bool) { r.bypass.Store(on) }
+
+// Bypass informa se o bypass A/B está ligado.
+func (r *Renderer) Bypass() bool { return r.bypass.Load() }
 
 // SetSource troca a fonte (seguro com o áudio rodando).
 func (r *Renderer) SetSource(s source.Source) { r.src.Store(&sourceRef{s}) }
@@ -69,7 +93,10 @@ func (r *Renderer) Render(out []float32, channels, frames int) {
 		for _, v := range buf {
 			m.InPeak = max(m.InPeak, float32(math.Abs(v)))
 		}
-		r.chain.ProcessMono(buf)
+		dry := r.dry[:n]
+		copy(dry, buf)
+		r.chain.ProcessMono(buf) // a cadeia sempre roda: caudas continuam e a volta do bypass é suave
+		r.mixAB(buf, dry)
 		base := off * channels
 		for i, v := range buf {
 			a := math.Abs(v)
@@ -90,10 +117,35 @@ func (r *Renderer) Render(out []float32, channels, frames int) {
 	} else {
 		m.GateOpen = true
 	}
+	m.Bypassed = r.bypass.Load()
 	budget := float64(frames) / r.fs
 	m.Load = float32(time.Since(start).Seconds() / budget)
 	if !r.meters.Push(m) {
 		r.dropped.Add(1)
 	}
 	r.callback.Add(1)
+}
+
+// mixAB aplica o crossfade do bypass A/B. O seco é atrasado pela latência da cadeia
+// para ficar alinhado com o processado (a troca não "pula" no tempo).
+func (r *Renderer) mixAB(wet, dry []float64) {
+	target := 1.0
+	if r.bypass.Load() {
+		target = 0
+	}
+	for i, x := range dry {
+		d := x
+		if r.lat > 0 {
+			d = r.dryLine.ReadInt(r.lat)
+			r.dryLine.Write(x)
+		}
+		if r.abGain < target {
+			r.abGain = math.Min(target, r.abGain+r.abStep)
+		} else if r.abGain > target {
+			r.abGain = math.Max(target, r.abGain-r.abStep)
+		}
+		if r.abGain != 1 {
+			wet[i] = r.abGain*wet[i] + (1-r.abGain)*d
+		}
+	}
 }
