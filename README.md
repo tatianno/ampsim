@@ -23,7 +23,7 @@ para Go em streaming, validados contra as saídas do Python.
   tamanho lite ou completo; também abre arquivos `.nam` (WaveNet, inclusive o formato 0.7 da TONE3000).
   O app abre no modo NAM.
 - **EQ paramétrico de 5 bandas** (shelf de graves, 3 médios com Q ajustável, shelf de agudos e level), com a curva
-  de resposta desenhada no pedal; anda pela cadeia como os outros pedais (padrão: no loop de efeitos).
+  de resposta desenhada no pedal (arraste os pontos; roda do mouse = Q; duplo clique zera); anda pela cadeia como os outros pedais (padrão: no loop de efeitos).
 - **Monte a sua cadeia**: o botão **+** adiciona pedais (agrupados em dinâmica, drive, filtro, modulação, tom e
   ambiência) e cada pedal tem **Remover**; a cadeia mostra só o que você usa.
 - **Drive** com 4 modos (Boost, Overdrive, Distorção, Fuzz, ceifamento com oversampling 4x), **Wah** automático

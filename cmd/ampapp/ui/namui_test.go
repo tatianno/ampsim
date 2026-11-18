@@ -239,3 +239,55 @@ func TestPedalSynth(t *testing.T) {
 		t.Error("o synth tem tap tempo")
 	}
 }
+
+func TestEQArrastarPontos(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	a.Open("eq")
+	h.frame(a.Layout)
+	v := a.pedals["eq"].eq
+	if v.plotSize.X == 0 {
+		t.Fatal("a curva deveria ter sido desenhada")
+	}
+	eq := a.Chain.Module("eq")
+	w, hh := float32(v.plotSize.X), float32(v.plotSize.Y)
+
+	// clicar no ponto do Médio 2 (800 Hz, 0 dB) e arrastar para 1,6 kHz, +6 dB
+	p := v.handle(2)
+	if v.handleAt(p) != 2 {
+		t.Fatalf("o ponto do Médio 2 não foi encontrado em %v", p)
+	}
+	t0 := time.Unix(100, 0)
+	v.press(p, t0)
+	v.dragTo(v.drag, f32.Pt(eqX(1600, w), eqY(6, hh)))
+	if f, g := eq.Param("f3").Get(), eq.Param("g3").Get(); math.Abs(f-1600) > 20 || math.Abs(g-6) > 0.15 {
+		t.Errorf("Médio 2 em %.0f Hz / %+.1f dB, esperava 1600 Hz / +6", f, g)
+	}
+	h.frame(a.Layout) // o knob lê o mesmo parâmetro: já mostra o valor novo
+	if k := v.freq[2]; k.P.Get() != eq.Param("f3").Get() {
+		t.Error("o knob deveria acompanhar")
+	}
+	// a faixa da banda limita: o Graves não passa de 500 Hz
+	v.dragTo(0, f32.Pt(eqX(5000, w), eqY(0, hh)))
+	if f := eq.Param("f1").Get(); f != 500 {
+		t.Errorf("Graves arrastado para 5 kHz: %.0f Hz, esperava o limite (500)", f)
+	}
+	// roda: Q do Médio 2 sobe (para cima = mais estreito); nos shelves não faz nada
+	q0 := eq.Param("q3").Get()
+	v.scrollQ(2, -100)
+	if eq.Param("q3").Get() <= q0 {
+		t.Error("rolar para cima deveria estreitar (subir o Q)")
+	}
+	v.scrollQ(0, -100) // Graves: shelf, sem Q
+	// duplo clique zera o ganho
+	p = v.handle(2)
+	v.press(p, t0.Add(time.Second))
+	v.press(p, t0.Add(time.Second+200*time.Millisecond))
+	if g := eq.Param("g3").Get(); g != 0 {
+		t.Errorf("duplo clique: ganho %+.1f dB, esperava 0", g)
+	}
+	// clique longe dos pontos não pega nada
+	if v.handleAt(f32.Pt(-100, -100)) != -1 {
+		t.Error("clique fora dos pontos não deveria pegar banda")
+	}
+}
