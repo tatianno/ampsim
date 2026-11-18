@@ -69,14 +69,14 @@ func NewChain(mods ...Module) *Chain {
 	return c
 }
 
-// DefaultOrder é a ordem padrão: gate na frente do amp e os pedais no loop de efeitos.
-var DefaultOrder = []string{"gate", PreID, "chorus", "flanger", "phaser", "delay", "reverb", PowerID, CabID}
+// DefaultOrder é a ordem padrão: gate e compressor na frente do amp, os outros pedais no loop de efeitos.
+var DefaultOrder = []string{"gate", "comp", PreID, "chorus", "flanger", "phaser", "delay", "reverb", PowerID, CabID}
 
 // NewDefaultChain monta a cadeia padrão (DefaultOrder). Gate e amp começam ligados;
-// os pedais de modulação, desligados.
+// os outros pedais, desligados.
 func NewDefaultChain() *Chain {
-	c := NewChain(NewGate(), NewPre(), NewChorus(), NewFlanger(), NewPhaser(), NewDelay(), NewReverb(), NewPower(), NewCab())
-	for _, id := range []string{"chorus", "flanger", "phaser", "delay", "reverb"} {
+	c := NewChain(NewGate(), NewCompressor(), NewPre(), NewChorus(), NewFlanger(), NewPhaser(), NewDelay(), NewReverb(), NewPower(), NewCab())
+	for _, id := range []string{"comp", "chorus", "flanger", "phaser", "delay", "reverb"} {
 		c.SetEnabled(id, false)
 	}
 	return c

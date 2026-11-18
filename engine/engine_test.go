@@ -291,7 +291,7 @@ func TestOrdemValidacao(t *testing.T) {
 	if err := c.MoveBefore("chorus", PreID); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"gate", "chorus", PreID, "flanger", "phaser", "reverb", PowerID, CabID, "delay"}
+	want := []string{"gate", "comp", "chorus", PreID, "flanger", "phaser", "reverb", PowerID, CabID, "delay"}
 	if got := c.Order(); !slices.Equal(got, want) {
 		t.Errorf("ordem %v, esperava %v", got, want)
 	}
@@ -443,7 +443,7 @@ func TestDescricaoDaCadeia(t *testing.T) {
 	if err := c.MoveAfter("reverb", CabID); err != nil {
 		t.Fatal(err)
 	}
-	want := "Gate → Pré-amp → [loop: Chorus (off) → Flanger (off) → Phaser (off) → Delay] → Power amp → Gabinete → Reverb (off)"
+	want := "Gate → Compressor (off) → Pré-amp → [loop: Chorus (off) → Flanger (off) → Phaser (off) → Delay] → Power amp → Gabinete → Reverb (off)"
 	if got := c.String(); got != want {
 		t.Errorf("\n got: %s\nwant: %s", got, want)
 	}
@@ -457,5 +457,61 @@ func precisa(t *testing.T, paths ...string) {
 		if _, err := os.Stat(p); err != nil {
 			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
 		}
+	}
+}
+
+func TestMergeOrder(t *testing.T) {
+	atual := DefaultOrder // gate, comp, pre, chorus, flanger, phaser, delay, reverb, power, cab
+	casos := []struct {
+		preset, want []string
+	}{
+		// preset antigo (sem compressor), com o delay depois do gabinete
+		{[]string{"gate", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"},
+			[]string{"gate", "comp", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"}},
+		// preset completo: igual
+		{DefaultOrder, DefaultOrder},
+		// id desconhecido é ignorado; o resto completa
+		{[]string{"wah", PreID, PowerID, CabID}, []string{"gate", "comp", PreID, "chorus", "flanger", "phaser", "delay", "reverb", PowerID, CabID}},
+	}
+	for _, c := range casos {
+		if got := MergeOrder(c.preset, atual); !slices.Equal(got, c.want) {
+			t.Errorf("MergeOrder(%v)\n got %v\nwant %v", c.preset, got, c.want)
+		}
+	}
+}
+
+// Preset salvo antes do compressor existir: a ordem do preset vale e o compressor entra no lugar padrão.
+func TestPresetAntigoSemCompressor(t *testing.T) {
+	st := State{Version: 2}
+	for _, id := range []string{"gate", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"} {
+		st.Modules = append(st.Modules, ModuleState{ID: id, Enabled: id == "delay" || id == "gate" || id == PreID || id == PowerID || id == CabID})
+	}
+	c := NewDefaultChain()
+	if err := c.ApplyState(st); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"gate", "comp", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"}
+	if !slices.Equal(c.Order(), want) {
+		t.Errorf("ordem %v, esperava %v", c.Order(), want)
+	}
+	if c.Enabled("comp") {
+		t.Error("o compressor não estava no preset: deveria continuar como estava (desligado)")
+	}
+}
+
+func TestCompressorNaCadeia(t *testing.T) {
+	c := NewChain(NewCompressor())
+	c.Module("comp").Param("threshold").Set(-30)
+	c.Module("comp").Param("level").Set(0)
+	c.Prepare(48000, 256)
+	buf := make([]float64, 4800)
+	for i := range buf {
+		buf[i] = 0.5 * math.Sin(float64(i)*0.06) // −6 dBFS
+	}
+	c.ProcessMono(buf)
+	gr := c.Module("comp").(GainReducer).GainReductionDB()
+	// 24 dB acima do limiar, razão 4:1 → 18 dB de redução
+	if math.Abs(gr-18) > 1.5 {
+		t.Errorf("redução de ganho %.1f dB, esperava ≈ 18 dB", gr)
 	}
 }

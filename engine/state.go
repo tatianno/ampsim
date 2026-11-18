@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 )
 
 // StateVersion é a versão do formato de preset.
@@ -76,12 +77,14 @@ func (c *Chain) ApplyState(st State) error {
 			}
 		}
 	}
-	if applyOrder && len(st.Modules) == len(c.all) {
+	if applyOrder && len(st.Modules) > 0 {
 		ids := make([]string, len(st.Modules))
 		for i, ms := range st.Modules {
 			ids[i] = ms.ID
 		}
-		if err := c.SetOrder(ids); err != nil {
+		// Preset de antes de um módulo novo existir (ex.: compressor): mantém a ordem do
+		// preset e encaixa os módulos que faltam na posição em que estão agora.
+		if err := c.SetOrder(MergeOrder(ids, c.Order())); err != nil {
 			errs = append(errs, fmt.Errorf("ordem do preset: %w", err))
 		}
 	}
@@ -134,4 +137,34 @@ func (c *Chain) LoadState(path string) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	return c.ApplyState(st)
+}
+
+// MergeOrder completa a ordem de um preset (preset) com os módulos que faltam: cada módulo
+// ausente entra logo depois do módulo que o precede em current (ou no início, se nenhum
+// predecessor estiver no preset). IDs do preset que não existem em current são ignorados.
+func MergeOrder(preset, current []string) []string {
+	known := make(map[string]bool, len(current))
+	for _, id := range current {
+		known[id] = true
+	}
+	var out []string
+	for _, id := range preset {
+		if known[id] && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	for i, id := range current {
+		if slices.Contains(out, id) {
+			continue
+		}
+		pos := 0
+		for j := i - 1; j >= 0; j-- {
+			if k := slices.Index(out, current[j]); k >= 0 {
+				pos = k + 1
+				break
+			}
+		}
+		out = slices.Insert(out, pos, id)
+	}
+	return out
 }

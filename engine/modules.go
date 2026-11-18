@@ -429,3 +429,41 @@ func (m *Reverb) Process(buf []float64) {
 	m.r.Set(m.pct("size"), m.pct("damping"), m.pct("mix"))
 	m.r.ProcessBlock(buf)
 }
+
+// ---------------------------------------------------------------- Compressor
+
+// GainReducer é implementado por módulos que reduzem ganho (para o medidor de GR na GUI).
+type GainReducer interface {
+	GainReductionDB() float64
+}
+
+// Compressor é o pedal de compressor.
+type Compressor struct {
+	base
+	c  *dsp.Compressor
+	gr atomic.Uint64 // float64 bits: maior redução de ganho do último bloco (dB)
+}
+
+// NewCompressor cria o módulo de compressor.
+func NewCompressor() *Compressor {
+	return &Compressor{base: base{id: "comp", name: "Compressor", paramSet: newParamSet(
+		ParamInfo{ID: "threshold", Name: "Threshold", Unit: "dB", Min: -50, Max: 0, Default: -20},
+		ParamInfo{ID: "ratio", Name: "Ratio", Unit: ":1", Min: 1, Max: 20, Default: 4},
+		ParamInfo{ID: "attack", Name: "Attack", Unit: "ms", Min: 0.1, Max: 100, Default: 10},
+		ParamInfo{ID: "release", Name: "Release", Unit: "ms", Min: 10, Max: 1000, Default: 150},
+		ParamInfo{ID: "level", Name: "Level", Unit: "dB", Min: 0, Max: 24, Default: 6},
+		ParamInfo{ID: "mix", Name: "Mix", Unit: "%", Min: 0, Max: 100, Default: 100},
+	)}}
+}
+
+func (m *Compressor) Prepare(fs float64, _ int) { m.c = dsp.NewCompressor(fs) }
+func (m *Compressor) Reset()                    { m.c.Reset(); m.gr.Store(0) }
+func (m *Compressor) Latency() int              { return 0 }
+func (m *Compressor) Process(buf []float64) {
+	m.c.Set(m.get("threshold"), m.get("ratio"), m.get("attack"), m.get("release"), m.get("level"), m.pct("mix"))
+	m.c.ProcessBlock(buf)
+	m.gr.Store(math.Float64bits(m.c.GainReductionDB()))
+}
+
+// GainReductionDB devolve a redução de ganho atual (seguro de outra goroutine).
+func (m *Compressor) GainReductionDB() float64 { return math.Float64frombits(m.gr.Load()) }

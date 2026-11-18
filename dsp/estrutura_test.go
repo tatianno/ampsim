@@ -83,11 +83,13 @@ func TestSemAlocacao(t *testing.T) {
 	de.Set(350, 0.4, 0.3, 0.3)
 	rv := NewReverb(fs)
 	rv.Set(0.8, 0.4, 0.3)
+	cp := NewCompressor(fs)
+	cp.Set(-30, 4, 10, 150, 6, 1)
 	blocos := map[string]func([]float64){
 		"convolver": conv.ProcessBlock, "preamp": pre.ProcessBlock, "gate": g.ProcessBlock,
 		"tonestack": ts.ProcessBlock, "presence": pr.ProcessBlock, "chorus": ch.ProcessBlock,
 		"flanger": fl.ProcessBlock, "phaser": ph.ProcessBlock, "delay": de.ProcessBlock,
-		"reverb": rv.ProcessBlock,
+		"reverb": rv.ProcessBlock, "compressor": cp.ProcessBlock,
 	}
 	for nome, f := range blocos {
 		if a := testing.AllocsPerRun(20, func() { f(buf) }); a != 0 {

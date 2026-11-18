@@ -261,6 +261,7 @@ func (a *App) topBar(gtx layout.Context) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, "simulador de amp e pedais", textOpts{size: 12, color: th.Dim})
 		}),
+		layout.Rigid(spacer(16, 0)),
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, info, textOpts{size: 12, color: th.Dim, align: text.End, width: gtx.Constraints.Max.X})
 		}),

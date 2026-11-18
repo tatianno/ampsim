@@ -115,6 +115,7 @@ type Processor interface {
 | Pedal | Knobs | Origem / observação |
 |---|---|---|
 | Gate | Threshold · Release | `aplicar_noise_gate_rigido`; separar attack e release |
+| Compressor | Threshold · Ratio · Attack · Release · Level · Mix + medidor de GR | novo (18/11, pedido após o MVP); `dsp.Compressor`, joelho suave de 6 dB, detector em dB, mix para compressão paralela |
 | Chorus | Rate · Depth · Delay · Mix | `aplicar_chorus` |
 | Flanger | Rate · Manual · Depth · Feedback · Mix | `min_delay`/`max_delay` viram Manual e Depth |
 | Phaser | Rate · Range · Feedback · Mix + chave 4/6/8 estágios | `min_freq`/`max_freq` viram Range |
@@ -404,6 +405,10 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
 | D7 | **CPU com buffer 64** | Até ~45% do ciclo nos piores momentos, só com gate e amp, pelo backend miniaudio; 13% de mediana no JACK. Com muitos pedais pode estourar: otimização na Fase 5 (FFT real, `tanh` mais barata). | estabilidade |
 
 ### Fase 5: Recursos extras do standalone (~1 a 2 semanas)
+- [x] **Pedal de compressor** (pedido em 18/11): Threshold, Ratio, Attack, Release, Level, Mix e medidor de redução de
+  ganho no pedal; posição padrão entre o gate e o pré-amp (desligado); presets antigos ganham o compressor na posição
+  padrão sem perder a ordem salva (`engine.MergeOrder`); testes de curva estática, nível, attack, mix seco, zero
+  alocação, na cadeia e de migração de preset
 - [ ] Presets: salvar, carregar e alguns de fábrica (Clean, Crunch, Lead)
 - [ ] Gravar a saída em WAV (ao vivo ou arquivo)
 - [ ] Exportar arquivo processado (offline, mesmo engine do `ampcli`)

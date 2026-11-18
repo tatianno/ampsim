@@ -264,6 +264,8 @@ func (b *Board) drawChip(gtx layout.Context, th *Theme, id string, alpha float32
 
 	name := m.Name()
 	switch id {
+	case "comp":
+		name = "COMP" // "Compressor" não cabe no bloco
 	case engine.PreID:
 		name = "PRÉ"
 	case engine.PowerID:

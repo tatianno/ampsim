@@ -89,7 +89,7 @@ func TestFormatValue(t *testing.T) {
 		{"dB", 0, -12, "−12.0 dB"}, {"dB", 0, 3, "+3.0 dB"}, {"dB", 0, 0.01, "0.0 dB"},
 		{"Hz", 0, 1.2, "1.20 Hz"}, {"Hz", 0, 85, "85.0 Hz"}, {"Hz", 0, 6200, "6.2 kHz"},
 		{"ms", 0, 2.25, "2.25 ms"}, {"ms", 0, 380, "380 ms"}, {"%", 0, 45, "45%"},
-		{"", 0, 6.5, "6.5"}, {"", 2, 6, "6"}, {"oct", 0, 3.17, "3.2 oct"},
+		{"", 0, 6.5, "6.5"}, {"", 2, 6, "6"}, {"oct", 0, 3.17, "3.2 oct"}, {":1", 0, 4, "4.0:1"},
 	}
 	for _, c := range casos {
 		if got := FormatValue(engine.ParamInfo{Unit: c.unit, Step: c.step}, c.v); got != c.want {
@@ -334,7 +334,7 @@ func TestAppDesenhaEmVariosTamanhos(t *testing.T) {
 			h.frame(a.Layout)
 		}
 	}
-	for _, id := range []string{"gate", "chorus", "flanger", "phaser", "delay", "reverb"} {
+	for _, id := range []string{"gate", "comp", "chorus", "flanger", "phaser", "delay", "reverb"} {
 		a.Open(id)
 		h := newHarness(1280, 800)
 		h.frame(a.Layout)

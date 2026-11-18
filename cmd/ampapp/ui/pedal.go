@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"fmt"
 	"image"
 	"strings"
 
@@ -72,6 +73,11 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 				return layout.Flex{}.Layout(gtx, ch...)
 			}), layout.Rigid(spacer(0, 10)))
 		}
+		if gr, ok := p.mod.(engine.GainReducer); ok {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return grMeter(gtx, th, gr.GainReductionDB(), st)
+			}), layout.Rigid(spacer(0, 10)))
+		}
 		for _, s := range p.sels {
 			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
@@ -119,4 +125,33 @@ func footswitch(gtx layout.Context, c *widget.Clickable, size unit.Dp) layout.Di
 		fillCircle(gtx.Ops, ctr, r*0.6, c2)
 		return layout.Dimensions{Size: image.Pt(d, d)}
 	})
+}
+
+// grMaxDB é o fundo de escala do medidor de redução de ganho.
+const grMaxDB = 20.0
+
+// grMeter mostra a redução de ganho (dB) de um compressor: a barra cresce da direita para
+// a esquerda, como nos medidores de GR de verdade.
+func grMeter(gtx layout.Context, th *Theme, grDB float64, st PedalStyle) layout.Dimensions {
+	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return drawText(gtx, th, "GR", textOpts{size: 12, color: st.Text, bold: true, width: gtx.Dp(26)})
+		}),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			w, h := gtx.Constraints.Max.X, gtx.Dp(10)
+			fillRRect(gtx.Ops, image.Rect(0, 0, w, h), gtx.Dp(3), withAlpha(rgb(0x000000), 90))
+			f := clamp01(grDB / grMaxDB)
+			if x := int(f * float64(w)); x > 0 {
+				fillRRect(gtx.Ops, image.Rect(w-x, 0, w, h), gtx.Dp(3), rgb(0xffb020))
+			}
+			return layout.Dimensions{Size: image.Pt(w, h)}
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			s := "0.0 dB"
+			if grDB >= 0.05 {
+				s = fmt.Sprintf("−%.1f dB", grDB)
+			}
+			return drawText(gtx, th, s, textOpts{size: 11, color: st.Text, width: gtx.Dp(62), align: text.End})
+		}),
+	)
 }

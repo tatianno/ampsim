@@ -2,7 +2,7 @@
 
 Simulador de amplificador de guitarra e pedais em Go, feito como estudo de DSP:
 pré-amp com saturação sobreamostrada, tone stack, power amp, gabinete por resposta ao
-impulso (IR) e pedais de gate, chorus, flanger, phaser, delay e reverb — tocando em
+impulso (IR) e pedais de gate, compressor, chorus, flanger, phaser, delay e reverb — tocando em
 tempo real, com GUI.
 
 Os algoritmos começaram como protótipos em Python (`referencia_python/`) e foram portados
