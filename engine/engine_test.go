@@ -589,3 +589,76 @@ func TestRenderOffline(t *testing.T) {
 		t.Error("a cadeia de origem não pode mudar")
 	}
 }
+
+// Trocar o tone stack ao vivo: sem NaN, sem salto (crossfade), o som muda, e a saída
+// continua independente do tamanho de bloco.
+func TestToneStackModeladoNaCadeia(t *testing.T) {
+	fs, di := lerDI(t)
+	di = di[:30000]
+	render := func(bloco int, troca bool) []float64 {
+		c := NewChain(NewPre())
+		c.Prepare(fs, 512)
+		out := append([]float64(nil), di...)
+		for i := 0; i < len(out); i += bloco {
+			if troca && i >= 10000 {
+				c.Module(PreID).Param("stack").Set(StackFender)
+			}
+			c.ProcessMono(out[i:min(i+bloco, len(out))])
+		}
+		return out
+	}
+	moderno := render(512, false)
+	fender := render(512, true)
+	for _, v := range fender {
+		if math.IsNaN(v) || math.Abs(v) > 4 {
+			t.Fatal("valor inválido depois da troca")
+		}
+	}
+	diff := 0.0
+	for i := 20000; i < 30000; i++ {
+		diff += (fender[i] - moderno[i]) * (fender[i] - moderno[i])
+	}
+	if diff < 1e-3 {
+		t.Error("trocar para o Fender deveria mudar o som")
+	}
+	// Invariância de bloco: com a troca no mesmo ponto (10240 é múltiplo de todos os blocos
+	// abaixo), a saída tem que ser idêntica bit a bit, inclusive durante o crossfade.
+	ref := renderTroca(t, fs, di, 512)
+	for _, b := range []int{1, 16, 64, 1024} {
+		r := renderTroca(t, fs, di, b)
+		for i := range r {
+			if r[i] != ref[i] {
+				t.Fatalf("bloco %d: amostra %d difere", b, i)
+			}
+		}
+	}
+}
+
+func renderTroca(t *testing.T, fs float64, di []float64, bloco int) []float64 {
+	t.Helper()
+	c := NewChain(NewPre())
+	c.Prepare(fs, 1024)
+	out := append([]float64(nil), di...)
+	for i := 0; i < len(out); i += bloco {
+		if i == 10240 {
+			c.Module(PreID).Param("stack").Set(StackMarshall)
+		}
+		c.ProcessMono(out[i:min(i+bloco, len(out))])
+	}
+	return out
+}
+
+func TestToneStackSemAlocacao(t *testing.T) {
+	c := NewChain(NewPre())
+	c.Prepare(48000, 256)
+	buf := make([]float64, 256)
+	k := 0
+	if a := testing.AllocsPerRun(60, func() {
+		k++
+		c.Module(PreID).Param("stack").Set(float64(k / 10 % 3)) // troca a cada 10 blocos
+		c.Module(PreID).Param("bass").Set(float64(k % 10))
+		c.ProcessMono(buf)
+	}); a != 0 {
+		t.Errorf("aloca %.0f vezes por bloco", a)
+	}
+}

@@ -86,12 +86,30 @@ func (m *Gate) Process(buf []float64) {
 // A cadeia garante a ordem pre → power → cab; os pedais podem ficar em qualquer posição.
 
 // Pre é o pré-amp: HP 70 Hz → GANHO/saturação 4x → tone stack (grave/médio/agudo).
+//
+// O tone stack pode ser o "Moderno" (3 equalizadores independentes) ou o circuito passivo
+// TMB modelado do Fender Bassman ou do Marshall 1959, em que os controles interagem.
 type Pre struct {
 	base
 	tight dsp.Biquad
 	pre   *dsp.Preamp
 	tone  *dsp.ToneStack
+	tmb   [2]*dsp.TMBStack // Fender, Marshall
+
+	kind, prev int     // tone stack atual e o anterior (durante a troca)
+	xf, xstep  float64 // crossfade da troca de tone stack (0 → 1)
+	scratch    []float64
 }
+
+// Tipos de tone stack (valores do parâmetro "stack").
+const (
+	StackModern = iota
+	StackFender
+	StackMarshall
+)
+
+// StackFadeMs é o crossfade ao trocar de tone stack (evita estalo).
+const StackFadeMs = 20.0
 
 // NewPre cria o pré-amp.
 func NewPre() *Pre {
@@ -100,29 +118,79 @@ func NewPre() *Pre {
 		ParamInfo{ID: "bass", Name: "Grave", Min: 0, Max: 10, Default: 5},
 		ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
 		ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
+		ParamInfo{ID: "stack", Name: "Tone stack", Min: 0, Max: 2, Default: StackModern, Step: 1,
+			Choices: []string{"Moderno", "Fender", "Marshall"}},
 	)}}
 }
 
-func (m *Pre) Prepare(fs float64, _ int) {
+func (m *Pre) Prepare(fs float64, maxBlock int) {
 	m.tight.SetCoefs(dsp.OnePoleHighpass(fs, 70))
 	m.pre = dsp.NewPreamp(fs)
 	m.tone = dsp.NewToneStack(fs)
+	m.tmb = [2]*dsp.TMBStack{dsp.NewTMBStack(fs, dsp.TMBFender), dsp.NewTMBStack(fs, dsp.TMBMarshall)}
+	m.kind = int(m.get("stack"))
+	m.prev, m.xf = m.kind, 1
+	m.xstep = 1 / (StackFadeMs / 1000 * fs)
+	m.scratch = make([]float64, maxBlock)
 }
 
 func (m *Pre) Reset() {
 	m.tight.Reset()
 	m.pre.Reset()
 	m.tone.Reset()
+	for _, t := range m.tmb {
+		t.Reset()
+	}
 }
 
 func (m *Pre) Latency() int { return dsp.PreampLatency }
 
+// stack aplica o tone stack k.
+func (m *Pre) stack(k int, buf []float64) {
+	switch k {
+	case StackFender:
+		m.tmb[0].ProcessBlock(buf)
+	case StackMarshall:
+		m.tmb[1].ProcessBlock(buf)
+	default:
+		m.tone.ProcessBlock(buf)
+	}
+}
+
 func (m *Pre) Process(buf []float64) {
 	m.pre.SetDrive(m.get("gain") / 10)
-	m.tone.Set(m.get("bass"), m.get("mid"), m.get("treble"))
+	bass, mid, treble := m.get("bass"), m.get("mid"), m.get("treble")
+	m.tone.Set(bass, mid, treble)
+	for _, t := range m.tmb {
+		t.Set(bass, mid, treble)
+	}
 	m.tight.ProcessBlock(buf)
 	m.pre.ProcessBlock(buf)
-	m.tone.ProcessBlock(buf)
+
+	if k := int(m.get("stack")); k != m.kind && m.xf >= 1 {
+		m.prev, m.kind, m.xf = m.kind, k, 0
+		switch k { // o novo começa limpo
+		case StackFender:
+			m.tmb[0].Reset()
+		case StackMarshall:
+			m.tmb[1].Reset()
+		default:
+			m.tone.Reset()
+		}
+	}
+	if m.xf >= 1 {
+		m.stack(m.kind, buf)
+		return
+	}
+	// troca em andamento: os dois tone stacks rodam e o resultado é misturado
+	old := m.scratch[:len(buf)]
+	copy(old, buf)
+	m.stack(m.prev, old)
+	m.stack(m.kind, buf)
+	for i := range buf {
+		m.xf = math.Min(1, m.xf+m.xstep)
+		buf[i] = m.xf*buf[i] + (1-m.xf)*old[i]
+	}
 }
 
 // Power é o power amp: saturação suave (tanh) → presença → volume.

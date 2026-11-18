@@ -222,6 +222,7 @@ const ajuda = `comandos:
   afinar [segundos]              afinador (saída muda enquanto afina; padrão 15 s)
   bpm <andamento> [1/4|1/8.|1/8|1/16]   tempo do delay pelo andamento (ex.: bpm 120 1/8.)
   rec [sem-di]                   começa/termina a gravação (saída + DI) na pasta de Música/ampsim
+  gravacoes                      lista as gravações (som + DI) da pasta
   exportar <arquivo.wav>         processa o arquivo carregado pelo som atual e salva (24 bits)
   dispositivos                   lista saídas e entradas
   saida <n> | entrada <n>|nenhuma | buffer <quadros>   reabre a placa
@@ -359,6 +360,22 @@ func (a *app) exec(line string) bool {
 			var path string
 			if path, err = rec.Start(audio.DefaultRecordDir(), rest != "sem-di"); err == nil {
 				fmt.Println("gravando em", path, "(rec de novo para parar)")
+			}
+		}
+	case "gravacoes", "gravações":
+		dir := audio.DefaultRecordDir()
+		var l []audio.Recording
+		if l, err = audio.ListRecordings(dir); err == nil {
+			fmt.Println("pasta:", dir)
+			if len(l) == 0 {
+				fmt.Println("  nenhuma gravação ainda (use rec)")
+			}
+			for _, r := range l {
+				di := "sem DI"
+				if r.DI != "" {
+					di = "com DI"
+				}
+				fmt.Printf("  %s  %5.1f s  %s  %s\n", r.Name(), r.Seconds, di, r.Out)
 			}
 		}
 	case "exportar":

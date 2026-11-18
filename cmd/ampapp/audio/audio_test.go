@@ -558,3 +558,29 @@ func TestRenderSemAlocacaoGravando(t *testing.T) {
 		t.Errorf("aloca %.0f vezes por callback", a)
 	}
 }
+
+func TestListarGravacoes(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(name string, n int) {
+		if err := wav.WriteMonoFile(filepath.Join(dir, name), 48000, make([]float64, n), RecordFormat); err != nil {
+			t.Fatal(err)
+		}
+	}
+	mk("ampsim-2026-11-18_10-00-00.wav", 48000)
+	mk("ampsim-2026-11-18_10-00-00-DI.wav", 48000)
+	mk("ampsim-2026-11-18_11-30-00.wav", 96000) // sem DI
+	mk("outro-arquivo.wav", 10)
+	l, err := ListRecordings(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(l) != 2 {
+		t.Fatalf("%d gravações: %+v", len(l), l)
+	}
+	if l[0].Seconds != 2 || l[0].DI != "" || l[1].Seconds != 1 || l[1].DI == "" {
+		t.Errorf("ordem/DI/duração errados: %+v", l)
+	}
+	if l[1].Name() != "18/11 10:00:00" {
+		t.Errorf("nome %q", l[1].Name())
+	}
+}

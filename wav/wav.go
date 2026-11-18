@@ -375,3 +375,67 @@ func (s *StreamWriter) Close() error {
 	}
 	return s.f.Close()
 }
+
+// Info descreve um WAV sem ler as amostras.
+type Info struct {
+	SampleRate int
+	Channels   int
+	Bits       int
+	Frames     int64
+}
+
+// Duration devolve a duração em segundos.
+func (i Info) Duration() float64 {
+	if i.SampleRate == 0 {
+		return 0
+	}
+	return float64(i.Frames) / float64(i.SampleRate)
+}
+
+// Stat lê só o cabeçalho de um WAV (rápido mesmo para gravações longas).
+func Stat(path string) (Info, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return Info{}, err
+	}
+	defer f.Close()
+	r := bufio.NewReader(f)
+	var hdr [12]byte
+	if _, err := io.ReadFull(r, hdr[:]); err != nil {
+		return Info{}, err
+	}
+	if string(hdr[0:4]) != "RIFF" || string(hdr[8:12]) != "WAVE" {
+		return Info{}, errors.New("não é um arquivo RIFF/WAVE")
+	}
+	var info Info
+	for {
+		var ch [8]byte
+		if _, err := io.ReadFull(r, ch[:]); err != nil {
+			return Info{}, errors.New("chunk 'data' não encontrado")
+		}
+		id, size := string(ch[0:4]), binary.LittleEndian.Uint32(ch[4:8])
+		switch id {
+		case "fmt ":
+			buf := make([]byte, size)
+			if _, err := io.ReadFull(r, buf); err != nil || size < 16 {
+				return Info{}, errors.New("chunk fmt inválido")
+			}
+			info.Channels = int(binary.LittleEndian.Uint16(buf[2:4]))
+			info.SampleRate = int(binary.LittleEndian.Uint32(buf[4:8]))
+			info.Bits = int(binary.LittleEndian.Uint16(buf[14:16]))
+			if size%2 == 1 {
+				r.Discard(1)
+			}
+		case "data":
+			if info.Channels == 0 || info.Bits == 0 {
+				return Info{}, errors.New("chunk data antes do fmt")
+			}
+			info.Frames = int64(size) / int64(info.Channels*info.Bits/8)
+			return info, nil
+		default:
+			if _, err := r.Discard(int(size) + int(size%2)); err != nil {
+				return Info{}, err
+			}
+		}
+	}
+}

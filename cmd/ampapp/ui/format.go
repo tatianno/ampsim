@@ -10,6 +10,11 @@ import (
 
 // FormatValue formata o valor de um parâmetro para exibição ("+3.0 dB", "1.20 Hz", "380 ms", "45%").
 func FormatValue(in engine.ParamInfo, v float64) string {
+	if len(in.Choices) > 0 {
+		if i := int(math.Round(v - in.Min)); i >= 0 && i < len(in.Choices) {
+			return in.Choices[i]
+		}
+	}
 	var s string
 	switch in.Unit {
 	case "dB":

@@ -72,13 +72,13 @@ func toDB(v float32) float64 { return 20 * math.Log10(float64(v)+1e-9) }
 func (m *Meters) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(m.bar(th, "IN", m.in)),
-		layout.Rigid(spacer(14, 0)),
+		layout.Rigid(spacer(10, 0)),
 		layout.Rigid(m.bar(th, "OUT", m.out)),
 		layout.Rigid(spacer(10, 0)),
 		layout.Rigid(ledLabel(th, "CLIP", m.Clipping(gtx.Now), th.LedOn, th.LedOff)),
 		layout.Rigid(spacer(10, 0)),
 		layout.Rigid(ledLabel(th, "GATE", m.gate, th.Good, darken(th.Good, 0.7))),
-		layout.Rigid(spacer(14, 0)),
+		layout.Rigid(spacer(10, 0)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, fmt.Sprintf("CPU %2.0f%%", 100*m.load), textOpts{size: 11, color: th.Dim, width: gtx.Dp(58)})
 		}),
@@ -114,7 +114,7 @@ func (m *Meters) bar(th *Theme, label string, v float32) layout.Widget {
 				return drawText(gtx, th, label, textOpts{size: 11, color: th.Dim, bold: true, width: gtx.Dp(30)})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				w, h := gtx.Dp(160), gtx.Dp(10)
+				w, h := gtx.Dp(90), gtx.Dp(10)
 				fillRRect(gtx.Ops, image.Rect(0, 0, w, h), gtx.Dp(3), th.Line)
 				x := func(db float64) int {
 					return int(clamp01((db-meterFloorDB)/-meterFloorDB) * float64(w))

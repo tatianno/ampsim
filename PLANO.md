@@ -427,6 +427,16 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
   processa o arquivo carregado com o som atual numa **cópia** da cadeia (o som ao vivo não muda), +2 s de cauda,
   latência compensada, WAV 24 bits, progresso no rodapé; `engine.RenderOffline` é o mesmo do `ampcli` (saída
   conferida idêntica bit a bit à de antes); console `exportar <arquivo.wav>`
+- [x] **Retorno da gravação** (pedido em 18/11: sem aviso ao parar e sem lista, a gravação confundia): ao parar abre o
+  painel **GRAVAÇÃO SALVA** (duração, o som e a DI, aviso de amostras perdidas) com a lista das gravações da pasta,
+  mais novas primeiro (`audio.ListRecordings`, duração lida só do cabeçalho com `wav.Stat`); cada uma com ► Ouvir e
+  **DI (reamp)**, que carrega no player, passa a fonte para Arquivo e toca; botão **Gravações** no rodapé abre a
+  lista a qualquer hora; Abrir pasta (`xdg-open`); console `gravacoes`; rodapé reajustado para caber na janela
+  mínima (com teste)
+- [x] **► Ouvir não reprocessa** (dúvida do usuário em 18/11 revelou o defeito): a gravação principal já tem os efeitos;
+  tocá-la de novo pela cadeia aplicava amp sobre amp. Agora ► Ouvir toca em A/B SECO (como foi gravada) e DI (reamp)
+  passa pela cadeia; o SECO ligado pelo app desliga sozinho ao trocar de fonte ou de arquivo; textos do painel
+  deixam claro "com efeitos" × "sem efeitos (DI)"
 - [x] **Bug relatado (18/11): estalo no fim do arquivo exportado.** A DI termina num corte abrupto, que passando pela
   distorção virava um pico de −8,6 dBFS onde ela acaba; no play não aparecia porque o player faz rampa nas emendas do
   loop. Correção: rampas nas bordas do arquivo **ao carregar** (`dsp.FadeEdges`: 5 ms na entrada, 20 ms quadrática na
@@ -449,7 +459,18 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
   - testes: senos de Si 1 a Si 5 com erro < 0,5 cent, corda grave com harmônicos fortes sem erro de oitava, ruído e
     silêncio sem nota, nome da nota e cents (inclusive A4 = 432), afinador na GUI (abre, mostra G3, Esc fecha e
     devolve a saída), render sem alocação com afinador ligado; conferido também na DI real (linha melódica coerente)
-- [ ] Tone stack com modelo Fender/Marshall (estudo; análise de D. Yeh, transformada bilinear)
+- [x] **Tone stack modelado Fender/Marshall** (18/11), `dsp/tmb.go`, a partir do circuito (Yeh e Smith, DAFx 2006):
+  - o circuito TMB passivo (C1–C3, R1–R4, pots de agudo, grave e médio) resolvido por **análise nodal com polinômios
+    em s** (regra de Cramer): H(s) de 3ª ordem exato para cada posição dos knobs, sem fórmulas copiadas
+  - componentes do Fender Bassman 5F6-A e do Marshall 1959; pot de grave logarítmico; bilinear (K = 2·fs); 3ª ordem
+    em forma direta II transposta; ganho de compensação fixo por modelo (+8,1 dB Fender, +5,8 dB Marshall)
+  - coeficientes recalculados a cada 32 amostras só enquanto um knob se move, com arrays fixos: **5,4 µs, 0 alocações**
+  - validado: H(s) contra a solução direta do circuito (erro < 10⁻⁹); digital contra analógico (< 0,5 dB até 4 kHz);
+    Fender todo em 0 ≈ mudo (−60 dB); vale nos médios com tudo em 5 (Fender −12,4 dB, Marshall −9,2 dB); cada knob mexe
+    na sua região; estável (impulso decai) em toda a faixa
+  - no pré-amp: parâmetro **Tone stack** (Moderno / Fender / Marshall) com crossfade de 20 ms ao trocar; seletor no
+    cabeçote; o padrão continua Moderno (presets antigos não mudam); `ParamInfo.Choices` dá nome às posições
+  - presets de fábrica: Clean e Ambiente com Fender, Crunch e Lead com Marshall (renivelados em −18 dBFS RMS)
 - [x] **Otimização de CPU** (18/11), medida com benchmarks por bloco de 64 amostras (`dsp/bench_test.go`):
   - convolução: multiplica só a metade do espectro (simetria conjugada de sinais reais) e partição 0 com produto
     escalar de 4 acumuladores: **46,6 → 24,8 µs** (−47%)

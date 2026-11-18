@@ -19,6 +19,8 @@ type ParamInfo struct {
 	Max     float64 `json:"max"`
 	Default float64 `json:"default"`
 	Step    float64 `json:"step,omitempty"` // 0 = contínuo; > 0 = valores discretos (ex.: estágios do phaser)
+	// Choices dá nome às posições de um parâmetro discreto (Step 1, a partir de Min).
+	Choices []string `json:"choices,omitempty"`
 }
 
 // Param é um parâmetro com valor atômico: a GUI escreve, a thread de áudio lê, sem trava.

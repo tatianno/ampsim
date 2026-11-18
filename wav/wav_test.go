@@ -116,3 +116,17 @@ func TestPCM24EStreamWriter(t *testing.T) {
 		}
 	}
 }
+
+func TestStat(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "x.wav")
+	if err := WriteMonoFile(path, 48000, make([]float64, 24000), PCM24); err != nil {
+		t.Fatal(err)
+	}
+	i, err := Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i.SampleRate != 48000 || i.Channels != 1 || i.Bits != 24 || i.Frames != 24000 || i.Duration() != 0.5 {
+		t.Errorf("%+v", i)
+	}
+}

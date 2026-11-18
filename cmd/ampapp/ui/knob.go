@@ -218,7 +218,8 @@ func (s *Selector) Layout(gtx layout.Context, th *Theme, ink, accent color.NRGBA
 		children = append(children, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return s.btns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				sel := s.P.Get() == s.values[i]
-				sz := image.Pt(gtx.Dp(30), gtx.Dp(22))
+				label := FormatValue(info, s.values[i])
+				sz := image.Pt(max(gtx.Dp(30), recordText(gtx, th, label, 12, ink)+gtx.Dp(14)), gtx.Dp(22))
 				bg := withAlpha(rgb(0x000000), 70)
 				fg := ink
 				if sel {
@@ -226,7 +227,7 @@ func (s *Selector) Layout(gtx layout.Context, th *Theme, ink, accent color.NRGBA
 				}
 				fillRRect(gtx.Ops, image.Rectangle{Max: sz}, gtx.Dp(4), bg)
 				defer offset(gtx.Ops, 0, (sz.Y-gtx.Sp(16))/2).Pop()
-				drawText(gtx, th, FormatValue(info, s.values[i]), textOpts{size: 12, color: fg, align: text.Middle, width: sz.X, bold: sel})
+				drawText(gtx, th, label, textOpts{size: 12, color: fg, align: text.Middle, width: sz.X, bold: sel})
 				return layout.Dimensions{Size: sz}
 			})
 		}), layout.Rigid(spacer(4, 0)))

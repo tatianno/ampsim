@@ -607,12 +607,58 @@ func TestGravarPeloRodape(t *testing.T) {
 	if a.Session.Recorder.Recording() {
 		t.Fatal("o segundo clique termina a gravação")
 	}
-	if a.statusErr || !strings.Contains(a.status, "gravado") || !strings.Contains(a.status, "+ DI") {
+	if a.statusErr || !strings.Contains(a.status, "gravação encerrada") {
 		t.Errorf("status %q", a.status)
 	}
 	arquivos, _ := filepath.Glob(filepath.Join(a.RecordDir, "*.wav"))
 	if len(arquivos) != 2 {
 		t.Errorf("esperava a gravação e a DI, achei %v", arquivos)
+	}
+	// ao parar, abre o painel "Gravação salva" com a gravação no topo da lista
+	if a.Opened() != RecordingsID || a.recs.last == nil {
+		t.Fatalf("parar deveria abrir o painel da gravação (aberto: %q)", a.Opened())
+	}
+	if len(a.recs.list) != 1 || a.recs.list[0].DI == "" || a.recs.list[0].Out != a.recs.last.Out {
+		t.Fatalf("lista %+v", a.recs.list)
+	}
+	h.frame(a.Layout)
+	// "DI (reamp)" abre a guitarra limpa no player, com a fonte em Arquivo, e toca
+	a.Session.SetSource(audio.SourceGuitar)
+	a.recs.rows[0].di.Click()
+	h.frame(a.Layout)
+	for deadline := time.Now().Add(5 * time.Second); a.Opened() != "" && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+		h.frame(a.Layout)
+	}
+	if !strings.HasSuffix(a.Player.Clip().Path, "-DI.wav") || a.Session.Source() != audio.SourceFile || !a.Player.Playing() {
+		t.Errorf("DI não carregada: %q, fonte %v, tocando %v", a.Player.Clip().Path, a.Session.Source(), a.Player.Playing())
+	}
+	if a.Renderer.Bypass() {
+		t.Error("a DI tem que passar pela cadeia (A/B processado)")
+	}
+	// "► Ouvir" toca a gravação com efeitos como foi gravada: A/B em SECO (sem reprocessar)
+	a.Open(RecordingsID)
+	h.frame(a.Layout)
+	a.recs.rows[0].play.Click()
+	h.frame(a.Layout)
+	for deadline := time.Now().Add(5 * time.Second); a.Opened() != "" && time.Now().Before(deadline); {
+		time.Sleep(10 * time.Millisecond)
+		h.frame(a.Layout)
+	}
+	if strings.HasSuffix(a.Player.Clip().Path, "-DI.wav") || !a.Renderer.Bypass() {
+		t.Errorf("Ouvir deveria tocar a gravação com efeitos em A/B seco: %q, bypass %v", a.Player.Clip().Path, a.Renderer.Bypass())
+	}
+	// trocar para a guitarra desliga o SECO que o app tinha ligado
+	a.Session.SetSource(audio.SourceGuitar)
+	h.frame(a.Layout)
+	if a.Renderer.Bypass() {
+		t.Error("ao trocar de fonte, o A/B seco ligado pelo Ouvir deveria desligar")
+	}
+	// o botão Gravações abre só a lista
+	a.recsBtn.Click()
+	h.frame(a.Layout)
+	if a.Opened() != RecordingsID || a.recs.last != nil {
+		t.Error("o botão Gravações deveria abrir a lista (sem o destaque de gravação nova)")
 	}
 }
 
@@ -679,5 +725,42 @@ func TestExportarSemEstaloNoFimDaDI(t *testing.T) {
 	db := func(v float64) float64 { return 20 * math.Log10(v+1e-12) }
 	if db(depois) > db(antes)+6 {
 		t.Errorf("estalo no fim da DI: pico %.1f dBFS (antes do fim: %.1f dBFS)", db(depois), db(antes))
+	}
+}
+
+func TestSeletorDeToneStackNoCabecote(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	p := a.Chain.Module(engine.PreID).Param("stack")
+	if p.Get() != engine.StackModern {
+		t.Fatal("o padrão é o Moderno")
+	}
+	a.head.stackSel.btns[engine.StackMarshall].Click()
+	h.frame(a.Layout)
+	if p.Get() != engine.StackMarshall {
+		t.Errorf("stack %v, esperava Marshall", p.Get())
+	}
+	if got := FormatValue(p.Info(), p.Get()); got != "Marshall" {
+		t.Errorf("rótulo %q", got)
+	}
+}
+
+// O rodapé cabe na largura mínima da janela (960 dp): nada pode passar da borda.
+func TestRodapeCabeNaJanelaMinima(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(960, 700)
+	var d layout.Dimensions
+	h.frame(func(gtx layout.Context) layout.Dimensions {
+		gtx.Constraints.Min.X = 0
+		gtx.Constraints.Max.X = 960 - 28 // menos as margens da tela
+		m := op.Record(gtx.Ops)
+		gtx.Constraints.Max.X = 1 << 20 // mede sem limite: o tamanho "natural" do rodapé
+		d = a.footer(gtx)
+		m.Stop()
+		return d
+	})
+	if d.Size.X > 960-28 {
+		t.Errorf("o rodapé precisa de %d px e a janela mínima tem %d", d.Size.X, 960-28)
 	}
 }

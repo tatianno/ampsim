@@ -58,6 +58,12 @@ type App struct {
 	closeBtn  widget.Clickable
 	recBtn    widget.Clickable
 	diBtn     widget.Clickable
+	recsBtn   widget.Clickable
+	recs      *RecordingsPanel
+	// recDry: o A/B SECO foi ligado pelo app para tocar uma gravação com efeitos (recPath);
+	// desliga sozinho quando a fonte ou o arquivo mudam.
+	recDry    bool
+	recPath   string
 	recDI     bool
 	exporting bool
 	exportPct float64
@@ -114,6 +120,8 @@ func NewApp(s *audio.Session) *App {
 		}
 	}
 	a.transport.OnExport = a.exportAsync
+	a.recs = NewRecordingsPanel(a.RecordDir)
+	a.recs.Load = a.loadRecording
 	a.transport.OnOpen = func() {
 		a.pickAsync("Abrir WAV para tocar", func(path string) error { return a.Player.Load(path) })
 	}
@@ -138,6 +146,10 @@ func (a *App) Open(id string) {
 	case AudioID:
 		a.input.OnAudio()
 	case PresetListID, TunerID:
+		a.open = id
+	case RecordingsID:
+		a.recs.dir = a.RecordDir
+		a.recs.Show(nil)
 		a.open = id
 	case SaveAsID:
 		a.presetBar.startSaveAs("")
@@ -204,12 +216,22 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	a.keys(gtx)
 	if a.bypass.Clicked(gtx) && a.Renderer != nil {
 		a.Renderer.SetBypass(!a.Renderer.Bypass())
+		a.recDry = false // o usuário assumiu o A/B
+	}
+	if a.recDry {
+		if c := a.Player.Clip(); a.Session.Source() != audio.SourceFile || c == nil || c.Path != a.recPath {
+			a.Renderer.SetBypass(false)
+			a.recDry = false
+		}
 	}
 	if a.recBtn.Clicked(gtx) {
 		a.toggleRecord()
 	}
 	if a.diBtn.Clicked(gtx) && !a.Session.Recorder.Recording() {
 		a.recDI = !a.recDI
+	}
+	if a.recsBtn.Clicked(gtx) {
+		a.Open(RecordingsID)
 	}
 	th := a.th
 	paint.Fill(gtx.Ops, th.Bg)
@@ -360,7 +382,7 @@ func (a *App) footer(gtx layout.Context) layout.Dimensions {
 	byp := a.Renderer != nil && a.Renderer.Bypass()
 	label, bg := "A/B: processado", th.PanelHi
 	if byp {
-		label, bg = "A/B: SECO (bypass)", darken(th.Warn, 0.45)
+		label, bg = "A/B: SECO", darken(th.Warn, 0.45)
 	}
 	rec := a.Session.Recorder
 	recLabel, recBg := "● Gravar", th.PanelHi
@@ -375,17 +397,21 @@ func (a *App) footer(gtx layout.Context) layout.Dimensions {
 	return panel(gtx, th.Panel, 10, 10, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return coloredButton(gtx, th, &a.recBtn, recLabel, gtx.Dp(128), recBg, th.Text)
+				return coloredButton(gtx, th, &a.recBtn, recLabel, gtx.Dp(112), recBg, th.Text)
 			}),
 			layout.Rigid(spacer(4, 0)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return toggle(gtx, th, &a.diBtn, a.recDI, "DI")
 			}),
-			layout.Rigid(spacer(12, 0)),
+			layout.Rigid(spacer(4, 0)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return coloredButton(gtx, th, &a.bypass, label, gtx.Dp(150), bg, th.Text)
+				return smallButton(gtx, th, &a.recsBtn, "Gravações", 0)
 			}),
-			layout.Rigid(spacer(16, 0)),
+			layout.Rigid(spacer(8, 0)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return coloredButton(gtx, th, &a.bypass, label, gtx.Dp(120), bg, th.Text)
+			}),
+			layout.Rigid(spacer(10, 0)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.meters.Layout(gtx, th) }),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				if a.exporting {
@@ -412,6 +438,8 @@ func (a *App) overlay(gtx layout.Context) {
 	closeOverlay := func() { a.open = "" }
 	if a.open == AudioID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.audioSet.Layout(gtx, th) }
+	} else if a.open == RecordingsID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.recs.Layout(gtx, th) }
 	} else if a.open == TunerID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.tuner.Layout(gtx, th) }
 	} else if a.open == PresetListID {
@@ -472,18 +500,14 @@ func (a *App) toggleRecord() {
 	rec := a.Session.Recorder
 	if rec.Recording() {
 		take, err := rec.Stop()
-		switch {
-		case err != nil:
+		if err != nil {
 			a.setStatus(err.Error(), true)
-		case take.Dropped > 0:
-			a.setStatus(fmt.Sprintf("gravado com %d amostras perdidas: %s", take.Dropped, take.Out), true)
-		default:
-			msg := fmt.Sprintf("gravado (%.1f s): %s", take.Seconds, take.Out)
-			if take.DI != "" {
-				msg += " + DI"
-			}
-			a.setStatus(msg, false)
+			return
 		}
+		a.setStatus(fmt.Sprintf("gravação encerrada (%s)", humanDuration(take.Seconds)), take.Dropped > 0)
+		a.recs.dir = a.RecordDir
+		a.recs.Show(&take) // painel "Gravação salva" com os arquivos e a lista
+		a.open = RecordingsID
 		return
 	}
 	if _, err := rec.Start(a.RecordDir, a.recDI); err != nil {
@@ -525,6 +549,33 @@ func (a *App) exportAsync() {
 				a.setStatus("exportar: "+err.Error(), true)
 			case path != "":
 				a.setStatus("exportado: "+path, false)
+			}
+		})
+	}()
+}
+
+// loadRecording abre uma gravação no player e passa a fonte para Arquivo.
+//
+// A gravação principal já tem os efeitos: toca em A/B SECO, para a cadeia não ser
+// aplicada de novo (amp em cima de amp). A DI é a guitarra limpa: passa pela cadeia,
+// e trocar preset/pedais muda o som dela (reamplificar).
+func (a *App) loadRecording(path string, processed bool) {
+	go func() {
+		err := a.Player.Load(path)
+		a.Post(func() {
+			if err != nil {
+				a.setStatus(err.Error(), true)
+				return
+			}
+			a.Session.SetSource(audio.SourceFile)
+			a.Renderer.SetBypass(processed)
+			a.recDry, a.recPath = processed, path
+			a.Player.Play()
+			a.open = ""
+			if processed {
+				a.setStatus("tocando a gravação como foi gravada (A/B em SECO: os efeitos já estão no arquivo)", false)
+			} else {
+				a.setStatus("DI carregada: troque preset, pedais e knobs para reamplificar", false)
 			}
 		})
 	}()

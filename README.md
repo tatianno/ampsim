@@ -10,7 +10,8 @@ para Go em streaming, validados contra as saídas do Python.
 
 ## O que tem
 
-- **Amp em três partes** — pré-amp (ganho, grave, médio, agudo), power amp (presença,
+- **Amp em três partes** — pré-amp (ganho, grave, médio, agudo, com tone stack Moderno ou o circuito
+  Fender/Marshall modelado), power amp (presença,
   volume) e gabinete (IR, low cut, high cut).
 - **Cadeia configurável** com **loop de efeitos** (send/return): os pedais podem ficar na
   frente do amp, entre o pré-amp e o power amp, ou depois do gabinete. A ordem muda ao vivo,

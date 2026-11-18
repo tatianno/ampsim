@@ -38,7 +38,7 @@ func Dir() (string, error) {
 }
 
 // Factory devolve os presets de fábrica. Os volumes foram acertados para todos ficarem
-// perto de −17 dBFS RMS com a DI de teste (trocar de preset não dá salto de volume).
+// perto de −18 dBFS RMS com a DI de teste (trocar de preset não dá salto de volume).
 func Factory() []Preset {
 	type set map[string]float64
 	mk := func(name string, on []string, params map[string]set) Preset {
@@ -65,29 +65,29 @@ func Factory() []Preset {
 		mk("Clean", []string{"gate", "comp", "chorus", "reverb"}, map[string]set{
 			"gate":         {"threshold": -55},
 			"comp":         {"threshold": -28, "ratio": 3, "attack": 25, "release": 200, "level": 6},
-			engine.PreID:   {"gain": 2, "bass": 5.5, "mid": 5, "treble": 6},
-			engine.PowerID: {"presence": 5.5, "volume": -4},
+			engine.PreID:   {"gain": 2, "bass": 5.5, "mid": 5, "treble": 6, "stack": engine.StackFender},
+			engine.PowerID: {"presence": 5.5, "volume": -1.8},
 			"chorus":       {"rate": 0.8, "depth": 1.5, "mix": 30},
 			"reverb":       {"size": 60, "damping": 40, "mix": 20},
 		}),
 		mk("Crunch", []string{"gate", "reverb"}, map[string]set{
 			"gate":         {"threshold": -45},
-			engine.PreID:   {"gain": 6.5, "bass": 6, "mid": 6.5, "treble": 5.5},
-			engine.PowerID: {"presence": 6, "volume": -14.5},
+			engine.PreID:   {"gain": 6.5, "bass": 6, "mid": 6.5, "treble": 5.5, "stack": engine.StackMarshall},
+			engine.PowerID: {"presence": 6, "volume": -11.1},
 			"reverb":       {"size": 55, "mix": 15},
 		}),
 		mk("Lead", []string{"gate", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -42, "release": 150},
-			engine.PreID:   {"gain": 9, "bass": 5.5, "mid": 7, "treble": 6},
-			engine.PowerID: {"presence": 6.5, "volume": -15},
+			engine.PreID:   {"gain": 9, "bass": 5.5, "mid": 7, "treble": 6, "stack": engine.StackMarshall},
+			engine.PowerID: {"presence": 6.5, "volume": -10.7},
 			"delay":        {"time": 420, "feedback": 30, "tone": 60, "mix": 25},
 			"reverb":       {"size": 70, "mix": 18},
 		}),
 		mk("Ambiente", []string{"gate", "comp", "chorus", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -55},
 			"comp":         {"threshold": -30, "ratio": 4, "attack": 30, "level": 7},
-			engine.PreID:   {"gain": 3, "bass": 5, "mid": 4.5, "treble": 6.5},
-			engine.PowerID: {"presence": 6, "volume": -3},
+			engine.PreID:   {"gain": 3, "bass": 5, "mid": 4.5, "treble": 6.5, "stack": engine.StackFender},
+			engine.PowerID: {"presence": 6, "volume": -1.6},
 			"chorus":       {"rate": 0.5, "depth": 2.5, "mix": 40},
 			"delay":        {"time": 500, "feedback": 50, "tone": 50, "mix": 35},
 			"reverb":       {"size": 90, "damping": 30, "mix": 40},

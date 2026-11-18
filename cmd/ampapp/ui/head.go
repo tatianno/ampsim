@@ -14,6 +14,7 @@ import (
 // Head é o cabeçote: knobs do pré-amp e do power amp num painel só, com chaves de liga/desliga.
 type Head struct {
 	chain      *engine.Chain
+	stackSel   *Selector // tone stack: Moderno / Fender / Marshall
 	preKnobs   []*Knob
 	powerKnobs []*Knob
 	preSw      widget.Clickable
@@ -25,7 +26,11 @@ func NewHead(chain *engine.Chain) *Head {
 	h := &Head{chain: chain}
 	if m := chain.Module(engine.PreID); m != nil {
 		for _, p := range m.Params() {
-			h.preKnobs = append(h.preKnobs, NewKnob(p))
+			if p.Info().Step > 0 {
+				h.stackSel = NewSelector(p)
+			} else {
+				h.preKnobs = append(h.preKnobs, NewKnob(p))
+			}
 		}
 	}
 	if m := chain.Module(engine.PowerID); m != nil {
@@ -48,7 +53,18 @@ func (h *Head) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 		return panel(gtx, th.Faceplate, 8, 12, func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return drawText(gtx, th, "AMPSIM", textOpts{size: 18, color: th.Gold, bold: true})
+					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return drawText(gtx, th, "AMPSIM", textOpts{size: 18, color: th.Gold, bold: true})
+						}),
+						layout.Flexed(1, hfill),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if h.stackSel == nil {
+								return layout.Dimensions{}
+							}
+							return h.stackSel.Layout(gtx, th, withAlpha(th.Gold, 220), th.Gold)
+						}),
+					)
 				}),
 				layout.Rigid(spacer(0, 6)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
