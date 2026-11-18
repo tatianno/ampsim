@@ -57,7 +57,21 @@ type Renderer struct {
 
 	live atomic.Pointer[source.LiveInput] // entrada ao vivo (alimentada em RenderDuplex)
 	lt   latencyTest
+
+	tuner    atomic.Pointer[Tuner] // afinador (recebe a entrada quando ligado)
+	mute     atomic.Bool           // saída muda (ex.: enquanto afina), com rampa
+	muteGain float64
+	muteStep float64
 }
+
+// MuteFadeMs é a rampa ao emudecer/voltar a saída.
+const MuteFadeMs = 10.0
+
+// SetMute emudece (ou devolve) a saída, com rampa curta.
+func (r *Renderer) SetMute(on bool) { r.mute.Store(on) }
+
+// Muted informa se a saída está muda.
+func (r *Renderer) Muted() bool { return r.mute.Load() }
 
 // ABFadeMs é a duração do crossfade do bypass A/B.
 const ABFadeMs = 10.0
@@ -72,6 +86,8 @@ func NewRenderer(chain *engine.Chain, fs float64) *Renderer {
 	r.lat = chain.Latency()
 	r.dryLine = dsp.NewDelayLine(max(1, r.lat))
 	r.lt.win = make([]float32, int(latencyWindowMs/1000*fs))
+	r.muteGain = 1
+	r.muteStep = 1 / (MuteFadeMs / 1000 * fs)
 	return r
 }
 
@@ -128,10 +144,14 @@ func (r *Renderer) render(out []float32, channels, frames int, start time.Time, 
 		for _, v := range buf {
 			m.InPeak = max(m.InPeak, float32(math.Abs(v)))
 		}
+		if t := r.tuner.Load(); t != nil && t.running.Load() {
+			t.feed(buf) // o afinador ouve a entrada, antes da cadeia
+		}
 		dry := r.dry[:n]
 		copy(dry, buf)
 		r.chain.ProcessMono(buf) // a cadeia sempre roda: caudas continuam e a volta do bypass é suave
 		r.mixAB(buf, dry)
+		r.applyMute(buf)
 		base := off * channels
 		for i, v := range buf {
 			a := math.Abs(v)
@@ -194,5 +214,24 @@ func (r *Renderer) mixAB(wet, dry []float64) {
 		if r.abGain != 1 {
 			wet[i] = r.abGain*wet[i] + (1-r.abGain)*d
 		}
+	}
+}
+
+// applyMute aplica a rampa de mudo (a cadeia continua rodando por baixo).
+func (r *Renderer) applyMute(buf []float64) {
+	target := 1.0
+	if r.mute.Load() {
+		target = 0
+	}
+	if r.muteGain == target && target == 1 {
+		return
+	}
+	for i := range buf {
+		if r.muteGain < target {
+			r.muteGain = math.Min(target, r.muteGain+r.muteStep)
+		} else if r.muteGain > target {
+			r.muteGain = math.Max(target, r.muteGain-r.muteStep)
+		}
+		buf[i] *= r.muteGain
 	}
 }

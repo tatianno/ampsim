@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
@@ -425,5 +426,70 @@ func TestLatenciaComVozNaJanela(t *testing.T) {
 	}
 	if res.Consistent {
 		t.Errorf("deveria marcar como inconsistente (variação %.1f ms)", res.SpreadMs)
+	}
+}
+
+type senoSource struct {
+	f, fs, amp float64
+	n          int
+}
+
+func (s *senoSource) Read(buf []float64) {
+	for i := range buf {
+		buf[i] = s.amp * math.Sin(2*math.Pi*s.f*float64(s.n)/s.fs)
+		s.n++
+	}
+}
+
+// O afinador ouve a entrada (antes da cadeia) e acha a nota; com a saída muda, nada sai.
+func TestAfinadorEMudo(t *testing.T) {
+	r, _ := renderVivo(t)
+	tu := NewTuner(r)
+	f := 110 * math.Pow(2, 15.0/1200) // Lá 2, 15 cents acima
+	r.SetSource(&senoSource{f: f, fs: 48000, amp: 0.3})
+	tu.Start()
+	defer tu.Stop()
+	r.SetMute(true)
+	out := make([]float32, 2*256)
+	var rd Reading
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		r.Render(out, 2, 256)
+		r.Meters().Pop()
+		time.Sleep(time.Millisecond)
+		if rd = tu.Reading(); rd.OK {
+			break
+		}
+	}
+	if !rd.OK || rd.Note != "A" || rd.Octave != 2 || math.Abs(rd.Cents-15) > 1 {
+		t.Fatalf("leitura %+v, esperava A2 +15 cents", rd)
+	}
+	for _, v := range out {
+		if v != 0 {
+			t.Fatal("com a saída muda, nada deveria sair")
+		}
+	}
+	tu.SetA4(432)
+	if tu.A4() != 432 {
+		t.Error("A4 não mudou")
+	}
+	tu.SetA4(500)
+	if tu.A4() != 450 {
+		t.Errorf("A4 deveria ficar limitado a 450, veio %v", tu.A4())
+	}
+}
+
+func TestRenderSemAlocacaoComAfinador(t *testing.T) {
+	r, _ := renderVivo(t)
+	tu := NewTuner(r)
+	tu.Start()
+	defer tu.Stop()
+	r.SetMute(true)
+	out := make([]float32, 2*256)
+	if a := testing.AllocsPerRun(100, func() {
+		r.Render(out, 2, 256)
+		r.Meters().Pop()
+	}); a != 0 {
+		t.Errorf("aloca %.0f vezes por callback", a)
 	}
 }

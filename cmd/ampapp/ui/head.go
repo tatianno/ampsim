@@ -104,7 +104,8 @@ func (h *Head) section(gtx layout.Context, th *Theme, title, id string, sw *widg
 // toggle é um botãozinho com LED, para ligar/desligar.
 func toggle(gtx layout.Context, th *Theme, c *widget.Clickable, on bool, label string) layout.Dimensions {
 	return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-		sz := image.Pt(gtx.Dp(48), gtx.Dp(20))
+		// largura pelo texto: LED (18 dp) + texto + margem
+		sz := image.Pt(gtx.Dp(26)+recordText(gtx, th, label, 11, th.Text), gtx.Dp(20))
 		bg := withAlpha(rgb(0x000000), 90)
 		if c.Hovered() {
 			bg = withAlpha(rgb(0x000000), 140)

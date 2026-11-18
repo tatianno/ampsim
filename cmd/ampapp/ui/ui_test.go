@@ -479,3 +479,105 @@ func TestPresetsListaAbreECarrega(t *testing.T) {
 		t.Error("o Lead liga o delay")
 	}
 }
+
+type senoFonte struct{ f, n float64 }
+
+func (s *senoFonte) Read(buf []float64) {
+	for i := range buf {
+		buf[i] = 0.3 * math.Sin(2*math.Pi*s.f*s.n/48000)
+		s.n++
+	}
+}
+
+func TestAfinadorAbreMostraNotaEFecha(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	a.Open(TunerID)
+	h.frame(a.Layout)
+	if !a.Session.Tuner.Running() || !a.Renderer.Muted() {
+		t.Fatal("abrir o afinador liga a detecção e o mudo")
+	}
+	a.Renderer.SetSource(&senoFonte{f: 196})
+	out := make([]float32, 2*256)
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) && a.tuner.shown.Note == "" {
+		a.Renderer.Render(out, 2, 256)
+		time.Sleep(2 * time.Millisecond)
+		h.frame(a.Layout)
+	}
+	if a.tuner.shown.Note != "G" || a.tuner.shown.Octave != 3 {
+		t.Fatalf("esperava G3 (196 Hz), mostrou %+v", a.tuner.shown)
+	}
+	h.r.Queue(key.Event{Name: key.NameEscape, State: key.Press})
+	h.frame(a.Layout)
+	if a.Session.Tuner.Running() || a.Renderer.Muted() {
+		t.Error("fechar o afinador desliga a detecção e devolve a saída")
+	}
+}
+
+func TestTapTempoPelaTeclaT(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	for i := 0; i < 5; i++ {
+		h.r.Queue(key.Event{Name: "T", State: key.Press})
+		h.frame(a.Layout)
+		h.now = h.now.Add(500*time.Millisecond - 16*time.Millisecond) // frame() já anda 16 ms
+	}
+	tempo := a.Chain.Module("delay").Param("time")
+	if math.Abs(tempo.Get()-500) > 1 {
+		t.Fatalf("tap a cada 500 ms: delay %.1f ms, esperava 500", tempo.Get())
+	}
+	tap := a.pedals["delay"].tap
+	if math.Abs(tap.BPM()-120) > 0.5 {
+		t.Errorf("andamento %.1f BPM", tap.BPM())
+	}
+	// colcheia pontuada mantém os 120 BPM: 375 ms
+	a.Open("delay")
+	h.frame(a.Layout)
+	tap.subs[1].Click()
+	h.frame(a.Layout)
+	if math.Abs(tempo.Get()-375) > 1 || math.Abs(tap.BPM()-120) > 0.5 {
+		t.Errorf("1/8. a 120 BPM: %.1f ms (%.1f BPM), esperava 375 ms", tempo.Get(), tap.BPM())
+	}
+
+	// digitando o nome de um preset, "T" não toca o tap
+	antes := tempo.Get()
+	a.Open(SaveAsID)
+	h.frame(a.Layout)
+	for i := 0; i < 3; i++ {
+		h.r.Queue(key.Event{Name: "T", State: key.Press})
+		h.frame(a.Layout)
+		h.now = h.now.Add(300 * time.Millisecond)
+	}
+	if tempo.Get() != antes {
+		t.Error("com o campo de nome aberto, T não deveria mexer no delay")
+	}
+}
+
+// Os controles de arquivo só aparecem (e a barra de espaço só funciona) com a fonte em Arquivo.
+func TestControlesDeArquivoSoComFonteArquivo(t *testing.T) {
+	a, p := novoApp(t)
+	h := newHarness(1280, 800)
+	a.Session.SetSource(audio.SourceGuitar)
+	a.transport.barW = 0
+	h.frame(a.Layout)
+	if a.transport.barW != 0 {
+		t.Error("com a fonte em Guitarra, os controles de arquivo não deveriam ser desenhados")
+	}
+	h.r.Queue(key.Event{Name: key.NameSpace, State: key.Press})
+	h.frame(a.Layout)
+	if p.Playing() {
+		t.Error("com a fonte em Guitarra, espaço não deveria dar play no arquivo")
+	}
+	a.Session.SetSource(audio.SourceFile)
+	h.frame(a.Layout)
+	if a.transport.barW == 0 {
+		t.Error("com a fonte em Arquivo, os controles aparecem")
+	}
+	h.r.Queue(key.Event{Name: key.NameSpace, State: key.Press})
+	h.frame(a.Layout)
+	if !p.Playing() {
+		t.Error("com a fonte em Arquivo, espaço dá play")
+	}
+}

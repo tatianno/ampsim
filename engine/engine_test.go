@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/tatianno/ampsim/wav"
 )
@@ -513,5 +514,37 @@ func TestCompressorNaCadeia(t *testing.T) {
 	// 24 dB acima do limiar, razão 4:1 → 18 dB de redução
 	if math.Abs(gr-18) > 1.5 {
 		t.Errorf("redução de ganho %.1f dB, esperava ≈ 18 dB", gr)
+	}
+}
+
+func TestTapTempo(t *testing.T) {
+	var tt TapTempo
+	t0 := time.Unix(100, 0)
+	if _, ok := tt.Tap(t0); ok {
+		t.Error("um toque só não define andamento")
+	}
+	ms, ok := tt.Tap(t0.Add(500 * time.Millisecond))
+	if !ok || ms != 500 {
+		t.Errorf("2 toques a 500 ms: %v %v", ms, ok)
+	}
+	// média dos últimos 4 intervalos: 500, 520, 480, 500 → 500
+	at := t0.Add(500 * time.Millisecond)
+	for _, d := range []int{520, 480, 500} {
+		at = at.Add(time.Duration(d) * time.Millisecond)
+		ms, _ = tt.Tap(at)
+	}
+	if math.Abs(ms-500) > 1e-9 {
+		t.Errorf("média %v, esperava 500", ms)
+	}
+	// pausa longa: recomeça
+	if _, ok := tt.Tap(at.Add(3 * time.Second)); ok {
+		t.Error("depois de 3 s parado, o próximo toque recomeça a contagem")
+	}
+	s, err := FindSubdivision("1/8.")
+	if err != nil || DelayMs(120, s) != 375 || BPM(375, s) != 120 {
+		t.Errorf("120 BPM em colcheia pontuada = 375 ms: %v %v", DelayMs(120, s), err)
+	}
+	if _, err := FindSubdivision("1/3"); err == nil {
+		t.Error("subdivisão desconhecida deveria dar erro")
 	}
 }

@@ -44,6 +44,8 @@ type App struct {
 	input     *InputPanel
 	audioSet  *AudioPanel
 	presetBar *PresetBar
+	tuner     *TunerPanel
+	prevOpen  string // para saber quando o afinador abre/fecha
 	meters    Meters
 	pedals    map[string]*Pedal
 	bypass    widget.Clickable
@@ -77,6 +79,8 @@ func NewApp(s *audio.Session) *App {
 		a.audioSet.Refresh()
 		a.open = AudioID
 	}
+	a.tuner = NewTunerPanel(s)
+	a.input.OnTuner = func() { a.open = TunerID }
 	dir, err := presets.Dir()
 	if err != nil {
 		dir = "" // sem pasta de configuração: os de fábrica funcionam, salvar avisa o erro
@@ -118,7 +122,7 @@ func (a *App) Open(id string) {
 	switch id {
 	case AudioID:
 		a.input.OnAudio()
-	case PresetListID:
+	case PresetListID, TunerID:
 		a.open = id
 	case SaveAsID:
 		a.presetBar.startSaveAs("")
@@ -194,14 +198,19 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 			layout.Rigid(a.topBar),
 			layout.Rigid(spacer(0, 10)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return panel(gtx, th.Panel, 10, 10, func(gtx layout.Context) layout.Dimensions {
-					return a.transport.Layout(gtx, th)
-				})
-			}),
-			layout.Rigid(spacer(0, 8)),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return panel(gtx, th.Panel, 10, 8, func(gtx layout.Context) layout.Dimensions {
 					return a.input.Layout(gtx, th, &a.meters)
+				})
+			}),
+			// controles do arquivo: só com a fonte em Arquivo, logo abaixo da ENTRADA
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if a.Session.Source() != audio.SourceFile {
+					return layout.Dimensions{}
+				}
+				return layout.Inset{Top: 8}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return panel(gtx, th.Panel, 10, 10, func(gtx layout.Context) layout.Dimensions {
+						return a.transport.Layout(gtx, th)
+					})
 				})
 			}),
 			layout.Rigid(spacer(0, 12)),
@@ -242,13 +251,36 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	if a.open != "" {
 		a.overlay(gtx)
 	}
+	a.tunerTransitions()
 	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(FrameInterval)})
 	return layout.Dimensions{Size: gtx.Constraints.Max}
 }
 
+// tunerTransitions liga o afinador quando a sobreposição dele abre e desliga quando fecha
+// (por Esc, clique fora, × ou trocando de painel).
+func (a *App) tunerTransitions() {
+	if a.open == a.prevOpen {
+		return
+	}
+	if a.prevOpen == TunerID {
+		a.tuner.Close()
+	}
+	if a.open == TunerID {
+		a.tuner.Open()
+	}
+	a.prevOpen = a.open
+}
+
+// Tap toca o tap tempo do delay (botão TAP ou tecla T).
+func (a *App) Tap(now time.Time) {
+	if p := a.pedals["delay"]; p != nil && p.tap != nil {
+		p.tap.TapAt(now)
+	}
+}
+
 func (a *App) keys(gtx layout.Context) {
 	for {
-		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameSpace})
+		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameSpace}, key.Filter{Name: "T"})
 		if !ok {
 			return
 		}
@@ -260,7 +292,14 @@ func (a *App) keys(gtx layout.Context) {
 		case key.NameEscape:
 			a.open = ""
 		case key.NameSpace:
-			a.transport.TogglePlay()
+			// play/pause do arquivo: só com a fonte em Arquivo (e não enquanto digita um nome)
+			if a.open != SaveAsID && a.Session.Source() == audio.SourceFile {
+				a.transport.TogglePlay()
+			}
+		case "T":
+			if a.open != SaveAsID { // digitando o nome de um preset
+				a.Tap(gtx.Now)
+			}
 		}
 	}
 }
@@ -330,6 +369,8 @@ func (a *App) overlay(gtx layout.Context) {
 	closeOverlay := func() { a.open = "" }
 	if a.open == AudioID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.audioSet.Layout(gtx, th) }
+	} else if a.open == TunerID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.tuner.Layout(gtx, th) }
 	} else if a.open == PresetListID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.presetBar.ListLayout(gtx, th, closeOverlay) }
 	} else if a.open == SaveAsID {

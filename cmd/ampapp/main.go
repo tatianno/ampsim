@@ -218,6 +218,8 @@ const ajuda = `comandos:
   canal <n>|media                canal da entrada onde está a guitarra (1, 2, ...)
   trim <dB>                      ganho de entrada da guitarra (−24 a +24)
   latencia                       mede a latência real (precisa de um cabo da saída para a entrada!)
+  afinar [segundos]              afinador (saída muda enquanto afina; padrão 15 s)
+  bpm <andamento> [1/4|1/8.|1/8|1/16]   tempo do delay pelo andamento (ex.: bpm 120 1/8.)
   dispositivos                   lista saídas e entradas
   saida <n> | entrada <n>|nenhuma | buffer <quadros>   reabre a placa
   presets                        lista os presets (fábrica e seus)
@@ -337,6 +339,30 @@ func (a *app) exec(line string) bool {
 		}
 	case "latencia", "latência":
 		err = a.latencia()
+	case "afinar":
+		secs := 15.0
+		if len(args) > 0 {
+			secs, err = arg(args, 0)
+		}
+		if err == nil {
+			a.afinar(secs)
+		}
+	case "bpm":
+		var bpm float64
+		if bpm, err = arg(args, 0); err == nil && bpm <= 0 {
+			err = fmt.Errorf("andamento inválido")
+		}
+		if err == nil {
+			s := engine.Subdivisions[0]
+			if len(args) > 1 {
+				s, err = engine.FindSubdivision(args[1])
+			}
+			if err == nil {
+				p := a.chain.Module("delay").Param("time")
+				p.Set(engine.DelayMs(bpm, s))
+				fmt.Printf("delay: %.0f ms (%s a %.0f BPM)\n", p.Get(), s.Name, bpm)
+			}
+		}
 	case "dispositivos":
 		err = listarDispositivos(a.s.Host.Config().Backend)
 	case "saida", "entrada", "buffer":
@@ -522,5 +548,38 @@ func (a *app) listar() {
 			in := p.Info()
 			fmt.Printf("      %-10s %8.2f %-4s [%g .. %g]\n", in.ID, p.Get(), in.Unit, in.Min, in.Max)
 		}
+	}
+}
+
+// afinar mostra as leituras do afinador por alguns segundos, com a saída muda.
+func (a *app) afinar(secs float64) {
+	t := a.s.Tuner
+	t.Start()
+	a.s.Renderer.SetMute(true)
+	defer func() {
+		t.Stop()
+		a.s.Renderer.SetMute(false)
+	}()
+	fmt.Printf("afinador (A4 = %.0f Hz), saída muda por %.0f s; toque uma corda solta\n", t.A4(), secs)
+	end := time.Now().Add(time.Duration(secs * float64(time.Second)))
+	for time.Now().Before(end) {
+		time.Sleep(250 * time.Millisecond)
+		rd := t.Reading()
+		if !rd.OK {
+			fmt.Println("  —")
+			continue
+		}
+		// barra de −50 a +50 cents, com o centro marcado
+		const w = 21
+		pos := int(math.Round((rd.Cents + 50) / 100 * (w - 1)))
+		pos = max(0, min(w-1, pos))
+		bar := []rune(strings.Repeat("·", w))
+		bar[w/2] = '|'
+		bar[pos] = '█'
+		ok := ""
+		if math.Abs(rd.Cents) < 3 {
+			ok = "  afinado"
+		}
+		fmt.Printf("  %-3s%d  %s  %+4.0f cents  %7.2f Hz%s\n", rd.Note, rd.Octave, string(bar), rd.Cents, rd.Freq, ok)
 	}
 }

@@ -420,8 +420,21 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
   - testes do pacote e da GUI (navegar, modificado, digitar o nome + Enter, lista, excluir), sempre em pasta temporária
 - [ ] Gravar a saída em WAV (ao vivo ou arquivo)
 - [ ] Exportar arquivo processado (offline, mesmo engine do `ampcli`)
-- [ ] Tap tempo no Delay
-- [ ] Afinador
+- [x] **Tap tempo no Delay** (18/11): botão TAP no pedal (pisca no toque) e **tecla T** em qualquer lugar da janela
+  (menos digitando nome de preset); média dos últimos 4 intervalos, recomeça após 2 s parado; subdivisões 1/4, 1/8.,
+  1/8 e 1/16 (trocar mantém o BPM); BPM exibido; console `bpm 120 1/8.` (`engine.TapTempo`, testado)
+- [x] Controles de arquivo (Abrir, Play, Stop, Loop, posição) agora ficam **abaixo** do painel ENTRADA e só aparecem
+  com a fonte em Arquivo; a barra de espaço só dá play/pause nesse caso (pedido em 18/11; testado)
+- [x] **Afinador** (18/11): detecção YIN (`dsp.PitchDetector`, de Cheveigné & Kawahara 2002) de 55 a 1400 Hz, janela
+  de 2048 amostras, primeiro mínimo abaixo do limiar (evita erro de oitava) e interpolação parabólica
+  - a thread de áudio só copia a entrada (antes da cadeia) para uma fila sem trava enquanto o afinador está aberto;
+    a detecção roda numa goroutine ~25×/s (`audio.Tuner`)
+  - GUI: botão Afinador no painel ENTRADA; nota grande (verde até ±3 cents, dourada até ±15), ponteiro −50..+50
+    cents suavizado, frequência, cordas da afinação padrão, A4 de 430 a 450 Hz, **saída muda** (padrão ligado, com
+    rampa) enquanto afina; console `afinar [segundos]`
+  - testes: senos de Si 1 a Si 5 com erro < 0,5 cent, corda grave com harmônicos fortes sem erro de oitava, ruído e
+    silêncio sem nota, nome da nota e cents (inclusive A4 = 432), afinador na GUI (abre, mostra G3, Esc fecha e
+    devolve a saída), render sem alocação com afinador ligado; conferido também na DI real (linha melódica coerente)
 - [ ] Tone stack com modelo Fender/Marshall (estudo; análise de D. Yeh, transformada bilinear)
 - [x] **Otimização de CPU** (18/11), medida com benchmarks por bloco de 64 amostras (`dsp/bench_test.go`):
   - convolução: multiplica só a metade do espectro (simetria conjugada de sinais reais) e partição 0 com produto

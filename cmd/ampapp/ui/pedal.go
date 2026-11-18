@@ -23,11 +23,15 @@ type Pedal struct {
 	knobs []*Knob
 	sels  []*Selector
 	foot  widget.Clickable
+	tap   *TapControl // só no delay
 }
 
 // NewPedal cria a vista do pedal para o módulo.
 func NewPedal(chain *engine.Chain, mod engine.Module) *Pedal {
 	p := &Pedal{chain: chain, mod: mod, style: StyleFor(mod.ID())}
+	if mod.ID() == "delay" {
+		p.tap = NewTapControl(mod.Param("time"))
+	}
 	for _, par := range mod.Params() {
 		in := par.Info()
 		if in.Step > 0 && (in.Max-in.Min)/in.Step <= 4 {
@@ -76,6 +80,11 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 		if gr, ok := p.mod.(engine.GainReducer); ok {
 			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return grMeter(gtx, th, gr.GainReductionDB(), st)
+			}), layout.Rigid(spacer(0, 10)))
+		}
+		if p.tap != nil {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return p.tap.Layout(gtx, th, st)
 			}), layout.Rigid(spacer(0, 10)))
 		}
 		for _, s := range p.sels {
