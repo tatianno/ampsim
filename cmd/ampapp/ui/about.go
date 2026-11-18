@@ -100,7 +100,7 @@ func (ab *About) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 					layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 						return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-								return drawText(gtx, th, "ampsim", textOpts{size: 26, color: th.Gold, bold: true})
+								return drawText(gtx, th, "AmpSim", textOpts{size: 26, color: th.Gold, bold: true})
 							}),
 							layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 								return drawText(gtx, th, "versão "+version, textOpts{size: 13, color: th.Text})

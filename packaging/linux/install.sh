@@ -1,5 +1,5 @@
 #!/bin/sh
-# Instala o ampsim na pasta pessoal (sem sudo). Para outra pasta: PREFIX=/opt/ampsim ./install.sh
+# Instala o AmpSim na pasta pessoal (sem sudo). Para outra pasta: PREFIX=/opt/ampsim ./install.sh
 set -e
 PREFIX="${PREFIX:-$HOME/.local}"
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -12,5 +12,5 @@ done
 # caminho completo no atalho: funciona mesmo se $PREFIX/bin não estiver no PATH
 sed "s|^Exec=ampsim|Exec=$PREFIX/bin/ampsim|" "$DIR/ampsim.desktop" > "$PREFIX/share/applications/ampsim.desktop"
 command -v update-desktop-database >/dev/null && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
-echo "ampsim instalado em $PREFIX (procure \"ampsim\" no menu de aplicativos)."
+echo "AmpSim instalado em $PREFIX (procure \"AmpSim\" no menu de aplicativos)."
 case ":$PATH:" in *":$PREFIX/bin:"*) ;; *) echo "dica: acrescente $PREFIX/bin ao PATH para usar ampsim e ampsim-cli no terminal." ;; esac

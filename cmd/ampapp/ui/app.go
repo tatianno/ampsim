@@ -415,7 +415,7 @@ func (a *App) topBar(gtx layout.Context) layout.Dimensions {
 	}
 	return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return drawText(gtx, th, "ampsim", textOpts{size: 22, color: th.Gold, bold: true})
+			return drawText(gtx, th, "AmpSim", textOpts{size: 22, color: th.Gold, bold: true})
 		}),
 		layout.Rigid(spacer(10, 0)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {

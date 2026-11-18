@@ -83,7 +83,7 @@ func (h *Head) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return drawText(gtx, th, "AMPSIM", textOpts{size: 18, color: th.Gold, bold: true})
+							return drawText(gtx, th, "AmpSim", textOpts{size: 18, color: th.Gold, bold: true})
 						}),
 						layout.Rigid(spacer(20, 0)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {

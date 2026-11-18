@@ -77,7 +77,7 @@ func run() error {
 	flag.Parse()
 
 	if *versao {
-		fmt.Println("ampsim", version)
+		fmt.Println("AmpSim", version)
 		return nil
 	}
 	if *listar {
@@ -582,7 +582,7 @@ func (a *app) info() {
 	if st.Duplex {
 		in = fmt.Sprintf("%s (%d canais)", st.InputName, st.InChannels)
 	}
-	fmt.Printf("ampsim — %s · saída: %s · entrada: %s · %.0f Hz · buffer %d · latência estimada %.1f ms\n",
+	fmt.Printf("AmpSim — %s · saída: %s · entrada: %s · %.0f Hz · buffer %d · latência estimada %.1f ms\n",
 		st.Backend, st.OutputName, in, st.SampleRate, st.Buffer, a.s.Host.EstimatedLatencyMs(a.chain.Latency()))
 }
 

@@ -21,6 +21,8 @@ type ParamInfo struct {
 	Step    float64 `json:"step,omitempty"` // 0 = contínuo; > 0 = valores discretos (ex.: estágios do phaser)
 	// Choices dá nome às posições de um parâmetro discreto (Step 1, a partir de Min).
 	Choices []string `json:"choices,omitempty"`
+	// Log: o knob anda em escala logarítmica (frequências). Min precisa ser > 0.
+	Log bool `json:"log,omitempty"`
 }
 
 // Param é um parâmetro com valor atômico: a GUI escreve, a thread de áudio lê, sem trava.
@@ -57,13 +59,20 @@ func (p *Param) Set(v float64) {
 // Reset volta ao valor padrão.
 func (p *Param) Reset() { p.Set(p.info.Default) }
 
-// Normalized devolve o valor em 0..1 (útil para desenhar knobs).
+// Normalized devolve o valor em 0..1 (útil para desenhar knobs); logarítmico se Log.
 func (p *Param) Normalized() float64 {
+	if p.info.Log {
+		return math.Log(p.Get()/p.info.Min) / math.Log(p.info.Max/p.info.Min)
+	}
 	return (p.Get() - p.info.Min) / (p.info.Max - p.info.Min)
 }
 
 // SetNormalized ajusta a partir de 0..1.
 func (p *Param) SetNormalized(n float64) {
+	if p.info.Log {
+		p.Set(p.info.Min * math.Pow(p.info.Max/p.info.Min, n))
+		return
+	}
 	p.Set(p.info.Min + n*(p.info.Max-p.info.Min))
 }
 

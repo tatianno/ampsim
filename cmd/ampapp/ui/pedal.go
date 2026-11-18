@@ -24,6 +24,7 @@ type Pedal struct {
 	sels  []*Selector
 	foot  widget.Clickable
 	tap   *TapControl // só no delay
+	eq    *eqView     // só no EQ (curva e knobs por banda)
 }
 
 // NewPedal cria a vista do pedal para o módulo.
@@ -31,6 +32,10 @@ func NewPedal(chain *engine.Chain, mod engine.Module) *Pedal {
 	p := &Pedal{chain: chain, mod: mod, style: StyleFor(mod.ID())}
 	if mod.ID() == "delay" {
 		p.tap = NewTapControl(mod.Param("time"))
+	}
+	if m, ok := mod.(*engine.EQ); ok {
+		p.eq = newEQView(m)
+		return p
 	}
 	for _, par := range mod.Params() {
 		in := par.Info()
@@ -55,10 +60,18 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	on := p.chain.Enabled(id)
 	st := p.style
 	w := gtx.Dp(PedalWidthDp)
+	if p.eq != nil {
+		w = gtx.Dp(EQPedalWidthDp)
+	}
 	gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Constraints.Max.Y)}
 
 	return panel(gtx, st.Body, 18, 18, func(gtx layout.Context) layout.Dimensions {
 		var rows []layout.FlexChild
+		if p.eq != nil {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return p.eq.controls(gtx, th, st, on)
+			}), layout.Rigid(spacer(0, 10)))
+		}
 		perRow := 3
 		if len(p.knobs) == 4 {
 			perRow = 2 // 2 + 2 fica melhor que 3 + 1

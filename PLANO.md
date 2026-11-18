@@ -598,6 +598,15 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   CLI e testes continuam com o simulado por padrão
 - [x] Área **Sobre** (botão no topo): ícone, versão, repositório e contato do autor, com botões que abrem o
   navegador e o e-mail (`xdg-open`); crédito ao Neural Amp Modeler
+- [x] **EQ paramétrico** (18/11, `engine/eq.go`): pedal `eq` com 5 bandas (shelf de graves 40–500 Hz, médios
+  80–2k / 200–5k / 500–10k com Q 0,3–10, shelf de agudos 1,5–12 kHz; ganho ±15 dB) e level ±12 dB; um único pedal,
+  arrastável como os outros, padrão no início do loop e desligado. Knobs de frequência e Q em escala logarítmica
+  (`ParamInfo.Log`). Coeficientes recalculados só quando um knob muda, sem alocar. Pedal próprio na GUI: curva de
+  resposta (20 Hz–20 kHz, ±18 dB, calculada por `EQ.ResponseDB`) e uma coluna por banda. Testes: resposta calculada
+  × medida com senos, plano = transparente, zero alocação, knob logarítmico
+- [x] **Nome AmpSim** padronizado no que o usuário vê (janela, topo, cabeçote, Sobre, `-versao`, menu, pacote,
+  READMEs); identificadores técnicos continuam `ampsim` (módulo Go, executáveis, `~/.config/ampsim`, arquivos de
+  gravação, cliente JACK)
 - [x] **Release v0.4.0** (18/11/2026) com o NAM, as capturas e as IRs de fábrica (`.deb` e `.tar.gz`, conferidos
   fora da pasta do projeto)
 - [x] GUI: seletor **Amp: Simulado | NAM** no cabeçote; no modo NAM, a seção mostra o botão do modelo (lista

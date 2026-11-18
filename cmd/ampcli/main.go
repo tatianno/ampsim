@@ -1,4 +1,4 @@
-// ampcli processa um arquivo WAV pela cadeia do ampsim (offline).
+// ampcli processa um arquivo WAV pela cadeia do AmpSim (offline).
 //
 // Exemplos:
 //

@@ -292,7 +292,7 @@ func TestOrdemValidacao(t *testing.T) {
 	if err := c.MoveBefore("chorus", PreID); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"gate", "comp", "chorus", PreID, "flanger", "phaser", "reverb", PowerID, CabID, "delay"}
+	want := []string{"gate", "comp", "chorus", PreID, "eq", "flanger", "phaser", "reverb", PowerID, CabID, "delay"}
 	if got := c.Order(); !slices.Equal(got, want) {
 		t.Errorf("ordem %v, esperava %v", got, want)
 	}
@@ -444,7 +444,7 @@ func TestDescricaoDaCadeia(t *testing.T) {
 	if err := c.MoveAfter("reverb", CabID); err != nil {
 		t.Fatal(err)
 	}
-	want := "Gate → Compressor (off) → Pré-amp → [loop: Chorus (off) → Flanger (off) → Phaser (off) → Delay] → Power amp → Gabinete → Reverb (off)"
+	want := "Gate → Compressor (off) → Pré-amp → [loop: EQ (off) → Chorus (off) → Flanger (off) → Phaser (off) → Delay] → Power amp → Gabinete → Reverb (off)"
 	if got := c.String(); got != want {
 		t.Errorf("\n got: %s\nwant: %s", got, want)
 	}
@@ -462,17 +462,17 @@ func precisa(t *testing.T, paths ...string) {
 }
 
 func TestMergeOrder(t *testing.T) {
-	atual := DefaultOrder // gate, comp, pre, chorus, flanger, phaser, delay, reverb, power, cab
+	atual := DefaultOrder // gate, comp, pre, eq, chorus, flanger, phaser, delay, reverb, power, cab
 	casos := []struct {
 		preset, want []string
 	}{
 		// preset antigo (sem compressor), com o delay depois do gabinete
 		{[]string{"gate", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"},
-			[]string{"gate", "comp", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"}},
+			[]string{"gate", "comp", PreID, "eq", "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"}},
 		// preset completo: igual
 		{DefaultOrder, DefaultOrder},
 		// id desconhecido é ignorado; o resto completa
-		{[]string{"wah", PreID, PowerID, CabID}, []string{"gate", "comp", PreID, "chorus", "flanger", "phaser", "delay", "reverb", PowerID, CabID}},
+		{[]string{"wah", PreID, PowerID, CabID}, []string{"gate", "comp", PreID, "eq", "chorus", "flanger", "phaser", "delay", "reverb", PowerID, CabID}},
 	}
 	for _, c := range casos {
 		if got := MergeOrder(c.preset, atual); !slices.Equal(got, c.want) {
@@ -491,7 +491,7 @@ func TestPresetAntigoSemCompressor(t *testing.T) {
 	if err := c.ApplyState(st); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"gate", "comp", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"}
+	want := []string{"gate", "comp", PreID, "eq", "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"}
 	if !slices.Equal(c.Order(), want) {
 		t.Errorf("ordem %v, esperava %v", c.Order(), want)
 	}

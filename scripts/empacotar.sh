@@ -1,5 +1,5 @@
 #!/bin/sh
-# Gera os pacotes do ampsim para Linux em dist/:
+# Gera os pacotes do AmpSim para Linux em dist/:
 #   ampsim_VERSAO_amd64.deb          (sudo apt install ./ampsim_VERSAO_amd64.deb)
 #   ampsim-VERSAO-linux-amd64.tar.gz (./install.sh, sem sudo)
 #
@@ -52,11 +52,11 @@ Maintainer: tatianno <tatianno@users.noreply.github.com>
 Depends: libc6, libegl1, libgles2, libwayland-client0, libwayland-cursor0, libwayland-egl1, libx11-6, libx11-xcb1, libxcursor1, libxfixes3, libxkbcommon0, libxkbcommon-x11-0
 Recommends: pipewire-jack, zenity, xdg-user-dirs
 Homepage: https://github.com/tatianno/ampsim
-Description: simulador de amplificador de guitarra e pedais
- Amp (pré-amp, tone stack Fender/Marshall modelado, power amp, gabinete por IR),
- pedais (gate, compressor, chorus, flanger, phaser, delay, reverb) com loop de
- efeitos, afinador, tap tempo, presets e gravação, tocando ao vivo com baixa
- latência (JACK via PipeWire).
+Description: AmpSim, simulador de amplificador de guitarra e pedais
+ Amp simulado ou modelos NAM (Neural Amp Modeler), gabinete por IR, pedais
+ (gate, compressor, EQ paramétrico, chorus, flanger, phaser, delay, reverb) com
+ loop de efeitos, afinador, tap tempo, presets e gravação, tocando ao vivo com
+ baixa latência (JACK via PipeWire).
 CONTROL
 dpkg-deb --root-owner-group --build "$D" "$DIST/ampsim_${VERSAO}_${ARCH}.deb" >/dev/null
 

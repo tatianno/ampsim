@@ -1,6 +1,6 @@
 [Desktop Entry]
 Type=Application
-Name=ampsim
+Name=AmpSim
 GenericName=Simulador de amplificador
 Comment=Simulador de amplificador de guitarra e pedais
 Exec=ampsim

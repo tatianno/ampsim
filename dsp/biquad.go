@@ -1,6 +1,9 @@
 package dsp
 
-import "math"
+import (
+	"math"
+	"math/cmplx"
+)
 
 // Coefs são os coeficientes de um biquad normalizado (a0 = 1).
 // Um filtro de 1ª ordem é um biquad com B2 = A2 = 0.
@@ -32,6 +35,16 @@ func (f *Biquad) ProcessBlock(buf []float64) {
 
 // SetCoefs troca os coeficientes mantendo o estado (para parâmetros que mudam ao vivo).
 func (f *Biquad) SetCoefs(c Coefs) { f.Coefs = c }
+
+// MagnitudeDB devolve o ganho do filtro (dB) na frequência f, para a taxa fs.
+func (c Coefs) MagnitudeDB(f, fs float64) float64 {
+	w := 2 * math.Pi * f / fs
+	z1 := complex(math.Cos(w), -math.Sin(w)) // e^{-jw}
+	z2 := z1 * z1
+	num := complex(c.B0, 0) + complex(c.B1, 0)*z1 + complex(c.B2, 0)*z2
+	den := 1 + complex(c.A1, 0)*z1 + complex(c.A2, 0)*z2
+	return 20 * math.Log10(cmplx.Abs(num/den)+1e-300)
+}
 
 // Reset zera o estado.
 func (f *Biquad) Reset() { f.z1, f.z2 = 0, 0 }

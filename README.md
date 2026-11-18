@@ -1,10 +1,10 @@
-<p align="center"><img src="packaging/linux/icons/ampsim-128.png" width="128" alt="ampsim"></p>
+<p align="center"><img src="packaging/linux/icons/ampsim-128.png" width="128" alt="AmpSim"></p>
 
-# ampsim
+# AmpSim
 
 Simulador de amplificador de guitarra e pedais em Go, feito como estudo de DSP:
 pré-amp com saturação sobreamostrada, tone stack, power amp, gabinete por resposta ao
-impulso (IR) e pedais de gate, compressor, chorus, flanger, phaser, delay e reverb — tocando em
+impulso (IR) e pedais de gate, compressor, EQ paramétrico, chorus, flanger, phaser, delay e reverb — tocando em
 tempo real, com GUI.
 
 Os algoritmos começaram como protótipos em Python (`referencia_python/`) e foram portados
@@ -21,6 +21,8 @@ para Go em streaming, validados contra as saídas do Python.
   contra a inferência oficial. Vêm incluídas 11 capturas do pré do Warm Music GT208 (veja `capturas/`), em
   tamanho lite ou completo; também abre arquivos `.nam` (WaveNet, inclusive o formato 0.7 da TONE3000).
   O app abre no modo NAM.
+- **EQ paramétrico de 5 bandas** (shelf de graves, 3 médios com Q ajustável, shelf de agudos e level), com a curva
+  de resposta desenhada no pedal; anda pela cadeia como os outros pedais (padrão: no loop de efeitos).
 - **Cadeia configurável** com **loop de efeitos** (send/return): os pedais podem ficar na
   frente do amp, entre o pré-amp e o power amp, ou depois do gabinete. A ordem muda ao vivo,
   sem estalo.
@@ -57,7 +59,7 @@ sudo apt install ./ampsim_0.4.0_amd64.deb      # Ubuntu/Debian: instala no siste
 tar xzf ampsim-0.4.0-linux-amd64.tar.gz && ampsim-0.4.0-linux-amd64/install.sh
 ```
 
-Depois é só procurar **ampsim** no menu de aplicativos (ou rodar `ampsim` / `ampsim-cli` no terminal).
+Depois é só procurar **AmpSim** no menu de aplicativos (ou rodar `ampsim` / `ampsim-cli` no terminal).
 Sem nenhuma IR escolhida, o gabinete usa a 2x12 SM57 incluída. Para gerar os pacotes a partir do código:
 `scripts/empacotar.sh 0.4.0` (saem em `dist/`).
 

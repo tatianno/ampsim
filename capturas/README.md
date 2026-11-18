@@ -1,6 +1,6 @@
 # Capturas NAM incluídas
 
-Modelos [NAM](https://github.com/sdatkinson/neural-amp-modeler) embutidos no ampsim (via `go:embed`), escolhidos no
+Modelos [NAM](https://github.com/sdatkinson/neural-amp-modeler) embutidos no AmpSim (via `go:embed`), escolhidos no
 cabeçote com **Amp: NAM → Modelo**. No `ampcli`: `-nam "<nome>"`; `ampcli -listar` mostra os nomes.
 
 Uma coleção de capturas do pré-amp do **Warm Music GT208 (Ragna-Rock 208)**, um combo híbrido brasileiro de 60 W,
@@ -41,7 +41,7 @@ com captadores mais fracos, espere uma resposta um pouco mais limpa.
 
 ## Ficha técnica
 
-- **Autor das capturas:** tatianno (autor do ampsim)
+- **Autor das capturas:** tatianno (autor do AmpSim)
 - **Treino:** TONE3000 (NAM 0.7). Cada arquivo é um `SlimmableContainer` com um modelo **lite** (3 canais, usado por
   padrão) e um **completo** (8 canais), a 48 kHz
 - **Licença:** a mesma do projeto (MIT, veja `LICENSE` na raiz)

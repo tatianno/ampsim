@@ -27,7 +27,7 @@ func runGUI(s *audio.Session, cleanup func(), version, aviso string) error {
 	}
 	go func() {
 		w := new(gioapp.Window)
-		w.Option(gioapp.Title("ampsim "+version), gioapp.Size(unit.Dp(1280), unit.Dp(760)), gioapp.MinSize(unit.Dp(960), unit.Dp(640)))
+		w.Option(gioapp.Title("AmpSim "+version), gioapp.Size(unit.Dp(1280), unit.Dp(760)), gioapp.MinSize(unit.Dp(960), unit.Dp(640)))
 		a.Invalidate = w.Invalidate
 		var ops op.Ops
 		code := 0
