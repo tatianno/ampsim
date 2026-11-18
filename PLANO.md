@@ -635,6 +635,7 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - testes de DSP: boost limpo; harmônicos crescem com o drive; wah com o pico na posição certa e o envelope abrindo
     com a palhetada; octave com 110/55/440 Hz dominando para 220 Hz; rotary acelerando com inércia e pulsando;
     vibe passa-tudo no vibrato e variando no chorus; pitch +12/−12/+7/0 st no lugar certo
+- [x] **Release v0.7.0** (18/11/2026): arrastar os pontos do EQ
 - [x] **EQ: arrastar os pontos na curva** (18/11): cada banda tem um ponto em (frequência, ganho da banda);
   arrastar muda os dois (limitado à faixa da banda) e os knobs acompanham (leem os mesmos parâmetros); roda do mouse
   sobre o ponto muda o Q (só nos médios); duplo clique zera o ganho; o ponto ativo cresce e mostra "banda: freq ·
