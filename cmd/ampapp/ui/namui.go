@@ -152,13 +152,6 @@ func (h *Head) namSection(gtx layout.Context, th *Theme) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return toggle(gtx, th, &h.preSw, on, "ON")
 				}),
-				layout.Rigid(spacer(12, 0)),
-				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					if h.sizeSel == nil {
-						return layout.Dimensions{}
-					}
-					return h.sizeSel.Layout(gtx, th, withAlpha(th.Gold, 220), th.Gold)
-				}),
 			)
 		}),
 		layout.Rigid(spacer(0, 6)),

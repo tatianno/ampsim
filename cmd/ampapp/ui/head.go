@@ -94,7 +94,13 @@ func (h *Head) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 						}),
 						layout.Flexed(1, hfill),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if h.stackSel == nil || nam {
+							if nam { // no modo NAM, o tamanho do modelo fica no lugar do tone stack
+								if h.sizeSel == nil {
+									return layout.Dimensions{}
+								}
+								return h.sizeSel.Layout(gtx, th, withAlpha(th.Gold, 220), th.Gold)
+							}
+							if h.stackSel == nil {
 								return layout.Dimensions{}
 							}
 							return h.stackSel.Layout(gtx, th, withAlpha(th.Gold, 220), th.Gold)
