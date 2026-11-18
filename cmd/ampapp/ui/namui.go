@@ -12,8 +12,11 @@ import (
 	"github.com/tatianno/ampsim/engine"
 )
 
-// NAMListID é a sobreposição com a lista de modelos NAM.
-const NAMListID = "__nam__"
+// Sobreposições com as listas de modelos NAM e de IRs.
+const (
+	NAMListID = "__nam__"
+	IRListID  = "__ir__"
+)
 
 // namLabel é o nome curto do modelo escolhido.
 func namLabel(pre *engine.Pre) string {
@@ -31,30 +34,52 @@ func baseNoExt(p string) string {
 	if i := strings.LastIndexAny(p, `/\`); i >= 0 {
 		p = p[i+1:]
 	}
-	return strings.TrimSuffix(strings.TrimSuffix(p, ".nam"), ".NAM")
+	if i := strings.LastIndex(p, "."); i > 0 {
+		p = p[:i]
+	}
+	return p
 }
 
-// NAMList é a lista de modelos: as capturas incluídas e "abrir arquivo".
-type NAMList struct {
-	chain *engine.Chain
-	names []string
-	rows  []widget.Clickable
-	open  widget.Clickable
-	// Load carrega um modelo fora da thread da GUI (o app liga ao carregamento assíncrono).
+// AssetList é uma lista de escolha (sobreposição): itens incluídos no app e "abrir arquivo".
+// Serve para os modelos NAM e para as IRs do gabinete.
+type AssetList struct {
+	title, section, openLabel string
+	names                     []string
+	rows                      []widget.Clickable
+	open                      widget.Clickable
+	current                   func() string // ref atual: capturas.Prefix+nome ou caminho
+	// Load carrega um item incluído (ref = capturas.Prefix + nome), fora da thread da GUI.
 	Load func(ref string)
-	// OnOpenFile abre o seletor de arquivo .nam.
+	// OnOpenFile abre o seletor de arquivo.
 	OnOpenFile func()
 }
 
-// NewNAMList cria a lista.
-func NewNAMList(chain *engine.Chain) *NAMList {
-	names := capturas.Names()
-	return &NAMList{chain: chain, names: names, rows: make([]widget.Clickable, len(names))}
+// NAMList é a lista de modelos NAM.
+type NAMList = AssetList
+
+// NewNAMList cria a lista de modelos NAM.
+func NewNAMList(chain *engine.Chain) *AssetList {
+	return newAssetList("MODELOS NAM", "INCLUÍDAS · só o amp (use o gabinete)", "Abrir arquivo .nam…",
+		capturas.Names(), func() string { return chain.Pre().NAMRef() })
+}
+
+// NewIRList cria a lista de IRs do gabinete.
+func NewIRList(chain *engine.Chain) *AssetList {
+	return newAssetList("GABINETE (IR)", "INCLUÍDAS", "Abrir arquivo WAV…", capturas.IRNames(), func() string {
+		if p := chain.Cab().IRPath(); p != "" {
+			return p
+		}
+		return capturas.Prefix + capturas.DefaultIRName
+	})
+}
+
+func newAssetList(title, section, openLabel string, names []string, current func() string) *AssetList {
+	return &AssetList{title: title, section: section, openLabel: openLabel, names: names,
+		rows: make([]widget.Clickable, len(names)), current: current}
 }
 
 // Layout desenha a lista (sobreposição).
-func (l *NAMList) Layout(gtx layout.Context, th *Theme, close func()) layout.Dimensions {
-	pre := l.chain.Pre()
+func (l *AssetList) Layout(gtx layout.Context, th *Theme, close func()) layout.Dimensions {
 	for i := range l.rows {
 		if l.rows[i].Clicked(gtx) && l.Load != nil {
 			l.Load(capturas.Prefix + l.names[i])
@@ -65,17 +90,17 @@ func (l *NAMList) Layout(gtx layout.Context, th *Theme, close func()) layout.Dim
 		close()
 		l.OnOpenFile()
 	}
-	cur := pre.NAMRef()
+	cur := l.current()
 	w := gtx.Dp(400)
 	gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Constraints.Max.Y)}
 	return panel(gtx, th.Panel, 14, 16, func(gtx layout.Context) layout.Dimensions {
 		ch := []layout.FlexChild{
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return drawText(gtx, th, "MODELOS NAM", textOpts{size: 18, color: th.Text, bold: true})
+				return drawText(gtx, th, l.title, textOpts{size: 18, color: th.Text, bold: true})
 			}),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Inset{Top: 10, Bottom: 4}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-					return drawText(gtx, th, "INCLUÍDAS · só o amp (use o gabinete)", textOpts{size: 11, color: th.Gold, bold: true})
+					return drawText(gtx, th, l.section, textOpts{size: 11, color: th.Gold, bold: true})
 				})
 			}),
 		}
@@ -95,7 +120,7 @@ func (l *NAMList) Layout(gtx layout.Context, th *Theme, close func()) layout.Dim
 		}
 		ch = append(ch, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Inset{Top: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
-				return smallButton(gtx, th, &l.open, "Abrir arquivo .nam…", gtx.Constraints.Max.X)
+				return smallButton(gtx, th, &l.open, l.openLabel, gtx.Constraints.Max.X)
 			})
 		}))
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx, ch...)

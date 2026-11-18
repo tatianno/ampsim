@@ -17,6 +17,7 @@ import (
 // processo termina quando a janela fecha.
 func runGUI(s *audio.Session, cleanup func(), version, aviso string) error {
 	a := ui.NewApp(s)
+	a.SetVersion(version)
 	if aviso != "" {
 		a.SetStatus(aviso, true)
 	}

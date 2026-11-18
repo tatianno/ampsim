@@ -3,6 +3,7 @@ package ui
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 	"time"
 
@@ -88,5 +89,54 @@ func TestCabecoteModoNAM(t *testing.T) {
 	h.frame(a.Layout)
 	if pre.Mode() != engine.AmpSimulated {
 		t.Error("não voltou ao simulado")
+	}
+}
+
+func TestListaDeIRs(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.cab.pick.Click()
+	h.frame(a.Layout)
+	if a.Opened() != IRListID {
+		t.Fatalf("aberto %q, esperava a lista de IRs", a.Opened())
+	}
+	h.frame(a.Layout)
+	names := capturas.IRNames()
+	i := slices.Index(names, "4x12 SM7")
+	if i < 0 {
+		t.Fatalf("IRs incluídas: %v", names)
+	}
+	a.irList.rows[i].Click()
+	espera(t, h, a, "a IR da lista", func() bool { return a.Chain.Cab().IRPath() == capturas.Prefix+"4x12 SM7" })
+	if got := a.Chain.Cab().IRName(); got != "4x12 SM7" {
+		t.Errorf("nome %q", got)
+	}
+	// o preset guarda a IR incluída
+	st := a.Chain.State()
+	c := engine.NewDefaultChain()
+	if err := c.ApplyState(st); err != nil || c.Cab().IRPath() != capturas.Prefix+"4x12 SM7" {
+		t.Errorf("preset: %v, IR %q", err, c.Cab().IRPath())
+	}
+}
+
+func TestSobre(t *testing.T) {
+	a, _ := novoApp(t)
+	a.SetVersion("9.9.9")
+	var opened []string
+	a.about.OpenURL = func(u string) error { opened = append(opened, u); return nil }
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.aboutBtn.Click()
+	h.frame(a.Layout)
+	if a.Opened() != AboutID {
+		t.Fatalf("aberto %q, esperava o Sobre", a.Opened())
+	}
+	h.frame(a.Layout)
+	a.about.repo.Click()
+	a.about.email.Click()
+	h.frame(a.Layout)
+	if !slices.Equal(opened, []string{RepoURL, "mailto:" + Contact + "?subject=ampsim"}) {
+		t.Errorf("links abertos: %v", opened)
 	}
 }

@@ -52,3 +52,30 @@ func TestOrdemNatural(t *testing.T) {
 		t.Errorf("%v", got)
 	}
 }
+
+func TestIRsIncluidas(t *testing.T) {
+	names := IRNames()
+	if !slices.Contains(names, DefaultIRName) || len(names) < 3 {
+		t.Fatalf("IRs: %v", names)
+	}
+	for _, n := range names {
+		fs, raw, err := LoadIR(n)
+		if err != nil {
+			t.Fatal(err)
+		}
+		peak := 0.0
+		for _, v := range raw {
+			peak = max(peak, math.Abs(v))
+		}
+		t.Logf("%s: %d Hz, %.1f ms, pico %.2f", n, fs, 1000*float64(len(raw))/float64(fs), peak)
+		if fs < 22050 || len(raw) < 100 || peak == 0 || math.IsNaN(peak) {
+			t.Errorf("%s: IR estranha", n)
+		}
+	}
+	if _, _, err := LoadIR("9x9 XYZ"); err == nil {
+		t.Error("esperava erro")
+	}
+	if got := irName("gabinete_4X12_sm7.wav"); got != "4x12 SM7" {
+		t.Errorf("nome %q", got)
+	}
+}

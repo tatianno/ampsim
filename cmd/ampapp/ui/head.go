@@ -2,7 +2,6 @@ package ui
 
 import (
 	"image"
-	"path/filepath"
 
 	"gioui.org/f32"
 	"gioui.org/layout"
@@ -19,7 +18,7 @@ import (
 // fica só com o volume (a captura já inclui o power amp).
 type Head struct {
 	chain      *engine.Chain
-	stackSel   *Selector // tone stack: Moderno / Fender / Marshall
+	stackSel   *Selector // tone stack: Moderno / Americano / Britânico
 	ampSel     *Selector // Simulado / NAM
 	sizeSel    *Selector // Lite / Completo
 	preKnobs   []*Knob
@@ -183,7 +182,7 @@ type CabPanel struct {
 	knobs  []*Knob
 	sw     widget.Clickable
 	pick   widget.Clickable
-	OnPick func() // abre o seletor de arquivo da IR
+	OnPick func() // abre a lista de IRs
 }
 
 // NewCabPanel cria o painel do gabinete.
@@ -208,9 +207,9 @@ func (c *CabPanel) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	if c.pick.Clicked(gtx) && c.OnPick != nil {
 		c.OnPick()
 	}
-	ir := "interna (" + capturas.DefaultIRName + ")"
-	if cab := c.chain.Cab(); cab != nil && cab.IRPath() != "" {
-		ir = filepath.Base(cab.IRPath())
+	ir := capturas.DefaultIRName
+	if cab := c.chain.Cab(); cab != nil {
+		ir = cab.IRName()
 	}
 	gtx.Constraints.Min.X = gtx.Dp(CabWidthDp)
 	gtx.Constraints.Max.X = gtx.Dp(CabWidthDp)
@@ -229,7 +228,7 @@ func (c *CabPanel) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 			}),
 			layout.Rigid(spacer(0, 8)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return smallButton(gtx, th, &c.pick, "IR: "+ir, gtx.Constraints.Max.X)
+				return smallButton(gtx, th, &c.pick, "IR: "+ir+"  ▾", gtx.Constraints.Max.X)
 			}),
 			layout.Rigid(spacer(0, 8)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {

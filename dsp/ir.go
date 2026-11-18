@@ -32,7 +32,9 @@ func PrepareIR(ir []float64, fsIR, fsTarget int, maxMs float64) []float64 {
 		out = out[:maxLen]
 	}
 
-	fade := min(len(out), int(0.025*float64(fsTarget)))
+	// fade de 25 ms no fim; em IRs curtas (ex.: 15 ms), só no último quarto, para não
+	// atenuar o começo, onde está quase toda a energia
+	fade := min(len(out)/4, int(0.025*float64(fsTarget)))
 	for i := 0; i < fade; i++ {
 		g := 1.0
 		if fade > 1 {

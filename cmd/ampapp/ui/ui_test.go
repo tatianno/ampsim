@@ -741,12 +741,12 @@ func TestSeletorDeToneStackNoCabecote(t *testing.T) {
 	if p.Get() != engine.StackModern {
 		t.Fatal("o padrão é o Moderno")
 	}
-	a.head.stackSel.btns[engine.StackMarshall].Click()
+	a.head.stackSel.btns[engine.StackBritish].Click()
 	h.frame(a.Layout)
-	if p.Get() != engine.StackMarshall {
+	if p.Get() != engine.StackBritish {
 		t.Errorf("stack %v, esperava Marshall", p.Get())
 	}
-	if got := FormatValue(p.Info(), p.Get()); got != "Marshall" {
+	if got := FormatValue(p.Info(), p.Get()); got != "Britânico" {
 		t.Errorf("rótulo %q", got)
 	}
 }

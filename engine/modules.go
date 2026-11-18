@@ -3,6 +3,9 @@ package engine
 import (
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -89,13 +92,14 @@ func (m *Gate) Process(buf []float64) {
 // Pre é o pré-amp: HP 70 Hz → GANHO/saturação 4x → tone stack (grave/médio/agudo).
 //
 // O tone stack pode ser o "Moderno" (3 equalizadores independentes) ou o circuito passivo
-// TMB modelado do Fender Bassman ou do Marshall 1959, em que os controles interagem.
+// TMB modelado ("Americano": Fender Bassman 5F6-A; "Britânico": Marshall JTM45/1959), em que
+// os controles interagem.
 type Pre struct {
 	base
 	tight dsp.Biquad
 	pre   *dsp.Preamp
 	tone  *dsp.ToneStack
-	tmb   [2]*dsp.TMBStack // Fender, Marshall
+	tmb   [2]*dsp.TMBStack // Americano, Britânico
 
 	kind, prev int     // tone stack atual e o anterior (durante a troca)
 	xf, xstep  float64 // crossfade da troca de tone stack (0 → 1)
@@ -110,8 +114,8 @@ type Pre struct {
 // Tipos de tone stack (valores do parâmetro "stack").
 const (
 	StackModern = iota
-	StackFender
-	StackMarshall
+	StackAmerican
+	StackBritish
 )
 
 // StackFadeMs é o crossfade ao trocar de tone stack (evita estalo).
@@ -126,7 +130,7 @@ func NewPre() *Pre {
 		ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
 		ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
 		ParamInfo{ID: "stack", Name: "Tone stack", Min: 0, Max: 2, Default: StackModern, Step: 1,
-			Choices: []string{"Moderno", "Fender", "Marshall"}},
+			Choices: []string{"Moderno", "Americano", "Britânico"}},
 		ParamInfo{ID: "amp", Name: "Amp", Min: 0, Max: 1, Default: AmpSimulated, Step: 1,
 			Choices: []string{"Simulado", "NAM"}},
 		ParamInfo{ID: "nam_input", Name: "Entrada", Unit: "dB", Min: -24, Max: 24, Default: 0},
@@ -171,9 +175,9 @@ func (m *Pre) Latency() int { return dsp.PreampLatency }
 // stack aplica o tone stack k.
 func (m *Pre) stack(k int, buf []float64) {
 	switch k {
-	case StackFender:
+	case StackAmerican:
 		m.tmb[0].ProcessBlock(buf)
-	case StackMarshall:
+	case StackBritish:
 		m.tmb[1].ProcessBlock(buf)
 	default:
 		m.tone.ProcessBlock(buf)
@@ -225,9 +229,9 @@ func (m *Pre) processSim(buf []float64) {
 	if k := int(m.get("stack")); k != m.kind && m.xf >= 1 {
 		m.prev, m.kind, m.xf = m.kind, k, 0
 		switch k { // o novo começa limpo
-		case StackFender:
+		case StackAmerican:
 			m.tmb[0].Reset()
-		case StackMarshall:
+		case StackBritish:
 			m.tmb[1].Reset()
 		default:
 			m.tone.Reset()
@@ -449,11 +453,52 @@ func (m *Cab) LoadIRFile(path string) error {
 	return nil
 }
 
-// IRPath devolve o caminho da IR carregada ("" = a IR interna, capturas.DefaultIRName).
+// ResolveIR interpreta o -ir da linha de comando: um arquivo existente, ou o nome de uma
+// IR incluída (ex.: "4x12 SM7").
+func ResolveIR(s string) string {
+	if _, err := os.Stat(s); err == nil || strings.HasPrefix(s, capturas.Prefix) {
+		return s
+	}
+	for _, n := range capturas.IRNames() {
+		if strings.EqualFold(n, s) {
+			return capturas.Prefix + n
+		}
+	}
+	return s // deixa o erro de arquivo inexistente aparecer
+}
+
+// LoadIRRef carrega uma IR incluída ("embutida:<nome>", veja capturas.IRNames) ou um arquivo WAV.
+func (m *Cab) LoadIRRef(ref string) error {
+	name, ok := strings.CutPrefix(ref, capturas.Prefix)
+	if !ok {
+		return m.LoadIRFile(ref)
+	}
+	fs, raw, err := capturas.LoadIR(name)
+	if err != nil {
+		return fmt.Errorf("carregando IR: %w", err)
+	}
+	m.LoadIR(raw, fs, ref)
+	return nil
+}
+
+// IRPath devolve a IR escolhida: o caminho do arquivo, "embutida:<nome>" ou "" (a padrão,
+// capturas.DefaultIRName).
 func (m *Cab) IRPath() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.irPath
+}
+
+// IRName devolve o nome da IR em uso para exibir (o nome da incluída ou o do arquivo).
+func (m *Cab) IRName() string {
+	p := m.IRPath()
+	if p == "" {
+		return capturas.DefaultIRName
+	}
+	if n, ok := strings.CutPrefix(p, capturas.Prefix); ok {
+		return n
+	}
+	return filepath.Base(p)
 }
 
 func (m *Cab) ExtraState() map[string]string {
@@ -465,7 +510,7 @@ func (m *Cab) ExtraState() map[string]string {
 
 func (m *Cab) ApplyExtraState(s map[string]string) error {
 	if p := s["ir"]; p != "" && p != m.IRPath() {
-		return m.LoadIRFile(p)
+		return m.LoadIRRef(p)
 	}
 	return nil
 }

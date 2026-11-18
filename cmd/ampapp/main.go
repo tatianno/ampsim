@@ -58,7 +58,7 @@ func main() {
 func run() error {
 	var (
 		arquivo  = flag.String("arquivo", "testdata/guitarra_di.wav", "WAV para tocar")
-		ir       = flag.String("ir", "", "IR do gabinete (vazio = a interna, 2x12 SM57)")
+		ir       = flag.String("ir", "", "IR do gabinete: arquivo WAV ou nome de uma incluída (1x10 SM58, 2x12 SM57, 4x12 SM7; vazio = 2x12 SM57)")
 		preset   = flag.String("preset", "", "preset para carregar: arquivo .json ou nome (ex.: Lead)")
 		saida    = flag.Int("saida", -1, "índice da saída de áudio (-1 = padrão; veja -listar-dispositivos)")
 		entrada  = flag.Int("entrada", -1, "índice da entrada (-1 = padrão, -2 = sem entrada)")
@@ -85,8 +85,9 @@ func run() error {
 	}
 
 	chain := engine.NewDefaultChain()
-	if optionalFile("ir", *ir) { // sem IR: o gabinete usa a IR interna (2x12 SM57)
-		if err := chain.Cab().LoadIRFile(*ir); err != nil {
+	chain.Pre().Param("amp").Set(engine.AmpNAM) // o app abre no amp NAM (um -preset pode trocar)
+	if optionalFile("ir", *ir) {                // sem IR: o gabinete usa a IR interna (2x12 SM57)
+		if err := chain.Cab().LoadIRRef(engine.ResolveIR(*ir)); err != nil {
 			return err
 		}
 	}
@@ -313,7 +314,7 @@ func (a *app) exec(line string) bool {
 	case "abrir":
 		err = a.player.Load(rest)
 	case "ir":
-		err = a.chain.Cab().LoadIRFile(rest)
+		err = a.chain.Cab().LoadIRRef(engine.ResolveIR(rest))
 	case "set":
 		err = a.chain.SetList(rest)
 	case "on":

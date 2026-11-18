@@ -48,7 +48,10 @@ type App struct {
 	th        *Theme
 	transport *Transport
 	head      *Head
-	namList   *NAMList
+	about     *About
+	aboutBtn  widget.Clickable
+	namList   *AssetList
+	irList    *AssetList
 	cab       *CabPanel
 	board     *Board
 	input     *InputPanel
@@ -112,9 +115,12 @@ func NewApp(s *audio.Session) *App {
 	}
 	a.UsePresetDir(dir)
 	a.head = NewHead(chain)
+	a.about = NewAbout("", a.setStatus)
 	a.head.OnPickNAM = func() { a.open = NAMListID }
 	a.namList = NewNAMList(chain)
-	a.namList.Load = a.loadNAMAsync
+	a.namList.Load = func(ref string) {
+		a.loadAsync(ref, func() error { return a.Chain.Pre().LoadNAM(ref) }, "modelo NAM")
+	}
 	a.namList.OnOpenFile = func() {
 		pick := a.PickNAM
 		if pick == nil {
@@ -140,7 +146,12 @@ func NewApp(s *audio.Session) *App {
 	a.transport.OnOpen = func() {
 		a.pickAsync("Abrir WAV para tocar", func(path string) error { return a.Player.Load(path) })
 	}
-	a.cab.OnPick = func() {
+	a.cab.OnPick = func() { a.open = IRListID }
+	a.irList = NewIRList(chain)
+	a.irList.Load = func(ref string) {
+		a.loadAsync(ref, func() error { return a.Chain.Cab().LoadIRRef(ref) }, "IR")
+	}
+	a.irList.OnOpenFile = func() {
 		a.pickAsync("Escolher IR do gabinete", func(path string) error { return a.Chain.Cab().LoadIRFile(path) })
 	}
 	return a
@@ -160,7 +171,7 @@ func (a *App) Open(id string) {
 	switch id {
 	case AudioID:
 		a.input.OnAudio()
-	case PresetListID, TunerID:
+	case PresetListID, TunerID, AboutID, NAMListID, IRListID:
 		a.open = id
 	case RecordingsID:
 		a.recs.dir = a.RecordDir
@@ -218,17 +229,17 @@ func (a *App) pickWith(pick func(string) (string, error), title string, apply fu
 	}()
 }
 
-// loadNAMAsync carrega um modelo NAM fora da goroutine da GUI (montar e aquecer as
-// redes leva algumas dezenas de ms).
-func (a *App) loadNAMAsync(ref string) {
+// loadAsync carrega um item incluído (modelo NAM ou IR) fora da goroutine da GUI
+// (montar e aquecer as redes NAM leva algumas dezenas de ms).
+func (a *App) loadAsync(ref string, load func() error, what string) {
 	go func() {
-		err := a.Chain.Pre().LoadNAM(ref)
+		err := load()
 		a.Post(func() {
 			if err != nil {
 				a.setStatus(err.Error(), true)
 				return
 			}
-			a.setStatus("modelo NAM: "+baseNoExt(strings.TrimPrefix(ref, capturas.Prefix)), false)
+			a.setStatus(what+": "+strings.TrimPrefix(ref, capturas.Prefix), false)
 		})
 	}()
 }
@@ -269,6 +280,9 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	}
 	if a.recsBtn.Clicked(gtx) {
 		a.Open(RecordingsID)
+	}
+	if a.aboutBtn.Clicked(gtx) {
+		a.open = AboutID
 	}
 	th := a.th
 	paint.Fill(gtx.Ops, th.Bg)
@@ -411,8 +425,15 @@ func (a *App) topBar(gtx layout.Context) layout.Dimensions {
 		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, info, textOpts{size: 12, color: th.Dim, align: text.End, width: gtx.Constraints.Max.X})
 		}),
+		layout.Rigid(spacer(12, 0)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return smallButton(gtx, th, &a.aboutBtn, "Sobre", 0)
+		}),
 	)
 }
+
+// SetVersion define a versão mostrada na área Sobre.
+func (a *App) SetVersion(v string) { a.about.version = v }
 
 func (a *App) footer(gtx layout.Context) layout.Dimensions {
 	th := a.th
@@ -483,6 +504,10 @@ func (a *App) overlay(gtx layout.Context) {
 		content = func(gtx layout.Context) layout.Dimensions { return a.recs.Layout(gtx, th) }
 	} else if a.open == TunerID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.tuner.Layout(gtx, th) }
+	} else if a.open == AboutID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.about.Layout(gtx, th) }
+	} else if a.open == IRListID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.irList.Layout(gtx, th, closeOverlay) }
 	} else if a.open == NAMListID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.namList.Layout(gtx, th, closeOverlay) }
 	} else if a.open == PresetListID {

@@ -46,9 +46,17 @@ com captadores mais fracos, espere uma resposta um pouco mais limpa.
   padrão) e um **completo** (8 canais), a 48 kHz
 - **Licença:** a mesma do projeto (MIT, veja `LICENSE` na raiz)
 
-## IR do gabinete
+## IRs de gabinete
 
-`gabinete_2x12_sm57.wav` é a IR padrão do gabinete (um 2x12 com SM57), usada quando nenhuma IR é escolhida; também
-vem embutida. Mesma licença (MIT).
+Também embutidas, escolhidas no gabinete (**IR: ▾**) ou com `-ir "<nome>"`; o nome sai do arquivo
+(`gabinete_<falantes>_<microfone>.wav`):
+
+| Arquivo | Nome | |
+|---|---|---|
+| `gabinete_1x10_sm58.wav` | 1x10 SM58 | 44,1 kHz, 53 ms |
+| `gabinete_2x12_sm57.wav` | 2x12 SM57 | 48 kHz, 500 ms; **padrão** quando nenhuma IR é escolhida |
+| `gabinete_4x12_sm7.wav` | 4x12 SM7 | 48 kHz, 16 ms |
+
+Mesma licença (MIT). Para incluir outra IR, basta colocar o WAV aqui seguindo o padrão do nome.
 
 Para incluir outra captura, basta colocar o `.nam` nesta pasta: o teste `TestTodasCarregam` confere se ela carrega.

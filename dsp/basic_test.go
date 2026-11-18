@@ -117,3 +117,19 @@ func TestFadeEdges(t *testing.T) {
 	}
 	FadeEdges(make([]float64, 10), 48000, 5, 20) // arquivo curtíssimo: não pode quebrar
 }
+
+// Numa IR curta, o fade do fim não pode atingir o começo (onde está a energia).
+func TestPrepareIRCurta(t *testing.T) {
+	ir := make([]float64, 700) // ~15 ms a 48 kHz
+	for i := range ir {
+		ir[i] = math.Exp(-float64(i) / 40)
+	}
+	out := PrepareIR(ir, 48000, 48000, 150)
+	// depois da normalização, a razão entre as amostras do início não muda
+	if r := out[100] / out[0]; math.Abs(r-ir[100]/ir[0]) > 1e-12 {
+		t.Errorf("o fade atingiu o começo da IR: razão %g, esperava %g", r, ir[100]/ir[0])
+	}
+	if out[len(out)-1] != 0 {
+		t.Error("o fim da IR deveria ir a zero")
+	}
+}

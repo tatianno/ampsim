@@ -601,7 +601,7 @@ func TestToneStackModeladoNaCadeia(t *testing.T) {
 		out := append([]float64(nil), di...)
 		for i := 0; i < len(out); i += bloco {
 			if troca && i >= 10000 {
-				c.Module(PreID).Param("stack").Set(StackFender)
+				c.Module(PreID).Param("stack").Set(StackAmerican)
 			}
 			c.ProcessMono(out[i:min(i+bloco, len(out))])
 		}
@@ -641,7 +641,7 @@ func renderTroca(t *testing.T, fs float64, di []float64, bloco int) []float64 {
 	out := append([]float64(nil), di...)
 	for i := 0; i < len(out); i += bloco {
 		if i == 10240 {
-			c.Module(PreID).Param("stack").Set(StackMarshall)
+			c.Module(PreID).Param("stack").Set(StackBritish)
 		}
 		c.ProcessMono(out[i:min(i+bloco, len(out))])
 	}

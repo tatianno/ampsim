@@ -472,7 +472,7 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
   - validado: H(s) contra a solução direta do circuito (erro < 10⁻⁹); digital contra analógico (< 0,5 dB até 4 kHz);
     Fender todo em 0 ≈ mudo (−60 dB); vale nos médios com tudo em 5 (Fender −12,4 dB, Marshall −9,2 dB); cada knob mexe
     na sua região; estável (impulso decai) em toda a faixa
-  - no pré-amp: parâmetro **Tone stack** (Moderno / Fender / Marshall) com crossfade de 20 ms ao trocar; seletor no
+  - no pré-amp: parâmetro **Tone stack** (Moderno / Americano / Britânico, nomes sem marca desde 18/11) com crossfade de 20 ms ao trocar; seletor no
     cabeçote; o padrão continua Moderno (presets antigos não mudam); `ParamInfo.Choices` dá nome às posições
   - presets de fábrica: Clean e Ambiente com Fender, Crunch e Lead com Marshall (renivelados em −18 dBFS RMS)
 - [x] **Otimização de CPU** (18/11), medida com benchmarks por bloco de 64 amostras (`dsp/bench_test.go`):
@@ -590,6 +590,14 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   legenda dos nomes em `capturas/README.md`; licença MIT (decidido pelo autor em 18/11)
 - [x] **IR padrão embutida**: a `gabinete_2x12_sm57.wav` (do autor, MIT) vai em `capturas/` e substitui a IR genérica
   sintética quando nenhuma IR é escolhida (a genérica fica só de reserva); `-ir` vazio por padrão no app e no CLI
+- [x] **IRs de fábrica** (18/11): 1x10 SM58, 2x12 SM57 (padrão) e 4x12 SM7, do autor (MIT), em `capturas/`; o gabinete
+  abre a lista "GABINETE (IR)" (incluídas + "Abrir arquivo WAV…"); o estado guarda `embutida:<nome>`; `-ir` aceita
+  o nome. Corrigido o `PrepareIR`: o fade de 25 ms do fim fica no último quarto de IRs curtas (a 4x12 tem 16 ms e
+  seria atenuada inteira)
+- [x] O app **abre no modo NAM** (os presets de fábrica continuam no amp simulado, para o qual foram acertados);
+  CLI e testes continuam com o simulado por padrão
+- [x] Área **Sobre** (botão no topo): ícone, versão, repositório e contato do autor, com botões que abrem o
+  navegador e o e-mail (`xdg-open`); crédito ao Neural Amp Modeler
 - [x] GUI: seletor **Amp: Simulado | NAM** no cabeçote; no modo NAM, a seção mostra o botão do modelo (lista
   "MODELOS NAM" com as incluídas + "Abrir arquivo .nam…", filtro `*.nam` no zenity), Lite | Completo, canais e
   tamanho em uso, aviso de taxa diferente e o knob de entrada; o power mostra só o volume; o bloco PRÉ da cadeia

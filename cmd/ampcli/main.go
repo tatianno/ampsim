@@ -41,7 +41,7 @@ func run() error {
 	var (
 		in        = flag.String("in", "", "WAV de entrada (DI da guitarra)")
 		out       = flag.String("out", "", "WAV de saída")
-		ir        = flag.String("ir", "", "WAV da IR do gabinete (vazio = a interna, 2x12 SM57)")
+		ir        = flag.String("ir", "", "IR do gabinete: arquivo WAV ou nome de uma incluída (vazio = 2x12 SM57; veja -listar)")
 		preset    = flag.String("preset", "", "preset para carregar: arquivo .json ou nome (ex.: Lead)")
 		savePre   = flag.String("salvar-preset", "", "grava o estado final (após -preset/-on/-off/-set) neste JSON")
 		on        = flag.String("on", "", "módulos para ligar, separados por vírgula (ex.: chorus,delay)")
@@ -64,7 +64,7 @@ func run() error {
 		return nil
 	}
 	if *ir != "" { // sem IR: o gabinete usa a IR interna (2x12 SM57)
-		if err := chain.Cab().LoadIRFile(*ir); err != nil {
+		if err := chain.Cab().LoadIRRef(engine.ResolveIR(*ir)); err != nil {
 			return err
 		}
 	}
@@ -217,6 +217,11 @@ const namRate = 48000
 
 func listar(c *engine.Chain) {
 	fmt.Println("cadeia:", c)
+	fmt.Println()
+	fmt.Println("IRs de gabinete incluídas (-ir):")
+	for _, n := range capturas.IRNames() {
+		fmt.Println("  " + n)
+	}
 	fmt.Println()
 	fmt.Println("capturas NAM incluídas (-nam):")
 	for _, n := range capturas.Names() {
