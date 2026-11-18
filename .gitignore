@@ -6,6 +6,7 @@ referencia_python/saida/
 # Go
 /ampcli
 /ampapp
+/namcli
 *.test
 *.out
 
@@ -16,6 +17,9 @@ saida/
 # Veja o README, seção "testdata".
 testdata/*.wav
 testdata/referencia/
+# Modelos .nam (capturas de terceiros) e as saídas de referência da NAM core geradas com eles.
+/NAM/
+testdata/nam/
 
 # Pacotes gerados por scripts/empacotar.sh
 /dist/

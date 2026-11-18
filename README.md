@@ -14,7 +14,11 @@ para Go em streaming, validados contra as saídas do Python.
 
 - **Amp em três partes** — pré-amp (ganho, grave, médio, agudo, com tone stack Moderno ou o circuito
   Fender/Marshall modelado), power amp (presença,
-  volume) e gabinete (IR, low cut, high cut).
+  volume) e gabinete (IR, low cut, high cut). A IR padrão é um 2x12 com SM57, embutida no app.
+- **Amp NAM** — o seletor **Amp: Simulado | NAM** troca o pré-amp por um modelo
+  [NAM](https://github.com/sdatkinson/neural-amp-modeler) (Neural Amp Modeler), executado em Go puro e validado
+  contra a inferência oficial. Vêm incluídas 11 capturas do pré do Warm Music GT208 (veja `capturas/`), em
+  tamanho lite ou completo; também abre arquivos `.nam` (WaveNet, inclusive o formato 0.7 da TONE3000).
 - **Cadeia configurável** com **loop de efeitos** (send/return): os pedais podem ficar na
   frente do amp, entre o pré-amp e o power amp, ou depois do gabinete. A ordem muda ao vivo,
   sem estalo.
@@ -52,7 +56,7 @@ tar xzf ampsim-0.3.1-linux-amd64.tar.gz && ampsim-0.3.1-linux-amd64/install.sh
 ```
 
 Depois é só procurar **ampsim** no menu de aplicativos (ou rodar `ampsim` / `ampsim-cli` no terminal).
-Sem nenhuma IR carregada, o app usa um gabinete genérico interno. Para gerar os pacotes a partir do código:
+Sem nenhuma IR escolhida, o app usa a IR interna (2x12 SM57). Para gerar os pacotes a partir do código:
 `scripts/empacotar.sh 0.3.1` (saem em `dist/`).
 
 **Pelo Go:**
@@ -97,7 +101,7 @@ usar os caminhos padrão dos comandos, coloque em `testdata/`:
 | Arquivo | Conteúdo |
 |---|---|
 | `testdata/guitarra_di.wav` | uma gravação DI de guitarra (alguns segundos) |
-| `testdata/gabinete_2x12_sm57.wav` | uma IR de gabinete |
+| `testdata/gabinete_2x12_sm57.wav` | a IR de gabinete (a mesma embutida em `capturas/`) |
 
 e gere as referências do Python (usadas na comparação Go × Python):
 

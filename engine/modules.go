@@ -6,6 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/tatianno/ampsim/capturas"
 	"github.com/tatianno/ampsim/dsp"
 	"github.com/tatianno/ampsim/wav"
 )
@@ -99,6 +100,11 @@ type Pre struct {
 	kind, prev int     // tone stack atual e o anterior (durante a troca)
 	xf, xstep  float64 // crossfade da troca de tone stack (0 → 1)
 	scratch    []float64
+
+	nam         namAmp
+	mode, pmode int     // modo do amp atual e o anterior (durante a troca)
+	mxf, mxstep float64 // crossfade da troca de modo
+	mscratch    []float64
 }
 
 // Tipos de tone stack (valores do parâmetro "stack").
@@ -111,7 +117,8 @@ const (
 // StackFadeMs é o crossfade ao trocar de tone stack (evita estalo).
 const StackFadeMs = 20.0
 
-// NewPre cria o pré-amp.
+// NewPre cria o pré-amp. No modo NAM ("amp" = NAM), um modelo NAM substitui o
+// pré-amp simulado (e o power amp passa a ser só o volume; veja Power).
 func NewPre() *Pre {
 	return &Pre{base: base{id: "pre", name: "Pré-amp", paramSet: newParamSet(
 		ParamInfo{ID: "gain", Name: "Ganho", Min: 0, Max: 10, Default: 6.5},
@@ -120,6 +127,11 @@ func NewPre() *Pre {
 		ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
 		ParamInfo{ID: "stack", Name: "Tone stack", Min: 0, Max: 2, Default: StackModern, Step: 1,
 			Choices: []string{"Moderno", "Fender", "Marshall"}},
+		ParamInfo{ID: "amp", Name: "Amp", Min: 0, Max: 1, Default: AmpSimulated, Step: 1,
+			Choices: []string{"Simulado", "NAM"}},
+		ParamInfo{ID: "nam_input", Name: "Entrada", Unit: "dB", Min: -24, Max: 24, Default: 0},
+		ParamInfo{ID: "nam_size", Name: "Tamanho", Min: 0, Max: 1, Default: NAMLite, Step: 1,
+			Choices: []string{"Lite", "Completo"}},
 	)}}
 }
 
@@ -132,9 +144,20 @@ func (m *Pre) Prepare(fs float64, maxBlock int) {
 	m.prev, m.xf = m.kind, 1
 	m.xstep = 1 / (StackFadeMs / 1000 * fs)
 	m.scratch = make([]float64, maxBlock)
+	m.mode = m.Mode()
+	m.pmode, m.mxf = m.mode, 1
+	m.mxstep = 1 / (AmpFadeMs / 1000 * fs)
+	m.mscratch = make([]float64, maxBlock)
+	m.nam.prepare(fs, maxBlock)
 }
 
 func (m *Pre) Reset() {
+	m.resetSim()
+	m.nam.reset()
+	m.mxf = 1
+}
+
+func (m *Pre) resetSim() {
 	m.tight.Reset()
 	m.pre.Reset()
 	m.tone.Reset()
@@ -158,6 +181,38 @@ func (m *Pre) stack(k int, buf []float64) {
 }
 
 func (m *Pre) Process(buf []float64) {
+	if mode := m.Mode(); mode != m.mode && m.mxf >= 1 {
+		m.pmode, m.mode, m.mxf = m.mode, mode, 0
+		if mode == AmpNAM {
+			m.nam.reset()
+		} else {
+			m.resetSim()
+		}
+	}
+	if m.mxf >= 1 {
+		m.run(m.mode, buf)
+		return
+	}
+	// troca de modo em andamento: os dois rodam e o resultado é misturado
+	old := m.mscratch[:len(buf)]
+	copy(old, buf)
+	m.run(m.pmode, old)
+	m.run(m.mode, buf)
+	for i := range buf {
+		m.mxf = math.Min(1, m.mxf+m.mxstep)
+		buf[i] = m.mxf*buf[i] + (1-m.mxf)*old[i]
+	}
+}
+
+func (m *Pre) run(mode int, buf []float64) {
+	if mode == AmpNAM {
+		m.nam.process(buf, math.Pow(10, m.get("nam_input")/20), int(m.get("nam_size")))
+		return
+	}
+	m.processSim(buf)
+}
+
+func (m *Pre) processSim(buf []float64) {
 	m.pre.SetDrive(m.get("gain") / 10)
 	bass, mid, treble := m.get("bass"), m.get("mid"), m.get("treble")
 	m.tone.Set(bass, mid, treble)
@@ -193,11 +248,26 @@ func (m *Pre) Process(buf []float64) {
 	}
 }
 
-// Power é o power amp: saturação suave (tanh) → presença → volume.
+// Power é o power amp: saturação suave (tanh) → presença → volume. Com o pré-amp no
+// modo NAM (a captura já inclui o power amp), sobra só o volume.
 type Power struct {
 	base
 	presence *dsp.Presence
 	volume   dsp.Smoother
+
+	ampMode   *Param  // parâmetro "amp" do pré-amp (nil = sempre simulado)
+	sim, step float64 // 1 = power simulado, 0 = só volume (crossfade na troca)
+	dry       []float64
+}
+
+// FollowAmpMode liga o power amp ao seletor de modo do pré-amp.
+func (m *Power) FollowAmpMode(pre *Pre) { m.ampMode = pre.Param("amp") }
+
+func (m *Power) simTarget() float64 {
+	if m.ampMode != nil && int(m.ampMode.Get()) == AmpNAM {
+		return 0
+	}
+	return 1
 }
 
 // NewPower cria o power amp.
@@ -208,21 +278,48 @@ func NewPower() *Power {
 	)}}
 }
 
-func (m *Power) Prepare(fs float64, _ int) {
+func (m *Power) Prepare(fs float64, maxBlock int) {
+	m.dry = make([]float64, maxBlock)
 	m.presence = dsp.NewPresence(fs)
 	m.volume = dsp.NewSmoother(fs, 20)
+	m.sim = m.simTarget()
+	m.step = 1 / (AmpFadeMs / 1000 * fs)
 }
 
-func (m *Power) Reset()       { m.presence.Reset() }
+func (m *Power) Reset()       { m.presence.Reset(); m.sim = m.simTarget() }
 func (m *Power) Latency() int { return 0 }
 
 func (m *Power) Process(buf []float64) {
-	m.presence.Set(m.get("presence"))
 	m.volume.SetTarget(math.Pow(10, m.get("volume")/20))
-	for i, x := range buf {
-		buf[i] = math.Tanh(x)
+	target := m.simTarget()
+	switch {
+	case target == 0 && m.sim == 0: // só volume
+	case target == 1 && m.sim == 1:
+		m.presence.Set(m.get("presence"))
+		for i, x := range buf {
+			buf[i] = math.Tanh(x)
+		}
+		m.presence.ProcessBlock(buf)
+	default: // troca de modo: mistura o power simulado com o sinal direto
+		if m.sim == 0 {
+			m.presence.Reset()
+		}
+		m.presence.Set(m.get("presence"))
+		dry := m.dry[:len(buf)]
+		copy(dry, buf)
+		for i, x := range buf {
+			buf[i] = math.Tanh(x)
+		}
+		m.presence.ProcessBlock(buf)
+		for i, x := range dry {
+			if m.sim < target {
+				m.sim = math.Min(target, m.sim+m.step)
+			} else {
+				m.sim = math.Max(target, m.sim-m.step)
+			}
+			buf[i] = m.sim*buf[i] + (1-m.sim)*x
+		}
 	}
-	m.presence.ProcessBlock(buf)
 	for i := range buf {
 		buf[i] *= m.volume.Next()
 	}
@@ -270,8 +367,8 @@ func (m *Cab) Prepare(fs float64, _ int) {
 	if m.irRaw != nil {
 		m.conv = dsp.NewConvolver(dsp.PrepareIR(m.irRaw, m.irFS, int(fs), IRMaxMs), IRPartition)
 	} else {
-		// sem IR carregada: gabinete genérico interno (sem ele o amp soa áspero e chiado)
-		m.conv = dsp.NewConvolver(dsp.GenericCabIR(fs), IRPartition)
+		// sem IR escolhida: o gabinete interno (sem gabinete o amp soa áspero e chiado)
+		m.conv = dsp.NewConvolver(builtinIR(fs), IRPartition)
 	}
 	m.pending.Store(nil)
 	m.mu.Unlock()
@@ -322,6 +419,15 @@ func setCascade(c dsp.Cascade, design func(dst []dsp.Coefs, order int, fs, f flo
 	}
 }
 
+// builtinIR é a IR do gabinete interno (capturas.DefaultIR) preparada para fs; se ela
+// não puder ser lida, cai na IR genérica sintética.
+func builtinIR(fs float64) []float64 {
+	if irFS, raw, err := capturas.DefaultIR(); err == nil {
+		return dsp.PrepareIR(raw, irFS, int(fs), IRMaxMs)
+	}
+	return dsp.GenericCabIR(fs)
+}
+
 // LoadIR carrega uma IR (amostras brutas e sua taxa). Pode ser chamado com o áudio
 // rodando: a IR é preparada aqui e trocada de forma atômica no próximo bloco.
 func (m *Cab) LoadIR(raw []float64, fsIR int, path string) {
@@ -343,7 +449,7 @@ func (m *Cab) LoadIRFile(path string) error {
 	return nil
 }
 
-// IRPath devolve o caminho da IR carregada ("" = a IR interna genérica).
+// IRPath devolve o caminho da IR carregada ("" = a IR interna, capturas.DefaultIRName).
 func (m *Cab) IRPath() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()

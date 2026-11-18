@@ -50,3 +50,22 @@ func PickSaveWAV(title, suggested string) (string, error) {
 	}
 	return path, nil
 }
+
+// PickNAM abre o seletor de arquivo (zenity) filtrando modelos NAM. Devolve "" sem erro
+// se o usuário cancelar. Bloqueia: chamar numa goroutine.
+func PickNAM(title string) (string, error) {
+	if _, err := exec.LookPath("zenity"); err != nil {
+		return "", ErrNoDialog
+	}
+	cmd := exec.Command("zenity", "--file-selection", "--title="+title,
+		"--file-filter=Modelo NAM | *.nam *.NAM", "--file-filter=Todos os arquivos | *")
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}

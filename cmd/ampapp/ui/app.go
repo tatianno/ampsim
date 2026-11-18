@@ -18,6 +18,7 @@ import (
 	"gioui.org/text"
 	"gioui.org/widget"
 
+	"github.com/tatianno/ampsim/capturas"
 	"github.com/tatianno/ampsim/cmd/ampapp/audio"
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
@@ -37,6 +38,8 @@ type App struct {
 	Invalidate func()
 	// Pick abre o seletor de arquivo; por padrão PickWAV (os testes trocam).
 	Pick func(title string) (string, error)
+	// PickNAM abre o seletor de modelos .nam (nil = usa Pick).
+	PickNAM func(title string) (string, error)
 	// PickSave abre o diálogo de salvar; por padrão PickSaveWAV (os testes trocam).
 	PickSave func(title, suggested string) (string, error)
 	// RecordDir é a pasta das gravações (padrão: Música/ampsim).
@@ -45,6 +48,7 @@ type App struct {
 	th        *Theme
 	transport *Transport
 	head      *Head
+	namList   *NAMList
 	cab       *CabPanel
 	board     *Board
 	input     *InputPanel
@@ -86,6 +90,7 @@ func NewApp(s *audio.Session) *App {
 	a := &App{
 		Session: s, Chain: chain, Player: s.Player, Renderer: s.Renderer, Monitor: s.Monitor,
 		Pick:      PickWAV,
+		PickNAM:   PickNAM,
 		PickSave:  PickSaveWAV,
 		RecordDir: audio.DefaultRecordDir(),
 		recDI:     true,
@@ -107,6 +112,16 @@ func NewApp(s *audio.Session) *App {
 	}
 	a.UsePresetDir(dir)
 	a.head = NewHead(chain)
+	a.head.OnPickNAM = func() { a.open = NAMListID }
+	a.namList = NewNAMList(chain)
+	a.namList.Load = a.loadNAMAsync
+	a.namList.OnOpenFile = func() {
+		pick := a.PickNAM
+		if pick == nil {
+			pick = a.Pick
+		}
+		a.pickWith(pick, "Abrir modelo NAM", func(path string) error { return a.Chain.Pre().LoadNAM(path) })
+	}
 	a.cab = NewCabPanel(chain)
 	a.board = NewBoard(chain)
 	for _, m := range chain.Modules() {
@@ -183,8 +198,12 @@ func (a *App) runPending() {
 
 // pickAsync abre o seletor numa goroutine e aplica o arquivo escolhido.
 func (a *App) pickAsync(title string, apply func(path string) error) {
+	a.pickWith(a.Pick, title, apply)
+}
+
+func (a *App) pickWith(pick func(string) (string, error), title string, apply func(path string) error) {
 	go func() {
-		path, err := a.Pick(title)
+		path, err := pick(title)
 		if err == nil && path != "" {
 			err = apply(path) // carregar e preparar acontece fora da thread de áudio
 		}
@@ -195,6 +214,21 @@ func (a *App) pickAsync(title string, apply func(path string) error) {
 			case path != "":
 				a.setStatus("carregado: "+filepath.Base(path), false)
 			}
+		})
+	}()
+}
+
+// loadNAMAsync carrega um modelo NAM fora da goroutine da GUI (montar e aquecer as
+// redes leva algumas dezenas de ms).
+func (a *App) loadNAMAsync(ref string) {
+	go func() {
+		err := a.Chain.Pre().LoadNAM(ref)
+		a.Post(func() {
+			if err != nil {
+				a.setStatus(err.Error(), true)
+				return
+			}
+			a.setStatus("modelo NAM: "+baseNoExt(strings.TrimPrefix(ref, capturas.Prefix)), false)
 		})
 	}()
 }
@@ -283,7 +317,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 						layout.Rigid(spacer(0, 6)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.board.Layout(gtx, th) }),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return drawText(gtx, th, "clique: abrir o pedal  ·  LED: liga/desliga  ·  arraste: muda a ordem (entre PRÉ e POWER = loop de efeitos)",
+							return drawText(gtx, th, "clique: abrir o pedal  ·  LED: liga/desliga  ·  arraste: muda a ordem (entre o amp e o POWER = loop de efeitos)",
 								textOpts{size: 11, color: withAlpha(th.Dim, 200)})
 						}),
 					)
@@ -449,6 +483,8 @@ func (a *App) overlay(gtx layout.Context) {
 		content = func(gtx layout.Context) layout.Dimensions { return a.recs.Layout(gtx, th) }
 	} else if a.open == TunerID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.tuner.Layout(gtx, th) }
+	} else if a.open == NAMListID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.namList.Layout(gtx, th, closeOverlay) }
 	} else if a.open == PresetListID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.presetBar.ListLayout(gtx, th, closeOverlay) }
 	} else if a.open == SaveAsID {

@@ -1,0 +1,92 @@
+package ui
+
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/tatianno/ampsim/capturas"
+	"github.com/tatianno/ampsim/engine"
+)
+
+// espera roda quadros até cond valer (os modelos carregam numa goroutine).
+func espera(t *testing.T, h *harness, a *App, what string, cond func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
+		h.frame(a.Layout)
+		if cond() {
+			return
+		}
+	}
+	t.Fatalf("tempo esgotado esperando %s", what)
+}
+
+func TestCabecoteModoNAM(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	pre := a.Chain.Pre()
+	if pre.Mode() != engine.AmpSimulated {
+		t.Fatal("o padrão é o amp simulado")
+	}
+	a.head.ampSel.btns[engine.AmpNAM].Click()
+	h.frame(a.Layout)
+	if pre.Mode() != engine.AmpNAM {
+		t.Fatal("o seletor não ligou o modo NAM")
+	}
+
+	// lista de modelos: escolher uma captura incluída
+	a.head.pickNAM.Click()
+	h.frame(a.Layout)
+	if a.Opened() != NAMListID {
+		t.Fatalf("aberto %q, esperava a lista de modelos", a.Opened())
+	}
+	h.frame(a.Layout)
+	names := capturas.Names()
+	a.namList.rows[0].Click()
+	espera(t, h, a, "o modelo da lista", func() bool { return pre.NAMRef() == capturas.Prefix+names[0] })
+	if a.Opened() != "" {
+		t.Error("a lista deveria fechar depois de escolher")
+	}
+
+	// tamanho
+	a.head.sizeSel.btns[engine.NAMFull].Click()
+	h.frame(a.Layout)
+	if pre.Param("nam_size").Get() != engine.NAMFull {
+		t.Error("o seletor de tamanho não mudou")
+	}
+
+	// abrir um arquivo .nam
+	b, err := capturas.Data(names[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "minha captura.nam")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.PickNAM = func(string) (string, error) { return path, nil }
+	a.namList.OnOpenFile()
+	espera(t, h, a, "o arquivo .nam", func() bool { return pre.NAMRef() == path })
+	if got := namLabel(pre); got != "minha captura" && got != names[1] {
+		t.Errorf("rótulo %q", got)
+	}
+
+	// arquivo inválido: erro no rodapé, o modelo continua
+	bad := filepath.Join(t.TempDir(), "ruim.nam")
+	_ = os.WriteFile(bad, []byte("{}"), 0o644)
+	a.PickNAM = func(string) (string, error) { return bad, nil }
+	a.namList.OnOpenFile()
+	espera(t, h, a, "o erro", func() bool { return a.statusErr })
+	if pre.NAMRef() != path {
+		t.Error("um arquivo inválido não pode trocar o modelo")
+	}
+
+	// de volta ao simulado
+	a.head.ampSel.btns[engine.AmpSimulated].Click()
+	h.frame(a.Layout)
+	if pre.Mode() != engine.AmpSimulated {
+		t.Error("não voltou ao simulado")
+	}
+}

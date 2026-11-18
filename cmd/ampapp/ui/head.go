@@ -8,17 +8,28 @@ import (
 	"gioui.org/layout"
 	"gioui.org/widget"
 
+	"github.com/tatianno/ampsim/capturas"
 	"github.com/tatianno/ampsim/engine"
 )
 
 // Head é o cabeçote: knobs do pré-amp e do power amp num painel só, com chaves de liga/desliga.
+//
+// O seletor "Amp" troca o pré-amp simulado por um modelo NAM: no modo NAM, a seção do
+// pré-amp mostra o modelo, o tamanho (lite/completo) e o ganho de entrada, e o power amp
+// fica só com o volume (a captura já inclui o power amp).
 type Head struct {
 	chain      *engine.Chain
 	stackSel   *Selector // tone stack: Moderno / Fender / Marshall
+	ampSel     *Selector // Simulado / NAM
+	sizeSel    *Selector // Lite / Completo
 	preKnobs   []*Knob
+	namKnob    *Knob // ganho de entrada do NAM
 	powerKnobs []*Knob
+	volKnob    *Knob // o power no modo NAM
 	preSw      widget.Clickable
 	powerSw    widget.Clickable
+	pickNAM    widget.Clickable
+	OnPickNAM  func() // abre a lista de modelos NAM
 }
 
 // NewHead cria o cabeçote.
@@ -26,23 +37,41 @@ func NewHead(chain *engine.Chain) *Head {
 	h := &Head{chain: chain}
 	if m := chain.Module(engine.PreID); m != nil {
 		for _, p := range m.Params() {
-			if p.Info().Step > 0 {
+			switch id := p.Info().ID; {
+			case id == "stack":
 				h.stackSel = NewSelector(p)
-			} else {
+			case id == "amp":
+				h.ampSel = NewSelector(p)
+			case id == "nam_size":
+				h.sizeSel = NewSelector(p)
+			case id == "nam_input":
+				h.namKnob = NewKnob(p)
+			case p.Info().Step == 0:
 				h.preKnobs = append(h.preKnobs, NewKnob(p))
 			}
 		}
 	}
 	if m := chain.Module(engine.PowerID); m != nil {
 		for _, p := range m.Params() {
-			h.powerKnobs = append(h.powerKnobs, NewKnob(p))
+			k := NewKnob(p)
+			h.powerKnobs = append(h.powerKnobs, k)
+			if p.Info().ID == "volume" {
+				h.volKnob = k
+			}
 		}
 	}
 	return h
 }
 
+// namMode informa se o pré-amp está no modo NAM.
+func (h *Head) namMode() bool {
+	pre := h.chain.Pre()
+	return pre != nil && pre.Mode() == engine.AmpNAM
+}
+
 // Layout desenha o cabeçote.
 func (h *Head) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
+	nam := h.namMode()
 	if h.preSw.Clicked(gtx) {
 		h.chain.SetEnabled(engine.PreID, !h.chain.Enabled(engine.PreID))
 	}
@@ -57,9 +86,16 @@ func (h *Head) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 							return drawText(gtx, th, "AMPSIM", textOpts{size: 18, color: th.Gold, bold: true})
 						}),
+						layout.Rigid(spacer(20, 0)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							if h.ampSel == nil {
+								return layout.Dimensions{}
+							}
+							return h.ampSel.Layout(gtx, th, withAlpha(th.Gold, 220), th.Gold)
+						}),
 						layout.Flexed(1, hfill),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							if h.stackSel == nil {
+							if h.stackSel == nil || nam {
 								return layout.Dimensions{}
 							}
 							return h.stackSel.Layout(gtx, th, withAlpha(th.Gold, 220), th.Gold)
@@ -70,6 +106,9 @@ func (h *Head) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Alignment: layout.End}.Layout(gtx,
 						layout.Flexed(4, func(gtx layout.Context) layout.Dimensions {
+							if nam {
+								return h.namSection(gtx, th)
+							}
 							return h.section(gtx, th, "PRÉ-AMP", engine.PreID, &h.preSw, h.preKnobs)
 						}),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions { // divisória
@@ -79,7 +118,11 @@ func (h *Head) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 							return layout.Dimensions{Size: sz}
 						}),
 						layout.Flexed(2.2, func(gtx layout.Context) layout.Dimensions {
-							return h.section(gtx, th, "POWER", engine.PowerID, &h.powerSw, h.powerKnobs)
+							knobs := h.powerKnobs
+							if nam && h.volKnob != nil {
+								knobs = []*Knob{h.volKnob} // a presença é do power simulado
+							}
+							return h.section(gtx, th, "POWER", engine.PowerID, &h.powerSw, knobs)
 						}),
 					)
 				}),
@@ -165,7 +208,7 @@ func (c *CabPanel) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	if c.pick.Clicked(gtx) && c.OnPick != nil {
 		c.OnPick()
 	}
-	ir := "interna (genérica)"
+	ir := "interna (" + capturas.DefaultIRName + ")"
 	if cab := c.chain.Cab(); cab != nil && cab.IRPath() != "" {
 		ir = filepath.Base(cab.IRPath())
 	}

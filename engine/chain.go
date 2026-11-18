@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"github.com/tatianno/ampsim/capturas"
 	"github.com/tatianno/ampsim/dsp"
 )
 
@@ -75,7 +76,9 @@ var DefaultOrder = []string{"gate", "comp", PreID, "chorus", "flanger", "phaser"
 // NewDefaultChain monta a cadeia padrão (DefaultOrder). Gate e amp começam ligados;
 // os outros pedais, desligados.
 func NewDefaultChain() *Chain {
-	c := NewChain(NewGate(), NewCompressor(), NewPre(), NewChorus(), NewFlanger(), NewPhaser(), NewDelay(), NewReverb(), NewPower(), NewCab())
+	pre, pow := NewPre(), NewPower()
+	pow.FollowAmpMode(pre)
+	c := NewChain(NewGate(), NewCompressor(), pre, NewChorus(), NewFlanger(), NewPhaser(), NewDelay(), NewReverb(), pow, NewCab())
 	for _, id := range []string{"comp", "chorus", "flanger", "phaser", "delay", "reverb"} {
 		c.SetEnabled(id, false)
 	}
@@ -421,10 +424,14 @@ func (s *slot) process(buf []float64) {
 //	Gate → Pré-amp → [loop: Delay → Reverb (off)] → Power amp → Gabinete
 func (c *Chain) String() string {
 	name := func(s *slot) string {
-		if s.enabled.Load() {
-			return s.m.Name()
+		n := s.m.Name()
+		if p, ok := s.m.(*Pre); ok && p.Mode() == AmpNAM {
+			n = "NAM (" + strings.TrimPrefix(p.NAMRef(), capturas.Prefix) + ")"
 		}
-		return s.m.Name() + " (off)"
+		if s.enabled.Load() {
+			return n
+		}
+		return n + " (off)"
 	}
 	var parts, loop []string
 	inLoop := false

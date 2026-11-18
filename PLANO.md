@@ -541,17 +541,67 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 - **LSTM fica para depois** (bem menos comum).
 
 **Tarefas**
-- [ ] `nam/`: leitura do `.nam` (JSON) e validação da `config`
-- [ ] WaveNet em streaming: convoluções causais dilatadas com buffers circulares, misturas 1×1, `tanh`, cabeça;
-  sem alocar no `Process`
-- [ ] Validar contra a inferência oficial (pacote Python `neural-amp-modeler` ou a NAM core), como foi feito com o
-  protótipo Python: mesma entrada, comparar saídas
-- [ ] Módulo `nam` no engine como **alternativa ao amp simulado** ("Amp: Simulado | NAM"): substitui `pre` + `power`,
-  seguido do nosso gabinete por IR (desligar a IR em capturas "full rig", que já incluem o gabinete)
-- [ ] Taxa de amostragem: rodar a placa na taxa do modelo (48 kHz) ou reamostrar em tempo real
-- [ ] Calibração de nível a partir da `metadata` (usa o trim da Fase 4)
-- [ ] GUI: seletor de arquivo `.nam`, nome e tamanho do modelo, CPU
-- [ ] Medir a CPU com standard; otimizar se precisar (processar em blocos, desenrolar laços, SIMD experimental do Go)
+- [x] `nam/`: leitura do `.nam` (JSON) e validação da `config` (18/11/2026)
+  - formatos: WaveNet clássico (A1) e o novo 0.7 (A2: `kernel_sizes` por camada, `bottleneck`, `layer1x1`/`head1x1`,
+    cabeça com kernel > 1, `gating_mode` none/gated/blended, ativações LeakyReLU/PReLU/SiLU/Softsign etc., grupos,
+    cabeça pós-pilhas) e **SlimmableContainer** (vários WaveNets do mesmo som; o tamanho 0..1 escolhe um)
+  - recusa com mensagem clara: LSTM/ConvNet/Linear, FiLM ligado, `condition_dsp`, WaveNet slimmable por canais
+  - os arquivos reais da TONE3000 (`NAM/`, fora do git) são containers com um **lite de 3 canais** (tamanho < 0,5)
+    e um **completo de 8 canais**, 23 camadas, campo receptivo de 6347 amostras (132 ms)
+- [x] WaveNet em streaming (`nam/wavenet.go`): float32 como a NAM core, em blocos; buffer linear por convolução
+  (taps lidos como fatias contíguas); somas de 4 entradas por passada; **zero alocação** em `Process`/`Reset`
+  - **prewarm** como na NAM core (silêncio por todo o campo receptivo); o estado aquecido fica guardado e o `Reset`
+    só o copia de volta (barato, pode ser chamado da thread de áudio)
+  - testes: streaming × implementação direta (não-streaming, float64) em modelos sintéticos A1, A2 e um "misto"
+    com gating/blending/head1x1/grupos/cabeça; blocos de 1 a 4096; ordem dos pesos (PyTorch); erros de validação
+- [x] Validado contra a inferência oficial (18/11): ferramenta `render` da NeuralAmpModelerCore (commit d3189ed,
+  compilada no scratchpad), mesma entrada (DI de `testdata/` reamostrada para 48 kHz), `cmd/namcli` do lado Go
+
+  | Modelo | Go × NAM core | NAM core × ela mesma (atalho A2 × genérico) |
+  |---|---|---|
+  | Warm Music clean, lite | erro máx 4,9e-7, SNR 123 dB | 5,9e-7, 121 dB |
+  | Warm Music clean, completo | 4,2e-7, 125 dB | 3,3e-7, 127 dB |
+  | EVH 5150 high-gain, lite | 1,6e-4, 91 dB | 1,6e-4, 91 dB |
+  | EVH 5150 high-gain, completo | 6,6e-5, 100 dB | 2,4e-5, 107 dB |
+
+  O high-gain amplifica o arredondamento de float32: a diferença Go × oficial é do tamanho da diferença entre os
+  dois caminhos de código da própria NAM core. As saídas de referência ficam em `testdata/nam/` (fora do git) e o
+  teste `TestReferenciaOficial` as usa quando presentes
+- **CPU medida** (i5-10310U, bloco 256, um núcleo): **lite 4,4%** do tempo real, **completo (8 canais) ~23%**.
+  O laço de multiplicação-e-soma (`axpy4`) é 76% do tempo, aritmética escalar pura; somar 8 entradas por passada
+  não ajudou (falta de registradores). Próximo passo de otimização, se precisar: SIMD (`simd/archsimd`, experimental)
+- [x] **Amp NAM no engine** (18/11/2026): em vez de um bloco novo, o **pré-amp ganhou o modo** `amp` =
+  Simulado | NAM (`engine/namamp.go`). A ordem da cadeia, o loop de efeitos e os presets não mudam: no modo NAM o
+  modelo substitui o pré-amp, o **power amp fica só com o volume** (a captura já inclui o power) e o loop fica entre
+  o NAM e o gabinete
+  - parâmetros novos do `pre`: `amp`, `nam_input` (ganho de entrada, −24 a +24 dB) e `nam_size` (Lite | Completo);
+    o modelo vai no estado como `extra.nam` (`embutida:<nome>` ou caminho do `.nam`)
+  - troca de modelo, de tamanho e de modo **ao vivo, com crossfade de 20 ms e sem alocar**: as redes de cada
+    submodelo são montadas e aquecidas fora da thread de áudio; trocar só copia o estado aquecido
+  - latência compensada: a saída do NAM é atrasada em 32 amostras para ficar igual à do amp simulado (a latência
+    da cadeia continua constante)
+  - **normalização pelo `loudness` dos metadados** (como o "normalize" do plugin oficial), alvo −12 dB. Com o
+    gabinete, as capturas limpas ficam ~1,5 dB acima do amp simulado e as mais saturadas até ~5 dB abaixo (o
+    loudness dos metadados é medido sem gabinete; a IR corta os agudos da distorção)
+  - testes: trocas ao vivo (sem estalo, saída idêntica com blocos de 64/512/1024), zero alocação, preset guarda o
+    modelo, erro ao carregar não troca o modelo, latência alinhada, volume perto do simulado
+- [x] **Capturas incluídas** (`capturas/`, `go:embed`): 11 capturas do autor (Warm Music 2x8, só o amp, sem
+  gabinete), lite + completo cada; ~3,2 MB no binário. Modelo padrão: `Dist Sat5 V4 B5 M5 T5 P5`. Descrição e
+  legenda dos nomes em `capturas/README.md`; licença MIT (decidido pelo autor em 18/11)
+- [x] **IR padrão embutida**: a `gabinete_2x12_sm57.wav` (do autor, MIT) vai em `capturas/` e substitui a IR genérica
+  sintética quando nenhuma IR é escolhida (a genérica fica só de reserva); `-ir` vazio por padrão no app e no CLI
+- [x] GUI: seletor **Amp: Simulado | NAM** no cabeçote; no modo NAM, a seção mostra o botão do modelo (lista
+  "MODELOS NAM" com as incluídas + "Abrir arquivo .nam…", filtro `*.nam` no zenity), Lite | Completo, canais e
+  tamanho em uso, aviso de taxa diferente e o knob de entrada; o power mostra só o volume; o bloco PRÉ da cadeia
+  vira "NAM". Conferido em captura de tela nos dois modos
+- [x] `ampcli -nam "<captura>"` ou `-nam arquivo.nam` (reamostra a entrada para 48 kHz no modo NAM);
+  `ampcli -listar` mostra as capturas incluídas
+- [ ] Taxa de amostragem: hoje o app roda a 48 kHz por padrão (= taxa dos modelos); com a placa em outra taxa o
+  modelo roda nela mesma e a GUI avisa. Falta **reamostrar em tempo real** (polifásico em streaming, 44,1 ↔ 48 kHz)
+- [ ] Calibração de nível a partir de `input_level_dbu` (as capturas incluídas não têm; a da EVH tem 13 dBu):
+  hoje o ajuste é o knob Entrada + o trim da Fase 4
+- [ ] Testar ao vivo com a guitarra (CPU no callback com o completo, crossfades, nível de entrada ideal)
+- [ ] Medir a CPU com standard (A1, 16 canais) quando houver um arquivo; otimizar se precisar (SIMD experimental do Go)
 - [ ] (Depois) LSTM
 
 **Consequências para o projeto**

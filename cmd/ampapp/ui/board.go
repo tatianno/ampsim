@@ -268,6 +268,9 @@ func (b *Board) drawChip(gtx layout.Context, th *Theme, id string, alpha float32
 		name = "COMP" // "Compressor" não cabe no bloco
 	case engine.PreID:
 		name = "PRÉ"
+		if pre := b.chain.Pre(); pre != nil && pre.Mode() == engine.AmpNAM {
+			name = "NAM"
+		}
 	case engine.PowerID:
 		name = "POWER"
 	case engine.CabID:

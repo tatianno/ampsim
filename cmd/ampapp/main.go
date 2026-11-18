@@ -58,7 +58,7 @@ func main() {
 func run() error {
 	var (
 		arquivo  = flag.String("arquivo", "testdata/guitarra_di.wav", "WAV para tocar")
-		ir       = flag.String("ir", "testdata/gabinete_2x12_sm57.wav", "IR do gabinete (vazio = sem gabinete)")
+		ir       = flag.String("ir", "", "IR do gabinete (vazio = a interna, 2x12 SM57)")
 		preset   = flag.String("preset", "", "preset para carregar: arquivo .json ou nome (ex.: Lead)")
 		saida    = flag.Int("saida", -1, "índice da saída de áudio (-1 = padrão; veja -listar-dispositivos)")
 		entrada  = flag.Int("entrada", -1, "índice da entrada (-1 = padrão, -2 = sem entrada)")
@@ -85,7 +85,7 @@ func run() error {
 	}
 
 	chain := engine.NewDefaultChain()
-	if optionalFile("ir", *ir) { // sem IR: o gabinete usa a IR interna genérica
+	if optionalFile("ir", *ir) { // sem IR: o gabinete usa a IR interna (2x12 SM57)
 		if err := chain.Cab().LoadIRFile(*ir); err != nil {
 			return err
 		}

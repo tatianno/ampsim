@@ -7,6 +7,8 @@
 //	ampcli -in di.wav -out out.wav -on delay -mover delay:depois:cab   # delay depois do gabinete
 //	ampcli -in di.wav -out out.wav -ordem gate,chorus,pre,flanger,phaser,delay,reverb,power,cab
 //	ampcli -in di.wav -out out.wav -preset clean.json
+//	ampcli -in di.wav -out out.wav -nam "Clean V10 B5 M5 T5 P5"          # amp NAM (captura incluída)
+//	ampcli -in di.wav -out out.wav -nam captura.nam -set pre.nam_size=1  # arquivo .nam, modelo completo
 //	ampcli -listar
 //	ampcli -salvar-preset meu.json -set pre.gain=3
 package main
@@ -21,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tatianno/ampsim/capturas"
 	"github.com/tatianno/ampsim/dsp"
 	"github.com/tatianno/ampsim/engine"
 	"github.com/tatianno/ampsim/presets"
@@ -38,7 +41,7 @@ func run() error {
 	var (
 		in        = flag.String("in", "", "WAV de entrada (DI da guitarra)")
 		out       = flag.String("out", "", "WAV de saída")
-		ir        = flag.String("ir", "testdata/gabinete_2x12_sm57.wav", "WAV da IR do gabinete (vazio = sem gabinete)")
+		ir        = flag.String("ir", "", "WAV da IR do gabinete (vazio = a interna, 2x12 SM57)")
 		preset    = flag.String("preset", "", "preset para carregar: arquivo .json ou nome (ex.: Lead)")
 		savePre   = flag.String("salvar-preset", "", "grava o estado final (após -preset/-on/-off/-set) neste JSON")
 		on        = flag.String("on", "", "módulos para ligar, separados por vírgula (ex.: chorus,delay)")
@@ -51,6 +54,7 @@ func run() error {
 		list      = flag.Bool("listar", false, "lista módulos e parâmetros e sai")
 		ordem     = flag.String("ordem", "", "ordem completa da cadeia, separada por vírgula")
 		mover     = flag.String("mover", "", "move módulos: id:antes|depois:ref, separados por vírgula (ex.: delay:depois:cab)")
+		namModel  = flag.String("nam", "", "liga o amp NAM com este modelo: arquivo .nam ou nome de uma captura incluída (veja -listar)")
 	)
 	flag.Parse()
 
@@ -59,9 +63,7 @@ func run() error {
 		listar(chain)
 		return nil
 	}
-	irSet := false
-	flag.Visit(func(f *flag.Flag) { irSet = irSet || f.Name == "ir" })
-	if _, statErr := os.Stat(*ir); *ir != "" && (statErr == nil || irSet) { // sem IR: gabinete genérico
+	if *ir != "" { // sem IR: o gabinete usa a IR interna (2x12 SM57)
 		if err := chain.Cab().LoadIRFile(*ir); err != nil {
 			return err
 		}
@@ -74,6 +76,16 @@ func run() error {
 		if err := chain.ApplyState(st); err != nil {
 			return err
 		}
+	}
+	if *namModel != "" {
+		ref := *namModel
+		if _, err := os.Stat(ref); err != nil {
+			ref = capturas.Prefix + ref // não é arquivo: captura incluída
+		}
+		if err := chain.Pre().LoadNAM(ref); err != nil {
+			return err
+		}
+		chain.Pre().Param("amp").Set(engine.AmpNAM)
 	}
 	if err := aplicarFlags(chain, *on, *off, *set); err != nil {
 		return err
@@ -108,6 +120,12 @@ func run() error {
 	fs, x, err := wav.ReadMonoFile(*in)
 	if err != nil {
 		return err
+	}
+	// os modelos NAM foram treinados a 48 kHz: no modo NAM, processa (e grava) a 48 kHz
+	if chain.Pre().Mode() == engine.AmpNAM && fs != namRate {
+		fmt.Printf("modo NAM: reamostrando %d → %d Hz\n", fs, namRate)
+		x = dsp.ResampleRate(x, fs, namRate)
+		fs = namRate
 	}
 	// mesmas rampas de borda do app (um corte abrupto no fim da gravação vira estalo no amp)
 	dsp.FadeEdges(x, float64(fs), dsp.FileFadeInMs, dsp.FileFadeOutMs)
@@ -194,8 +212,16 @@ func aplicarOrdem(c *engine.Chain, ordem, mover string) error {
 	return nil
 }
 
+// namRate é a taxa em que os modelos NAM são treinados.
+const namRate = 48000
+
 func listar(c *engine.Chain) {
 	fmt.Println("cadeia:", c)
+	fmt.Println()
+	fmt.Println("capturas NAM incluídas (-nam):")
+	for _, n := range capturas.Names() {
+		fmt.Println("  " + n)
+	}
 	fmt.Println()
 	for _, m := range c.Modules() {
 		estado := "desligado"

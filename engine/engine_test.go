@@ -663,25 +663,33 @@ func TestToneStackSemAlocacao(t *testing.T) {
 	}
 }
 
-// Sem IR carregada, o gabinete usa a IR interna genérica (o som muda em relação a não ter
-// gabinete), e o caminho da IR fica vazio.
-func TestGabineteGenericoSemIR(t *testing.T) {
+// Sem IR escolhida, o gabinete usa a IR interna (a 2x12 SM57 embutida, a mesma de
+// testdata/): o som é idêntico ao de carregar o arquivo, e o caminho da IR fica vazio.
+func TestGabineteInternoSemIR(t *testing.T) {
 	fs, di := lerDI(t)
-	render := func(cab bool) []float64 {
+	render := func(cab, file bool) []float64 {
 		c := NewDefaultChain()
 		c.SetEnabled(CabID, cab)
+		if file {
+			if err := c.Cab().LoadIRFile(irPath); err != nil {
+				t.Fatal(err)
+			}
+		}
 		c.Prepare(fs, 256)
 		x := append([]float64(nil), di[:40000]...)
 		c.ProcessMono(x)
 		return x
 	}
-	com, sem := render(true), render(false)
+	com, sem, arq := render(true, false), render(false, false), render(true, true)
 	d := 0.0
 	for i := range com {
 		d += (com[i] - sem[i]) * (com[i] - sem[i])
+		if com[i] != arq[i] {
+			t.Fatalf("amostra %d: a IR interna difere do arquivo de testdata", i)
+		}
 	}
 	if d < 1e-3 {
-		t.Error("o gabinete genérico deveria mudar o som")
+		t.Error("o gabinete interno deveria mudar o som")
 	}
 	if NewDefaultChain().Cab().IRPath() != "" {
 		t.Error("sem IR carregada, IRPath é vazio")
