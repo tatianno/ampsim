@@ -635,6 +635,11 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - testes de DSP: boost limpo; harmônicos crescem com o drive; wah com o pico na posição certa e o envelope abrindo
     com a palhetada; octave com 110/55/440 Hz dominando para 220 Hz; rotary acelerando com inércia e pulsando;
     vibe passa-tudo no vibrato e variando no chorus; pitch +12/−12/+7/0 st no lugar certo
+- [x] **Release v0.6.0** (18/11/2026): o pedal Synth
+- [ ] **Ganho na saída com NAM limpo**: com a DI de teste, a captura Clean V10 no volume padrão (−12 dB) tem pico de
+  +1,8 dBFS (captura limpa tem fator de crista alto; a normalização por loudness a deixa ~1,5 dB acima do simulado);
+  o Octave (seco 100% + −1 oit. 70%) soma +2 dB de pico. Avaliar: limitador de segurança na saída, alvo de loudness
+  por tipo de captura, ou volume padrão mais baixo no modo NAM
 - [x] **Synth (filtro de sintetizador)** (18/11, `dsp/synthfilter.go`): ladder de 4 polos não linear (Huovilainen,
   tanh racional em cada estágio e na realimentação com compensação de graves), a 4x; saídas LP, BP e HP; ressonância
   até a auto-oscilação. Corte = Cutoff · 2^(Profund.·mod), mod por Envelope, LFO ou Sequência de 8 passos (s1..s8,
