@@ -32,6 +32,7 @@ type Session struct {
 	Live     *source.LiveInput
 	Monitor  *Monitor
 	Tuner    *Tuner
+	Recorder *Recorder
 
 	mode atomic.Int32
 }
@@ -51,6 +52,7 @@ func NewSession(chain *engine.Chain, fs float64) *Session {
 	r.SetLive(s.Live)
 	s.Monitor = NewMonitor(r)
 	s.Tuner = NewTuner(r)
+	s.Recorder = NewRecorder(r)
 	s.SetSource(SourceFile)
 	return s
 }
@@ -70,6 +72,9 @@ func (s *Session) Source() SourceMode { return SourceMode(s.mode.Load()) }
 
 // Close fecha a placa e o monitor.
 func (s *Session) Close() {
+	if s.Recorder.Recording() {
+		s.Recorder.Stop() // fecha os arquivos direito
+	}
 	s.Tuner.Stop()
 	s.Host.Close()
 	s.Monitor.Close()

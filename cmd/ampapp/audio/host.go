@@ -58,8 +58,9 @@ type Renderer struct {
 	live atomic.Pointer[source.LiveInput] // entrada ao vivo (alimentada em RenderDuplex)
 	lt   latencyTest
 
-	tuner    atomic.Pointer[Tuner] // afinador (recebe a entrada quando ligado)
-	mute     atomic.Bool           // saída muda (ex.: enquanto afina), com rampa
+	tuner    atomic.Pointer[Tuner]    // afinador (recebe a entrada quando ligado)
+	rec      atomic.Pointer[Recorder] // gravador (recebe DI e saída quando gravando)
+	mute     atomic.Bool              // saída muda (ex.: enquanto afina), com rampa
 	muteGain float64
 	muteStep float64
 }
@@ -152,6 +153,9 @@ func (r *Renderer) render(out []float32, channels, frames int, start time.Time, 
 		r.chain.ProcessMono(buf) // a cadeia sempre roda: caudas continuam e a volta do bypass é suave
 		r.mixAB(buf, dry)
 		r.applyMute(buf)
+		if c := r.rec.Load(); c != nil && c.on.Load() {
+			c.feed(dry, buf) // DI = entrada antes da cadeia; saída = o que vai para a placa
+		}
 		base := off * channels
 		for i, v := range buf {
 			a := math.Abs(v)

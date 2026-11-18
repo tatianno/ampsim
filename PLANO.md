@@ -418,8 +418,22 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
     Enter salva), Excluir com confirmação (2º clique em até 3 s)
   - console: `presets`, `preset <nome>`, `gravar <nome>`; `-preset` do app e do `ampcli` aceita arquivo ou **nome**
   - testes do pacote e da GUI (navegar, modificado, digitar o nome + Enter, lista, excluir), sempre em pasta temporária
-- [ ] Gravar a saída em WAV (ao vivo ou arquivo)
-- [ ] Exportar arquivo processado (offline, mesmo engine do `ampcli`)
+- [x] **Gravar** (18/11): botão ● Gravar no rodapé (vira ■ Parar com o tempo, piscando); grava a **saída** e, com a
+  chave **DI** (padrão ligada), a **entrada limpa** num 2º arquivo, para reamplificar depois; WAV 24 bits em
+  `Música/ampsim/ampsim-AAAA-MM-DD_HH-MM-SS[-DI].wav` (`xdg-user-dir MUSIC`); a thread de áudio só copia para filas sem
+  trava, uma goroutine escreve (`audio.Recorder`, `wav.StreamWriter` com cabeçalho corrigido no fim); avisa se perder
+  amostras; fechar o app com gravação em curso fecha os arquivos direito; console `rec`
+- [x] **Exportar** (18/11): botão Exportar… nos controles de arquivo; diálogo de salvar (zenity) com nome sugerido;
+  processa o arquivo carregado com o som atual numa **cópia** da cadeia (o som ao vivo não muda), +2 s de cauda,
+  latência compensada, WAV 24 bits, progresso no rodapé; `engine.RenderOffline` é o mesmo do `ampcli` (saída
+  conferida idêntica bit a bit à de antes); console `exportar <arquivo.wav>`
+- [x] **Bug relatado (18/11): estalo no fim do arquivo exportado.** A DI termina num corte abrupto, que passando pela
+  distorção virava um pico de −8,6 dBFS onde ela acaba; no play não aparecia porque o player faz rampa nas emendas do
+  loop. Correção: rampas nas bordas do arquivo **ao carregar** (`dsp.FadeEdges`: 5 ms na entrada, 20 ms quadrática na
+  saída), valendo igual para play, exportação e `ampcli`; teste de regressão que exporta a DI e confere o fim
+  (comprovado: sem a rampa ele falha com os mesmos −8,6 dBFS)
+- [x] `wav`: formato PCM 24 bits e gravação incremental; testes de gravação (2 s sem perdas, DI = entrada exata, sem
+  alocação no render), exportação (tamanho e taxa) e pela GUI (botões, pastas temporárias, diálogos falsos)
 - [x] **Tap tempo no Delay** (18/11): botão TAP no pedal (pisca no toque) e **tecla T** em qualquer lugar da janela
   (menos digitando nome de preset); média dos últimos 4 intervalos, recomeça após 2 s parado; subdivisões 1/4, 1/8.,
   1/8 e 1/16 (trocar mantém o BPM); BPM exibido; console `bpm 120 1/8.` (`engine.TapTempo`, testado)

@@ -1,11 +1,13 @@
 package ui
 
 import (
+	"github.com/tatianno/ampsim/wav"
 	"image"
 	"math"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -579,5 +581,103 @@ func TestControlesDeArquivoSoComFonteArquivo(t *testing.T) {
 	h.frame(a.Layout)
 	if !p.Playing() {
 		t.Error("com a fonte em Arquivo, espaço dá play")
+	}
+}
+
+func TestGravarPeloRodape(t *testing.T) {
+	a, p := novoApp(t)
+	a.RecordDir = t.TempDir()
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	p.Play()
+	a.recBtn.Click()
+	h.frame(a.Layout)
+	if !a.Session.Recorder.Recording() {
+		t.Fatal("o botão Gravar deveria começar a gravação")
+	}
+	out := make([]float32, 2*256)
+	for k := 0; k < 100; k++ {
+		a.Renderer.Render(out, 2, 256)
+		if k%20 == 0 {
+			time.Sleep(time.Millisecond)
+		}
+	}
+	a.recBtn.Click()
+	h.frame(a.Layout)
+	if a.Session.Recorder.Recording() {
+		t.Fatal("o segundo clique termina a gravação")
+	}
+	if a.statusErr || !strings.Contains(a.status, "gravado") || !strings.Contains(a.status, "+ DI") {
+		t.Errorf("status %q", a.status)
+	}
+	arquivos, _ := filepath.Glob(filepath.Join(a.RecordDir, "*.wav"))
+	if len(arquivos) != 2 {
+		t.Errorf("esperava a gravação e a DI, achei %v", arquivos)
+	}
+}
+
+func TestExportarArquivo(t *testing.T) {
+	a, _ := novoApp(t)
+	destino := filepath.Join(t.TempDir(), "saida.wav")
+	a.PickSave = func(title, sugerido string) (string, error) {
+		if sugerido != "guitarra_di-ampsim.wav" {
+			t.Errorf("nome sugerido %q", sugerido)
+		}
+		return destino, nil
+	}
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.transport.export.Click()
+	h.frame(a.Layout)
+	if !a.exporting {
+		t.Fatal("deveria estar exportando")
+	}
+	deadline := time.Now().Add(20 * time.Second)
+	for a.exporting && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+		h.frame(a.Layout)
+	}
+	if a.statusErr || !strings.Contains(a.status, "exportado") {
+		t.Fatalf("status %q", a.status)
+	}
+	fs, x, err := wav.ReadMonoFile(destino)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clip := a.Player.Clip()
+	if fs != clip.FS || len(x) != len(clip.Samples)+2*clip.FS {
+		t.Errorf("%d Hz, %d amostras; esperava %d Hz e %d", fs, len(x), clip.FS, len(clip.Samples)+2*clip.FS)
+	}
+}
+
+// Regressão: a DI termina num corte abrupto; exportada sem rampa, virava um estalo de
+// −8,6 dBFS no ponto em que ela acaba (relatado em 18/11). Com a rampa, ali só há a cauda.
+func TestExportarSemEstaloNoFimDaDI(t *testing.T) {
+	a, _ := novoApp(t)
+	destino := filepath.Join(t.TempDir(), "saida.wav")
+	a.PickSave = func(string, string) (string, error) { return destino, nil }
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.transport.export.Click()
+	h.frame(a.Layout)
+	for deadline := time.Now().Add(20 * time.Second); a.exporting && time.Now().Before(deadline); {
+		time.Sleep(20 * time.Millisecond)
+		h.frame(a.Layout)
+	}
+	fs, x, err := wav.ReadMonoFile(destino)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fim := len(a.Player.Clip().Samples)
+	antes, depois := 0.0, 0.0
+	for i := fim - fs/20; i < fim-fs/50; i++ { // 30 ms antes do fim (sem a rampa)
+		antes = math.Max(antes, math.Abs(x[i]))
+	}
+	for i := fim - fs/100; i < fim+fs/20; i++ { // em volta do fim
+		depois = math.Max(depois, math.Abs(x[i]))
+	}
+	db := func(v float64) float64 { return 20 * math.Log10(v+1e-12) }
+	if db(depois) > db(antes)+6 {
+		t.Errorf("estalo no fim da DI: pico %.1f dBFS (antes do fim: %.1f dBFS)", db(depois), db(antes))
 	}
 }

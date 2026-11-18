@@ -10,6 +10,7 @@ import (
 
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/wav"
 )
 
 var (
@@ -485,6 +486,70 @@ func TestRenderSemAlocacaoComAfinador(t *testing.T) {
 	tu.Start()
 	defer tu.Stop()
 	r.SetMute(true)
+	out := make([]float32, 2*256)
+	if a := testing.AllocsPerRun(100, func() {
+		r.Render(out, 2, 256)
+		r.Meters().Pop()
+	}); a != 0 {
+		t.Errorf("aloca %.0f vezes por callback", a)
+	}
+}
+
+// Grava saída e DI de um seno conhecido: os dois arquivos têm o tamanho do que passou,
+// a DI é a entrada exata e nada se perde.
+func TestGravarSaidaEDI(t *testing.T) {
+	r, _ := renderVivo(t) // cadeia vazia: saída = entrada
+	rec := NewRecorder(r)
+	src := &senoSource{f: 220, fs: 48000, amp: 0.4}
+	r.SetSource(src)
+	dir := t.TempDir()
+	if _, err := rec.Start(dir, true); err != nil {
+		t.Fatal(err)
+	}
+	out := make([]float32, 2*256)
+	const blocos = 375 // 2 s
+	for k := 0; k < blocos; k++ {
+		r.Render(out, 2, 256)
+		r.Meters().Pop()
+		if k%20 == 0 {
+			time.Sleep(time.Millisecond) // dá tempo à goroutine de esvaziar as filas
+		}
+	}
+	take, err := rec.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if take.Dropped != 0 || math.Abs(take.Seconds-2) > 1e-9 {
+		t.Errorf("take %+v: esperava 2 s sem perdas", take)
+	}
+	for _, path := range []string{take.Out, take.DI} {
+		fs, x, err := wav.ReadMonoFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if fs != 48000 || len(x) != blocos*256 {
+			t.Fatalf("%s: %d Hz, %d amostras", path, fs, len(x))
+		}
+		want := 0.4 * math.Sin(2*math.Pi*220*1000/48000)
+		if math.Abs(x[1000]-want) > 1e-6 {
+			t.Errorf("%s: amostra 1000 = %v, esperava %v", path, x[1000], want)
+		}
+	}
+	if rec.Recording() {
+		t.Error("deveria ter parado")
+	}
+	if _, err := rec.Stop(); err == nil {
+		t.Error("parar sem estar gravando deveria dar erro")
+	}
+}
+
+func TestRenderSemAlocacaoGravando(t *testing.T) {
+	r, _ := renderVivo(t)
+	rec := NewRecorder(r)
+	if _, err := rec.Start(t.TempDir(), true); err != nil {
+		t.Fatal(err)
+	}
+	defer rec.Stop()
 	out := make([]float32, 2*256)
 	if a := testing.AllocsPerRun(100, func() {
 		r.Render(out, 2, 256)

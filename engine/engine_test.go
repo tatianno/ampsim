@@ -548,3 +548,44 @@ func TestTapTempo(t *testing.T) {
 		t.Error("subdivisão desconhecida deveria dar erro")
 	}
 }
+
+// A exportação offline é igual a processar a mesma entrada numa cadeia com o mesmo estado,
+// alinhada pela latência, e não mexe na cadeia de origem.
+func TestRenderOffline(t *testing.T) {
+	fs, di := lerDI(t)
+	di = di[:20000]
+	ao := NewDefaultChain()
+	if err := ao.Cab().LoadIRFile(irPath); err != nil {
+		t.Fatal(err)
+	}
+	ao.SetEnabled("delay", true)
+	ao.Module(PreID).Param("gain").Set(8)
+	st := ao.State()
+
+	var prog []float64
+	got, err := RenderOffline(st, di, fs, 0.5, 256, func(f float64) { prog = append(prog, f) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != len(di)+int(0.5*fs) {
+		t.Fatalf("%d amostras, esperava %d", len(got), len(di)+int(0.5*fs))
+	}
+	ref := NewDefaultChain()
+	if err := ref.ApplyState(st); err != nil {
+		t.Fatal(err)
+	}
+	ref.Prepare(fs, 256)
+	buf := append(append([]float64(nil), di...), make([]float64, int(0.5*fs)+ref.Latency())...)
+	ref.ProcessMono(buf)
+	for i := range got {
+		if got[i] != buf[i+ref.Latency()] {
+			t.Fatalf("amostra %d difere", i)
+		}
+	}
+	if len(prog) < 2 || prog[len(prog)-1] != 1 {
+		t.Errorf("progresso deveria terminar em 1: %v", prog)
+	}
+	if ao.Module(PreID).Param("gain").Get() != 8 || !ao.Enabled("delay") {
+		t.Error("a cadeia de origem não pode mudar")
+	}
+}

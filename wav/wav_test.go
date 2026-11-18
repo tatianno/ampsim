@@ -86,3 +86,33 @@ func precisa(t *testing.T, paths ...string) {
 		}
 	}
 }
+
+func TestPCM24EStreamWriter(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "take.wav")
+	sw, err := Create(path, 48000, PCM24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x := []float64{0, 0.5, -0.25, 1.5, -2, 1e-6}
+	for i := 0; i < 3; i++ { // em pedaços, como na gravação ao vivo
+		if err := sw.Write(x); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := sw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	a, err := ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.SampleRate != 48000 || a.Len() != 18 {
+		t.Fatalf("%d Hz, %d amostras (esperava 48000 e 18)", a.SampleRate, a.Len())
+	}
+	want := []float64{0, 0.5, -0.25, 1, -1, 1e-6} // com clip em ±1
+	for i, w := range want {
+		if got := a.Channels[0][12+i]; math.Abs(got-w) > 2e-7 {
+			t.Errorf("amostra %d: %v, esperava %v", i, got, w)
+		}
+	}
+}

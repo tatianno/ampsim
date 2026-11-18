@@ -23,10 +23,11 @@ import (
 // Na barra: clicar/arrastar = ir para a posição; Shift + arrastar = escolher o trecho do
 // loop; duplo clique = loop no arquivo inteiro.
 type Transport struct {
-	player *source.FilePlayer
-	OnOpen func()
+	player   *source.FilePlayer
+	OnOpen   func()
+	OnExport func()
 
-	open, play, stop, loop widget.Clickable
+	open, play, stop, loop, export widget.Clickable
 
 	// barra
 	barW      int
@@ -59,6 +60,9 @@ func (t *Transport) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	if t.loop.Clicked(gtx) {
 		p.SetLoop(!p.Loop())
 	}
+	if t.export.Clicked(gtx) && t.OnExport != nil {
+		t.OnExport()
+	}
 	clip := p.Clip()
 	name := "nenhum arquivo"
 	dur := 0.0
@@ -86,6 +90,8 @@ func (t *Transport) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return coloredButton(gtx, th, &t.loop, "Loop", 0, loopBg, th.Text)
 		}),
+		layout.Rigid(spacer(6, 0)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return smallButton(gtx, th, &t.export, "Exportar…", 0) }),
 		layout.Rigid(spacer(12, 0)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, name, textOpts{size: 13, color: th.Text, width: gtx.Dp(170)})

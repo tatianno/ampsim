@@ -84,6 +84,9 @@ func (p *FilePlayer) Load(path string) error {
 	if a.SampleRate != int(p.fs) {
 		mono = dsp.ResampleRate(mono, a.SampleRate, int(p.fs))
 	}
+	// rampas nas bordas: um corte abrupto no fim da gravação vira estalo no amp. Aplicadas
+	// aqui, valem igual para o play e para a exportação.
+	dsp.FadeEdges(mono, p.fs, dsp.FileFadeInMs, dsp.FileFadeOutMs)
 	p.SetClip(&Clip{Name: filepath.Base(path), Path: path, FS: int(p.fs), Samples: mono})
 	return nil
 }

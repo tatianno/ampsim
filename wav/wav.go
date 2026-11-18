@@ -198,7 +198,61 @@ type Format int
 const (
 	PCM16   Format = iota // inteiro 16 bits, com clip em ±1
 	Float32               // IEEE float 32 bits, sem clip
+	PCM24                 // inteiro 24 bits, com clip em ±1 (padrão de estúdio)
 )
+
+// bits e tag do formato
+func (f Format) layout() (bits, tag uint16, err error) {
+	switch f {
+	case PCM16:
+		return 16, formatPCM, nil
+	case PCM24:
+		return 24, formatPCM, nil
+	case Float32:
+		return 32, formatFloat, nil
+	}
+	return 0, 0, errors.New("formato inválido")
+}
+
+// header monta o cabeçalho de 44 bytes.
+func header(sampleRate, nc int, f Format, dataSize int) ([]byte, error) {
+	bits, tag, err := f.layout()
+	if err != nil {
+		return nil, err
+	}
+	bytesPer := int(bits) / 8
+	le := binary.LittleEndian
+	hdr := make([]byte, 44)
+	copy(hdr[0:], "RIFF")
+	le.PutUint32(hdr[4:], uint32(36+dataSize))
+	copy(hdr[8:], "WAVE")
+	copy(hdr[12:], "fmt ")
+	le.PutUint32(hdr[16:], 16)
+	le.PutUint16(hdr[20:], tag)
+	le.PutUint16(hdr[22:], uint16(nc))
+	le.PutUint32(hdr[24:], uint32(sampleRate))
+	le.PutUint32(hdr[28:], uint32(sampleRate*nc*bytesPer))
+	le.PutUint16(hdr[32:], uint16(nc*bytesPer))
+	le.PutUint16(hdr[34:], bits)
+	copy(hdr[36:], "data")
+	le.PutUint32(hdr[40:], uint32(dataSize))
+	return hdr, nil
+}
+
+// putSample codifica uma amostra no formato.
+func putSample(p []byte, v float64, f Format) {
+	le := binary.LittleEndian
+	switch f {
+	case PCM16:
+		s := math.Max(-32768, math.Min(32767, math.Round(v*32767)))
+		le.PutUint16(p, uint16(int16(s)))
+	case PCM24:
+		s := int32(math.Max(-8388608, math.Min(8388607, math.Round(v*8388607))))
+		p[0], p[1], p[2] = byte(s), byte(s>>8), byte(s>>16)
+	case Float32:
+		le.PutUint32(p, math.Float32bits(float32(v)))
+	}
+}
 
 // WriteFile grava os canais num arquivo WAV.
 func WriteFile(path string, sampleRate int, channels [][]float64, f Format) error {
@@ -235,54 +289,89 @@ func Write(w io.Writer, sampleRate int, channels [][]float64, f Format) error {
 		}
 	}
 	nc := len(channels)
-	var bits, tag uint16
-	switch f {
-	case PCM16:
-		bits, tag = 16, formatPCM
-	case Float32:
-		bits, tag = 32, formatFloat
-	default:
-		return errors.New("formato inválido")
+	bits, _, err := f.layout()
+	if err != nil {
+		return err
 	}
 	bytesPer := int(bits) / 8
-	dataSize := n * nc * bytesPer
-
-	le := binary.LittleEndian
-	hdr := make([]byte, 44)
-	copy(hdr[0:], "RIFF")
-	le.PutUint32(hdr[4:], uint32(36+dataSize))
-	copy(hdr[8:], "WAVE")
-	copy(hdr[12:], "fmt ")
-	le.PutUint32(hdr[16:], 16)
-	le.PutUint16(hdr[20:], tag)
-	le.PutUint16(hdr[22:], uint16(nc))
-	le.PutUint32(hdr[24:], uint32(sampleRate))
-	le.PutUint32(hdr[28:], uint32(sampleRate*nc*bytesPer))
-	le.PutUint16(hdr[32:], uint16(nc*bytesPer))
-	le.PutUint16(hdr[34:], bits)
-	copy(hdr[36:], "data")
-	le.PutUint32(hdr[40:], uint32(dataSize))
+	hdr, err := header(sampleRate, nc, f, n*nc*bytesPer)
+	if err != nil {
+		return err
+	}
 	if _, err := w.Write(hdr); err != nil {
 		return err
 	}
-
 	buf := make([]byte, nc*bytesPer)
 	for i := 0; i < n; i++ {
 		for c := 0; c < nc; c++ {
-			v := channels[c][i]
-			p := buf[c*bytesPer:]
-			switch f {
-			case PCM16:
-				s := math.Round(v * 32767)
-				s = math.Max(-32768, math.Min(32767, s))
-				le.PutUint16(p, uint16(int16(s)))
-			case Float32:
-				le.PutUint32(p, math.Float32bits(float32(v)))
-			}
+			putSample(buf[c*bytesPer:], channels[c][i], f)
 		}
 		if _, err := w.Write(buf); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// StreamWriter grava um WAV mono aos poucos (gravação ao vivo): o cabeçalho é escrito com
+// tamanho zero e corrigido no Close. Não é para a thread de áudio (faz I/O).
+type StreamWriter struct {
+	f          *os.File
+	w          *bufio.Writer
+	format     Format
+	sampleRate int
+	bytesPer   int
+	samples    int64
+	buf        []byte
+}
+
+// Create começa a gravar um WAV mono em path.
+func Create(path string, sampleRate int, f Format) (*StreamWriter, error) {
+	bits, _, err := f.layout()
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.Create(path)
+	if err != nil {
+		return nil, err
+	}
+	hdr, _ := header(sampleRate, 1, f, 0)
+	sw := &StreamWriter{f: file, w: bufio.NewWriterSize(file, 1<<16), format: f, sampleRate: sampleRate, bytesPer: int(bits) / 8}
+	if _, err := sw.w.Write(hdr); err != nil {
+		file.Close()
+		return nil, err
+	}
+	return sw, nil
+}
+
+// Write acrescenta amostras.
+func (s *StreamWriter) Write(x []float64) error {
+	need := len(x) * s.bytesPer
+	if cap(s.buf) < need {
+		s.buf = make([]byte, need)
+	}
+	b := s.buf[:need]
+	for i, v := range x {
+		putSample(b[i*s.bytesPer:], v, s.format)
+	}
+	s.samples += int64(len(x))
+	_, err := s.w.Write(b)
+	return err
+}
+
+// Samples devolve quantas amostras já foram escritas.
+func (s *StreamWriter) Samples() int64 { return s.samples }
+
+// Close corrige o cabeçalho com o tamanho final e fecha o arquivo.
+func (s *StreamWriter) Close() error {
+	if err := s.w.Flush(); err != nil {
+		s.f.Close()
+		return err
+	}
+	hdr, _ := header(s.sampleRate, 1, s.format, int(s.samples)*s.bytesPer)
+	if _, err := s.f.WriteAt(hdr, 0); err != nil {
+		s.f.Close()
+		return err
+	}
+	return s.f.Close()
 }

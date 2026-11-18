@@ -23,6 +23,7 @@ import (
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
 	"github.com/tatianno/ampsim/presets"
+	"github.com/tatianno/ampsim/wav"
 )
 
 func main() {
@@ -220,6 +221,8 @@ const ajuda = `comandos:
   latencia                       mede a latência real (precisa de um cabo da saída para a entrada!)
   afinar [segundos]              afinador (saída muda enquanto afina; padrão 15 s)
   bpm <andamento> [1/4|1/8.|1/8|1/16]   tempo do delay pelo andamento (ex.: bpm 120 1/8.)
+  rec [sem-di]                   começa/termina a gravação (saída + DI) na pasta de Música/ampsim
+  exportar <arquivo.wav>         processa o arquivo carregado pelo som atual e salva (24 bits)
   dispositivos                   lista saídas e entradas
   saida <n> | entrada <n>|nenhuma | buffer <quadros>   reabre a placa
   presets                        lista os presets (fábrica e seus)
@@ -339,6 +342,40 @@ func (a *app) exec(line string) bool {
 		}
 	case "latencia", "latência":
 		err = a.latencia()
+	case "rec":
+		rec := a.s.Recorder
+		if rec.Recording() {
+			var take audio.Take
+			if take, err = rec.Stop(); err == nil {
+				fmt.Printf("gravado (%.1f s): %s\n", take.Seconds, take.Out)
+				if take.DI != "" {
+					fmt.Println("DI:", take.DI)
+				}
+				if take.Dropped > 0 {
+					fmt.Printf("ATENÇÃO: %d amostras perdidas (o disco não acompanhou)\n", take.Dropped)
+				}
+			}
+		} else {
+			var path string
+			if path, err = rec.Start(audio.DefaultRecordDir(), rest != "sem-di"); err == nil {
+				fmt.Println("gravando em", path, "(rec de novo para parar)")
+			}
+		}
+	case "exportar":
+		clip := a.player.Clip()
+		switch {
+		case clip == nil:
+			err = fmt.Errorf("nenhum arquivo carregado")
+		case rest == "":
+			err = fmt.Errorf("use: exportar <arquivo.wav>")
+		default:
+			var out []float64
+			if out, err = engine.RenderOffline(a.chain.State(), clip.Samples, float64(clip.FS), 2, 512, nil); err == nil {
+				if err = wav.WriteMonoFile(rest, clip.FS, out, wav.PCM24); err == nil {
+					fmt.Println("exportado:", rest)
+				}
+			}
+		}
 	case "afinar":
 		secs := 15.0
 		if len(args) > 0 {

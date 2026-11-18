@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
 	"github.com/tatianno/ampsim/presets"
+	"github.com/tatianno/ampsim/wav"
 )
 
 // App é a tela principal.
@@ -35,6 +37,10 @@ type App struct {
 	Invalidate func()
 	// Pick abre o seletor de arquivo; por padrão PickWAV (os testes trocam).
 	Pick func(title string) (string, error)
+	// PickSave abre o diálogo de salvar; por padrão PickSaveWAV (os testes trocam).
+	PickSave func(title, suggested string) (string, error)
+	// RecordDir é a pasta das gravações (padrão: Música/ampsim).
+	RecordDir string
 
 	th        *Theme
 	transport *Transport
@@ -50,6 +56,11 @@ type App struct {
 	pedals    map[string]*Pedal
 	bypass    widget.Clickable
 	closeBtn  widget.Clickable
+	recBtn    widget.Clickable
+	diBtn     widget.Clickable
+	recDI     bool
+	exporting bool
+	exportPct float64
 
 	open     string // pedal aberto na sobreposição ("" = nenhum)
 	scrim    int    // tags de evento da sobreposição
@@ -68,9 +79,12 @@ func NewApp(s *audio.Session) *App {
 	chain := s.Chain
 	a := &App{
 		Session: s, Chain: chain, Player: s.Player, Renderer: s.Renderer, Monitor: s.Monitor,
-		Pick:   PickWAV,
-		th:     NewTheme(),
-		pedals: map[string]*Pedal{},
+		Pick:      PickWAV,
+		PickSave:  PickSaveWAV,
+		RecordDir: audio.DefaultRecordDir(),
+		recDI:     true,
+		th:        NewTheme(),
+		pedals:    map[string]*Pedal{},
 	}
 	a.transport = NewTransport(s.Player)
 	a.input = NewInputPanel(s)
@@ -99,6 +113,7 @@ func NewApp(s *audio.Session) *App {
 			a.open = id
 		}
 	}
+	a.transport.OnExport = a.exportAsync
 	a.transport.OnOpen = func() {
 		a.pickAsync("Abrir WAV para tocar", func(path string) error { return a.Player.Load(path) })
 	}
@@ -189,6 +204,12 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	a.keys(gtx)
 	if a.bypass.Clicked(gtx) && a.Renderer != nil {
 		a.Renderer.SetBypass(!a.Renderer.Bypass())
+	}
+	if a.recBtn.Clicked(gtx) {
+		a.toggleRecord()
+	}
+	if a.diBtn.Clicked(gtx) && !a.Session.Recorder.Recording() {
+		a.recDI = !a.recDI
 	}
 	th := a.th
 	paint.Fill(gtx.Ops, th.Bg)
@@ -341,14 +362,36 @@ func (a *App) footer(gtx layout.Context) layout.Dimensions {
 	if byp {
 		label, bg = "A/B: SECO (bypass)", darken(th.Warn, 0.45)
 	}
+	rec := a.Session.Recorder
+	recLabel, recBg := "● Gravar", th.PanelHi
+	if rec.Recording() {
+		e := rec.Elapsed()
+		recLabel = fmt.Sprintf("■ Parar  %d:%02d", int(e.Minutes()), int(e.Seconds())%60)
+		recBg = darken(th.Clip, 0.25)
+		if (gtx.Now.UnixMilli()/500)%2 == 0 {
+			recBg = darken(th.Clip, 0.45) // pisca
+		}
+	}
 	return panel(gtx, th.Panel, 10, 10, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return coloredButton(gtx, th, &a.bypass, label, gtx.Dp(170), bg, th.Text)
+				return coloredButton(gtx, th, &a.recBtn, recLabel, gtx.Dp(128), recBg, th.Text)
+			}),
+			layout.Rigid(spacer(4, 0)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return toggle(gtx, th, &a.diBtn, a.recDI, "DI")
+			}),
+			layout.Rigid(spacer(12, 0)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return coloredButton(gtx, th, &a.bypass, label, gtx.Dp(150), bg, th.Text)
 			}),
 			layout.Rigid(spacer(16, 0)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.meters.Layout(gtx, th) }),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+				if a.exporting {
+					return drawText(gtx, th, fmt.Sprintf("exportando… %.0f%%", 100*a.exportPct),
+						textOpts{size: 12, color: th.Gold, align: text.End, width: gtx.Constraints.Max.X})
+				}
 				if a.status == "" || gtx.Now.After(a.statusUntil) {
 					return layout.Dimensions{}
 				}
@@ -421,5 +464,68 @@ func (a *App) overlay(gtx layout.Context) {
 	func() {
 		defer offset(gtx.Ops, dims.Size.X-gtx.Dp(34), gtx.Dp(8)).Pop()
 		closeButton(gtx, &a.closeBtn, 26)
+	}()
+}
+
+// toggleRecord começa ou termina uma gravação.
+func (a *App) toggleRecord() {
+	rec := a.Session.Recorder
+	if rec.Recording() {
+		take, err := rec.Stop()
+		switch {
+		case err != nil:
+			a.setStatus(err.Error(), true)
+		case take.Dropped > 0:
+			a.setStatus(fmt.Sprintf("gravado com %d amostras perdidas: %s", take.Dropped, take.Out), true)
+		default:
+			msg := fmt.Sprintf("gravado (%.1f s): %s", take.Seconds, take.Out)
+			if take.DI != "" {
+				msg += " + DI"
+			}
+			a.setStatus(msg, false)
+		}
+		return
+	}
+	if _, err := rec.Start(a.RecordDir, a.recDI); err != nil {
+		a.setStatus("gravação: "+err.Error(), true)
+		return
+	}
+	a.setStatus("gravando em "+a.RecordDir, false)
+}
+
+// exportAsync processa o arquivo carregado pela cadeia atual e salva (numa goroutine,
+// numa cópia da cadeia: o som ao vivo não muda).
+func (a *App) exportAsync() {
+	if a.exporting {
+		return
+	}
+	clip := a.Player.Clip()
+	if clip == nil {
+		a.setStatus("abra um arquivo antes de exportar", true)
+		return
+	}
+	st := a.Chain.State() // o som de agora; mexer nos knobs durante a exportação não afeta
+	suggested := strings.TrimSuffix(clip.Name, filepath.Ext(clip.Name)) + "-ampsim.wav"
+	a.exporting, a.exportPct = true, 0
+	go func() {
+		path, err := a.PickSave("Exportar áudio processado", suggested)
+		if err == nil && path != "" {
+			var out []float64
+			out, err = engine.RenderOffline(st, clip.Samples, float64(clip.FS), 2, 512, func(f float64) {
+				a.Post(func() { a.exportPct = f })
+			})
+			if err == nil {
+				err = wav.WriteMonoFile(path, clip.FS, out, wav.PCM24)
+			}
+		}
+		a.Post(func() {
+			a.exporting = false
+			switch {
+			case err != nil:
+				a.setStatus("exportar: "+err.Error(), true)
+			case path != "":
+				a.setStatus("exportado: "+path, false)
+			}
+		})
 	}()
 }

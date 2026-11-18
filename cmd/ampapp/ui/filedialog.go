@@ -27,3 +27,26 @@ func PickWAV(title string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// PickSaveWAV abre o diálogo de salvar (zenity), já com um nome sugerido.
+// Devolve "" sem erro se o usuário cancelar. Bloqueia: chamar numa goroutine.
+func PickSaveWAV(title, suggested string) (string, error) {
+	if _, err := exec.LookPath("zenity"); err != nil {
+		return "", ErrNoDialog
+	}
+	cmd := exec.Command("zenity", "--file-selection", "--save", "--confirm-overwrite", "--title="+title,
+		"--filename="+suggested, "--file-filter=Áudio WAV | *.wav *.WAV")
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	path := strings.TrimSpace(string(out))
+	if path != "" && !strings.HasSuffix(strings.ToLower(path), ".wav") {
+		path += ".wav"
+	}
+	return path, nil
+}

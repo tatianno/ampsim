@@ -102,3 +102,18 @@ func TestSmoother(t *testing.T) {
 		t.Errorf("após 1 τ: %.3f, esperava %.3f", v, math.Exp(-1))
 	}
 }
+
+func TestFadeEdges(t *testing.T) {
+	x := make([]float64, 4800)
+	for i := range x {
+		x[i] = 1
+	}
+	FadeEdges(x, 48000, 5, 20) // 240 e 960 amostras
+	if x[0] != 0 || x[120] != 0.5 || x[240] != 1 || x[2400] != 1 {
+		t.Errorf("rampa de entrada: %v %v %v", x[0], x[120], x[240])
+	}
+	if x[len(x)-1] != 0 || math.Abs(x[len(x)-1-480]-0.25) > 1e-12 || x[len(x)-1-960] != 1 {
+		t.Errorf("rampa de saída: %v %v %v", x[len(x)-1], x[len(x)-1-480], x[len(x)-1-960])
+	}
+	FadeEdges(make([]float64, 10), 48000, 5, 20) // arquivo curtíssimo: não pode quebrar
+}

@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tatianno/ampsim/dsp"
 	"github.com/tatianno/ampsim/engine"
 	"github.com/tatianno/ampsim/presets"
 	"github.com/tatianno/ampsim/wav"
@@ -106,20 +107,16 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	chain.Prepare(float64(fs), *block)
+	// mesmas rampas de borda do app (um corte abrupto no fim da gravação vira estalo no amp)
+	dsp.FadeEdges(x, float64(fs), dsp.FileFadeInMs, dsp.FileFadeOutMs)
 	lat := chain.Latency()
-
-	// entrada + cauda + latência (para compensar o atraso no fim)
-	n := len(x) + int(*tail*float64(fs))
-	buf := make([]float64, n+lat)
-	copy(buf, x)
-
 	start := time.Now()
-	for i := 0; i < len(buf); i += *block {
-		chain.ProcessMono(buf[i:min(i+*block, len(buf))])
+	// mesma renderização offline da GUI ("Exportar…"): cadeia nova com o estado atual
+	y, err := engine.RenderOffline(chain.State(), x, float64(fs), *tail, *block, nil)
+	if err != nil {
+		return err
 	}
 	elapsed := time.Since(start)
-	y := buf[lat:] // compensa a latência: saída alinhada com a entrada
 
 	pk := 0.0
 	for _, v := range y {
