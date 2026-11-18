@@ -3,14 +3,19 @@ package audio
 import (
 	"errors"
 	"fmt"
+	"os"
+	"runtime"
+	"strings"
+	"sync"
 	"unsafe"
 
 	"github.com/gen2brain/malgo"
-
-	"github.com/tatianno/ampsim/engine"
 )
 
-// DeviceInfo descreve um dispositivo de saída.
+// NoInput em Config.Input abre só a saída (sem entrada ao vivo).
+const NoInput = -2
+
+// DeviceInfo descreve um dispositivo de áudio.
 type DeviceInfo struct {
 	Index     int
 	Name      string
@@ -18,41 +23,80 @@ type DeviceInfo struct {
 	id        malgo.DeviceID
 }
 
-// Config da saída de áudio.
+// Config escolhe a placa. Os índices são os de ListDevices.
 type Config struct {
-	Device     int    // índice em ListOutputs; -1 = padrão do sistema
-	SampleRate uint32 // 0 = 48000
-	Buffer     uint32 // quadros por período; 0 = 256
-	Channels   uint32 // 0 = 2
+	// "" = automático (no Linux: JACK próprio se houver, senão PulseAudio), "jack"
+	// (backend JACK próprio), "pulseaudio" ou "alsa" (via miniaudio).
+	Backend string
+	Output  int    // -1 = saída padrão do sistema
+	Input   int    // -1 = entrada padrão; NoInput = sem entrada
+	Buffer  uint32 // quadros por período (0 = 256)
 }
 
-// Output é a saída de áudio aberta.
-type Output struct {
-	ctx      *malgo.AllocatedContext
-	dev      *malgo.Device
-	renderer *Renderer
-	fs       float64
-	buffer   uint32
-	channels int
-	name     string
+// State descreve o que está aberto de fato.
+type State struct {
+	Open        bool
+	Backend     string // ex.: "JACK (PipeWire)", "PulseAudio"
+	Duplex      bool   // entrada e saída abertas
+	OutputName  string
+	InputName   string
+	OutChannels int
+	InChannels  int
+	SampleRate  float64
+	Buffer      uint32
+	Warning     string // ex.: a entrada não abriu e ficou só a saída
 }
 
-func initContext() (*malgo.AllocatedContext, error) {
-	return malgo.InitContext(nil, malgo.ContextConfig{}, nil)
+// Host é a placa de som aberta, ligada a um Renderer. Pode ser reaberta (outra saída,
+// outra entrada, outro buffer) com o app rodando; o Renderer e o engine continuam os mesmos.
+type Host struct {
+	r *Renderer
+
+	mu      sync.Mutex
+	ctx     *malgo.AllocatedContext
+	backend string
+	dev     *malgo.Device
+	cfg     Config
+	st      State
+
+	// lidos pelo callback; só mudam com o dispositivo parado
+	outCh, inCh int
+
+	jack bool // o backend JACK próprio está aberto
 }
 
-// ListOutputs lista os dispositivos de saída.
-func ListOutputs() ([]DeviceInfo, error) {
-	ctx, err := initContext()
+// Se o usuário já definiu PIPEWIRE_LATENCY (ou usou pw-jack -p), respeitamos.
+var userPipewireLatency = os.Getenv("PIPEWIRE_LATENCY") != ""
+
+// NewHost cria o host para o render (a cadeia já preparada na taxa do render).
+func NewHost(r *Renderer) *Host { return &Host{r: r, cfg: Config{Output: -1, Input: -1}} }
+
+func backends(name string) ([]malgo.Backend, error) {
+	switch strings.ToLower(name) {
+	case "":
+		return nil, nil
+	case "pulse", "pulseaudio", "pipewire":
+		return []malgo.Backend{malgo.BackendPulseaudio}, nil
+	case "alsa":
+		return []malgo.Backend{malgo.BackendAlsa}, nil
+	}
+	return nil, fmt.Errorf("backend desconhecido %q (use jack, pulseaudio ou alsa)", name)
+}
+
+func newContext(backend string) (*malgo.AllocatedContext, error) {
+	b, err := backends(backend)
 	if err != nil {
 		return nil, err
 	}
-	defer func() { ctx.Uninit(); ctx.Free() }()
-	return listOutputs(ctx)
+	ctx, err := malgo.InitContext(b, malgo.ContextConfig{}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("iniciando áudio: %w", err)
+	}
+	return ctx, nil
 }
 
-func listOutputs(ctx *malgo.AllocatedContext) ([]DeviceInfo, error) {
-	infos, err := ctx.Devices(malgo.Playback)
+func list(ctx *malgo.AllocatedContext, kind malgo.DeviceType) ([]DeviceInfo, error) {
+	infos, err := ctx.Devices(kind)
 	if err != nil {
 		return nil, err
 	}
@@ -63,116 +107,245 @@ func listOutputs(ctx *malgo.AllocatedContext) ([]DeviceInfo, error) {
 	return out, nil
 }
 
-// OpenOutput abre a saída e prepara a cadeia na taxa real do dispositivo.
-// A fonte é ligada depois, com Renderer().SetSource.
-func OpenOutput(cfg Config, chain *engine.Chain) (*Output, error) {
-	if cfg.SampleRate == 0 {
-		cfg.SampleRate = 48000
+// useJack diz se a configuração usa o backend JACK próprio.
+func useJack(backend string) bool {
+	return strings.EqualFold(backend, "jack") || (backend == "" && runtime.GOOS == "linux" && jackAvailable())
+}
+
+// ListDevices lista as saídas e entradas do backend.
+func ListDevices(backend string) (outs, ins []DeviceInfo, err error) {
+	if useJack(backend) {
+		jo, ji, err := jackList()
+		if err == nil || backend != "" {
+			return jackDeviceInfos(jo), jackDeviceInfos(ji), err
+		}
 	}
+	ctx, err := newContext(backend)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() { ctx.Uninit(); ctx.Free() }()
+	if outs, err = list(ctx, malgo.Playback); err != nil {
+		return nil, nil, err
+	}
+	ins, err = list(ctx, malgo.Capture)
+	return outs, ins, err
+}
+
+// Devices lista as saídas e entradas do backend em uso.
+func (h *Host) Devices() (outs, ins []DeviceInfo, err error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.jack || h.ctx == nil {
+		return ListDevices(h.cfg.Backend)
+	}
+	if outs, err = list(h.ctx, malgo.Playback); err != nil {
+		return nil, nil, err
+	}
+	ins, err = list(h.ctx, malgo.Capture)
+	return outs, ins, err
+}
+
+// Open abre (ou reabre) a placa e começa a tocar. Se a entrada não abrir, tenta só a
+// saída e avisa em State().Warning.
+func (h *Host) Open(cfg Config) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
 	if cfg.Buffer == 0 {
 		cfg.Buffer = 256
 	}
-	if cfg.Channels == 0 {
-		cfg.Channels = 2
-	}
-	ctx, err := initContext()
-	if err != nil {
-		return nil, fmt.Errorf("iniciando áudio: %w", err)
-	}
-	o := &Output{ctx: ctx, channels: int(cfg.Channels), buffer: cfg.Buffer, name: "padrão do sistema"}
+	h.closeDevice()
 
-	dc := malgo.DefaultDeviceConfig(malgo.Playback)
-	dc.Playback.Format = malgo.FormatF32
-	dc.Playback.Channels = cfg.Channels
-	dc.SampleRate = cfg.SampleRate
+	warning := ""
+	if useJack(cfg.Backend) {
+		err := h.openJack(cfg)
+		if err == nil {
+			h.cfg = cfg
+			return nil
+		}
+		if cfg.Backend != "" {
+			return err // pediu JACK explicitamente
+		}
+		warning = fmt.Sprintf("o JACK não abriu (%v); usando PulseAudio", err)
+	}
+
+	if h.ctx == nil || cfg.Backend != h.backend {
+		h.closeContext()
+		ctx, err := newContext(cfg.Backend)
+		if err != nil {
+			return err
+		}
+		h.ctx, h.backend = ctx, cfg.Backend
+	}
+
+	err := errors.New("sem entrada")
+	if cfg.Input != NoInput {
+		err = h.openDevice(cfg, true)
+		if err != nil {
+			warning = strings.TrimPrefix(warning+"; ", "; ") + fmt.Sprintf("a entrada não abriu (%v); tocando só a saída", err)
+		}
+	}
+	if err != nil {
+		if err = h.openDevice(cfg, false); err != nil {
+			return err
+		}
+	}
+	if err := h.dev.Start(); err != nil {
+		h.closeDevice()
+		return fmt.Errorf("iniciando o dispositivo: %w", err)
+	}
+	h.cfg = cfg
+	h.st.Warning = warning
+	h.st.Open = true
+	return nil
+}
+
+func (h *Host) openDevice(cfg Config, duplex bool) error {
+	kind := malgo.Playback
+	if duplex {
+		kind = malgo.Duplex
+	}
+	dc := malgo.DefaultDeviceConfig(kind)
+	dc.SampleRate = uint32(h.r.SampleRate())
 	dc.PeriodSizeInFrames = cfg.Buffer
 	dc.Periods = 2
 	dc.PerformanceProfile = malgo.LowLatency
-
-	if cfg.Device >= 0 {
-		devs, err := listOutputs(ctx)
-		if err != nil {
-			o.Close()
-			return nil, err
-		}
-		if cfg.Device >= len(devs) {
-			o.Close()
-			return nil, fmt.Errorf("dispositivo %d não existe (há %d)", cfg.Device, len(devs))
-		}
-		id := devs[cfg.Device].id
-		dc.Playback.DeviceID = id.Pointer()
-		o.name = devs[cfg.Device].Name
+	dc.Playback.Format = malgo.FormatF32
+	dc.Playback.Channels = 2
+	st := State{OutputName: "padrão do sistema", Duplex: duplex, Buffer: cfg.Buffer, Backend: "PulseAudio"}
+	if strings.EqualFold(cfg.Backend, "alsa") {
+		st.Backend = "ALSA"
 	}
 
-	// A cadeia precisa estar pronta antes do primeiro callback. Preparamos na taxa
-	// pedida; se o dispositivo abrir em outra taxa, preparamos de novo antes do Start.
-	chain.Prepare(float64(cfg.SampleRate), MaxBlock)
-	o.renderer = NewRenderer(chain, float64(cfg.SampleRate))
+	outs, err := list(h.ctx, malgo.Playback)
+	if err != nil {
+		return err
+	}
+	if cfg.Output >= 0 {
+		if cfg.Output >= len(outs) {
+			return fmt.Errorf("saída %d não existe (há %d)", cfg.Output, len(outs))
+		}
+		dc.Playback.DeviceID = outs[cfg.Output].id.Pointer()
+		st.OutputName = outs[cfg.Output].Name
+	}
+	if duplex {
+		dc.Capture.Format = malgo.FormatF32
+		dc.Capture.Channels = 0 // canais nativos da placa
+		st.InputName = "padrão do sistema"
+		if cfg.Input >= 0 {
+			ins, err := list(h.ctx, malgo.Capture)
+			if err != nil {
+				return err
+			}
+			if cfg.Input >= len(ins) {
+				return fmt.Errorf("entrada %d não existe (há %d)", cfg.Input, len(ins))
+			}
+			dc.Capture.DeviceID = ins[cfg.Input].id.Pointer()
+			st.InputName = ins[cfg.Input].Name
+		}
+	}
 
 	cb := malgo.DeviceCallbacks{
-		Data: func(out, _ []byte, frames uint32) {
+		Data: func(out, in []byte, frames uint32) {
 			if len(out) == 0 {
 				return
 			}
-			f := unsafe.Slice((*float32)(unsafe.Pointer(&out[0])), len(out)/4)
-			o.renderer.Render(f, o.channels, int(frames))
+			o := unsafe.Slice((*float32)(unsafe.Pointer(&out[0])), len(out)/4)
+			if len(in) > 0 {
+				i := unsafe.Slice((*float32)(unsafe.Pointer(&in[0])), len(in)/4)
+				h.r.RenderDuplex(o, h.outCh, i, h.inCh, int(frames))
+			} else {
+				h.r.Render(o, h.outCh, int(frames))
+			}
 		},
 	}
-	dev, err := malgo.InitDevice(ctx.Context, dc, cb)
+	dev, err := malgo.InitDevice(h.ctx.Context, dc, cb)
 	if err != nil {
-		o.Close()
-		return nil, fmt.Errorf("abrindo dispositivo: %w", err)
+		return err
 	}
-	o.dev = dev
-	if dev.PlaybackFormat() != malgo.FormatF32 {
-		o.Close()
-		return nil, errors.New("dispositivo não aceitou float32")
+	if dev.PlaybackFormat() != malgo.FormatF32 || (duplex && dev.CaptureFormat() != malgo.FormatF32) {
+		dev.Uninit()
+		return errors.New("o dispositivo não aceitou float32")
 	}
-	o.channels = int(dev.PlaybackChannels())
-	o.fs = float64(dev.SampleRate())
-	if o.fs != float64(cfg.SampleRate) {
-		chain.Prepare(o.fs, MaxBlock)
-		o.renderer = NewRenderer(chain, o.fs)
+	if float64(dev.SampleRate()) != h.r.SampleRate() {
+		dev.Uninit()
+		return fmt.Errorf("o dispositivo abriu a %d Hz, esperava %.0f Hz", dev.SampleRate(), h.r.SampleRate())
 	}
-	return o, nil
+	h.dev = dev
+	h.outCh = int(dev.PlaybackChannels())
+	st.OutChannels = h.outCh
+	if duplex {
+		h.inCh = int(dev.CaptureChannels())
+		st.InChannels = h.inCh
+	} else {
+		h.inCh = 0
+	}
+	st.SampleRate = h.r.SampleRate()
+	h.st = st
+	return nil
 }
 
-// Start inicia o áudio.
-func (o *Output) Start() error { return o.dev.Start() }
-
-// Stop para o áudio.
-func (o *Output) Stop() error { return o.dev.Stop() }
-
-// Close libera o dispositivo.
-func (o *Output) Close() {
-	if o.dev != nil {
-		o.dev.Uninit()
-		o.dev = nil
+func (h *Host) closeDevice() {
+	h.closeJack()
+	if h.dev != nil {
+		h.dev.Uninit() // para o dispositivo e espera o callback terminar
+		h.dev = nil
 	}
-	if o.ctx != nil {
-		o.ctx.Uninit()
-		o.ctx.Free()
-		o.ctx = nil
+	h.st = State{}
+}
+
+func (h *Host) closeContext() {
+	if h.ctx != nil {
+		h.ctx.Uninit()
+		h.ctx.Free()
+		h.ctx = nil
 	}
 }
 
-// Renderer devolve o render (para trocar a fonte e ler os medidores).
-func (o *Output) Renderer() *Renderer { return o.renderer }
+// Close fecha a placa.
+func (h *Host) Close() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.closeDevice()
+	h.closeContext()
+}
 
-// SampleRate devolve a taxa real do dispositivo.
-func (o *Output) SampleRate() float64 { return o.fs }
+// State devolve o que está aberto.
+func (h *Host) State() State {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	st := h.st
+	if h.jack {
+		st.Buffer = jackBuffer() // o ciclo real (o PipeWire pode mudar ao vivo)
+		if jackShutdown() {
+			st.Open = false
+			st.Warning = "o servidor JACK/PipeWire fechou a conexão"
+		}
+	}
+	return st
+}
 
-// Buffer devolve o tamanho de período pedido, em quadros.
-func (o *Output) Buffer() uint32 { return o.buffer }
+// Config devolve a configuração em uso.
+func (h *Host) Config() Config {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.cfg
+}
 
-// Channels devolve o número de canais de saída.
-func (o *Output) Channels() int { return o.channels }
+// Renderer devolve o render.
+func (h *Host) Renderer() *Renderer { return h.r }
 
-// Name devolve o nome do dispositivo.
-func (o *Output) Name() string { return o.name }
-
-// OutputLatencyMs estima a latência de saída: períodos do buffer + latência da cadeia.
-// (Não inclui a latência interna do servidor de som / hardware.)
-func (o *Output) OutputLatencyMs(chainLatency int) float64 {
-	return 1000 * (2*float64(o.buffer) + float64(chainLatency)) / o.fs
+// EstimatedLatencyMs estima a latência de ida e volta pelos buffers do app (entrada +
+// 2 períodos de saída) e a cadeia. O servidor de som e os conversores somam mais:
+// a medida real vem do teste de latência.
+func (h *Host) EstimatedLatencyMs(chainLatency int) float64 {
+	st := h.State()
+	if !st.Open {
+		return 0
+	}
+	periods := 2.0
+	if st.Duplex {
+		periods = 3
+	}
+	return 1000 * (periods*float64(st.Buffer) + float64(chainLatency)) / st.SampleRate
 }

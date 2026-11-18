@@ -15,16 +15,23 @@ import (
 	"github.com/tatianno/ampsim/engine"
 )
 
+// OutputChannels é quantos canais de saída recebem o sinal (o primeiro par); os demais
+// ficam em silêncio. No JACK, o miniaudio abre todas as portas físicas de todas as placas.
+const OutputChannels = 2
+
 // MaxBlock é o maior bloco processado de uma vez (callbacks maiores são divididos).
 const MaxBlock = 1024
 
 // Meter é o resumo de um callback, enviado à GUI pelo Ring.
 type Meter struct {
-	InPeak, OutPeak float32 // pico absoluto (linear)
+	InPeak, OutPeak float32 // pico absoluto (linear); InPeak é o que entra no engine (depois do trim)
+	InRaw           float32 // pico da placa, antes do trim (só com entrada ao vivo)
+	InClips         uint32  // amostras em que o conversor da placa clipou
 	OutClips        uint32  // amostras que passaram de ±1 (cortadas)
 	GateOpen        bool
 	Bypassed        bool    // bypass A/B global ligado
 	Load            float32 // tempo de processamento / duração do bloco
+	Overrun         bool    // o processamento passou do tempo do bloco (provável estalo)
 	Frames          uint32
 }
 
@@ -47,6 +54,9 @@ type Renderer struct {
 	dry     []float64
 	dryLine *dsp.DelayLine
 	lat     int
+
+	live atomic.Pointer[source.LiveInput] // entrada ao vivo (alimentada em RenderDuplex)
+	lt   latencyTest
 }
 
 // ABFadeMs é a duração do crossfade do bypass A/B.
@@ -61,6 +71,7 @@ func NewRenderer(chain *engine.Chain, fs float64) *Renderer {
 	r.dry = make([]float64, MaxBlock)
 	r.lat = chain.Latency()
 	r.dryLine = dsp.NewDelayLine(max(1, r.lat))
+	r.lt.win = make([]float32, int(latencyWindowMs/1000*fs))
 	return r
 }
 
@@ -79,12 +90,36 @@ func (r *Renderer) Meters() *Ring[Meter] { return r.meters }
 // Callbacks devolve quantos callbacks já rodaram.
 func (r *Renderer) Callbacks() uint64 { return r.callback.Load() }
 
-// Render preenche out (intercalado, channels canais) com frames quadros.
+// SetLive liga a entrada ao vivo (a placa entrega o buffer de entrada em RenderDuplex).
+func (r *Renderer) SetLive(l *source.LiveInput) { r.live.Store(l) }
+
+// SampleRate devolve a taxa do render.
+func (r *Renderer) SampleRate() float64 { return r.fs }
+
+// Render preenche out (intercalado, channels canais) com frames quadros (só saída).
 func (r *Renderer) Render(out []float32, channels, frames int) {
-	start := time.Now()
-	src := r.src.Load().s
 	var m Meter
-	m.Frames = uint32(frames)
+	r.render(out, channels, frames, time.Now(), &m)
+}
+
+// RenderDuplex é o callback com entrada e saída: entrega a entrada à LiveInput, mede o
+// nível da placa e processa. Durante o teste de latência, a saída é só o pulso de teste.
+func (r *Renderer) RenderDuplex(out []float32, outCh int, in []float32, inCh, frames int) {
+	start := time.Now()
+	var m Meter
+	if l := r.live.Load(); l != nil {
+		l.Feed(in, inCh, frames)
+		m.InRaw, m.InClips = l.RawPeak()
+		if r.lt.step(r, out, outCh, frames, l) {
+			r.finish(&m, frames, start)
+			return
+		}
+	}
+	r.render(out, outCh, frames, start, &m)
+}
+
+func (r *Renderer) render(out []float32, channels, frames int, start time.Time, m *Meter) {
+	src := r.src.Load().s
 
 	for off := 0; off < frames; off += MaxBlock {
 		n := min(MaxBlock, frames-off)
@@ -106,8 +141,13 @@ func (r *Renderer) Render(out []float32, channels, frames int) {
 				v = math.Copysign(1, v)
 			}
 			f := float32(v)
-			for c := 0; c < channels; c++ {
-				out[base+i*channels+c] = f
+			o := out[base+i*channels : base+(i+1)*channels]
+			for c := range o {
+				if c < OutputChannels {
+					o[c] = f
+				} else {
+					o[c] = 0 // canais além do primeiro par (ex.: outras placas no JACK) ficam mudos
+				}
 			}
 		}
 	}
@@ -117,10 +157,17 @@ func (r *Renderer) Render(out []float32, channels, frames int) {
 	} else {
 		m.GateOpen = true
 	}
+	r.finish(m, frames, start)
+}
+
+// finish fecha o medidor do callback (carga de CPU) e envia para a GUI.
+func (r *Renderer) finish(m *Meter, frames int, start time.Time) {
+	m.Frames = uint32(frames)
 	m.Bypassed = r.bypass.Load()
 	budget := float64(frames) / r.fs
 	m.Load = float32(time.Since(start).Seconds() / budget)
-	if !r.meters.Push(m) {
+	m.Overrun = m.Load > 1
+	if !r.meters.Push(*m) {
 		r.dropped.Add(1)
 	}
 	r.callback.Add(1)

@@ -156,6 +156,7 @@ valor exibido enquanto gira.
 
 > **MVP (primeira entrega):** Fases 0 a 4, ou seja, o app standalone tocando a guitarra **ao vivo** pelo amp e
 > pelos pedais, com GUI. O que vem depois (Fase 5, Fase 6 e o suporte a NAM) é pós-MVP.
+> **Status: MVP concluído em 18/11/2026** (latência de 31 ms aceita; débitos na seção 6.1).
 
 ### Fase 0: Preparação ✅
 - [x] Corrigir o ruído no fim do `main.py`: normalizar antes da média estéreo e aplicar fade na DI
@@ -304,14 +305,103 @@ Depois: `go run ./cmd/ampapp` (janela) · `go run ./cmd/ampapp -console` (consol
 - A janela começa com o player pausado (Play ou barra de espaço); o console continua começando tocando.
 - Presets na GUI (salvar/carregar/de fábrica) ficaram para a Fase 5, como planejado.
 
-### Fase 4: Entrada ao vivo pela guitarra (~1 semana) — fecha o MVP
-**Meta:** tocar ao vivo com latência total abaixo de ~10 ms.
+### Fase 4: Entrada ao vivo pela guitarra ✅ (concluída em 18/11/2026) — fecha o MVP
+**Meta:** tocar ao vivo com latência total abaixo de ~10 ms. **Resultado:** 31,2 ms de ida e volta com buffer 64
+(backend JACK próprio), aceito para os primeiros testes; o resto da redução virou débito técnico (seção 6.1).
 
-- [ ] `source/LiveInput`: full-duplex com malgo, escolha do dispositivo e do canal
-- [ ] Trim de entrada com indicador de clip (calibrar o nível ao vivo para bater com o da DI)
-- [ ] Buffers de 64 a 128 amostras; testar com PipeWire/JACK
-- [ ] Medir a latência real (loopback) e exibir na GUI
-- [ ] Se houver estalos: revisar alocações e ajustar `GOGC`
+- [x] `source.LiveInput`: recebe o buffer de entrada do callback (sem copiar), escolhe o canal (1, 2… ou média),
+  aplica o **trim** (−24 a +24 dB, suavizado) e mede o pico e os clips do conversor antes do trim
+- [x] `audio.Renderer.RenderDuplex`: entrada e saída no mesmo callback; medidor do nível da placa, clips do conversor e
+  callbacks que passaram do tempo ("atrasos": prováveis estalos)
+- [x] `audio.Host` (substitui o `Output`): abre em duplex, cai para só saída se a entrada falhar (com aviso), **reabre**
+  com o app rodando (outra saída, outra entrada, outro buffer), backend escolhível (pulseaudio, alsa, jack)
+- [x] `audio.Session`: cadeia, render, placa, fontes e medidores num lugar só (console e GUI usam a mesma)
+- [x] **Teste de latência por loopback** (`Renderer.StartLatencyTest`): 5 pulsos curtos na saída, mede a volta pela
+  entrada (limiar = 6× o ruído de fundo), mediana das medições; testado com loopback simulado (mede exatamente o atraso)
+- [x] GUI: painel **ENTRADA** (Arquivo/Guitarra, canal, trim, nível da guitarra com a faixa ideal −18 a −6 dBFS,
+  clip da placa) e painel **Áudio…** (saída, entrada, buffer 64–1024, aplicar, medir latência); latência medida no topo
+- [x] Console: `fonte`, `canal`, `trim`, `latencia`, `dispositivos`, `saida`, `entrada`, `buffer`; opções `-entrada`,
+  `-canal`, `-fonte`, `-backend`, `-saida` (antes `-dispositivo`)
+- [x] Testes sem placa: canais, trim, leitura em pedaços, zero alocação; duplex, clips da placa; latência com loopback
+  simulado e sem cabo; painel de entrada (troca de fonte, altura de uma linha) e painel de áudio
+- [x] Teste na placa real, sem som: AudioBox abre em duplex (2 canais); nível da guitarra parada ≈ −48 dBFS;
+  buffers 256, 128 e 64 abrem sem atrasos (cadeia com gate + amp: até 45% do tempo do callback em 64)
+- [x] **Tocar a guitarra** (você, 18/11): ok
+- [x] **Medir a latência real** (você, 18/11): **46,4 ms** de ida e volta (47,1 ms com a cadeia); estimada 16,7 ms
+- [x] Teste de latência mais robusto (o teste falhou com a fonte em Arquivo): silêncio de 400 ms com o ruído medido só
+  nos últimos 100 ms; detecção pelo pico da janela de 500 ms depois do pulso (chegada = primeira amostra acima de metade
+  do pico), sem depender do volume de volta; diagnóstico (pico e ruído em dBFS) quando falha; testes com música em
+  trânsito, retorno fraco, ruído e eco
+- [x] `pipewire-jack` instalado; 1ª medida com `-backend jack`: **131,2 ms** (pior). Causas achadas com `pw-top`/`pw-link`:
+  - sem pedir latência, o cliente JACK do PipeWire usa **1024 quadros** (21,3 ms por ciclo) e arrasta o grafo todo
+    para 1024; 131 ms ≈ 6 ciclos;
+  - o backend JACK do miniaudio se liga a **todas as portas físicas** (AudioBox + áudio interno): o som saía nas duas
+    placas e a entrada tinha 4 canais (inclui o microfone interno).
+- [x] Correções: no JACK o app pede o buffer escolhido via `PIPEWIRE_LATENCY` (respeita se o usuário já definiu) e
+  escreve só no primeiro par de saídas (os demais canais ficam mudos), com teste
+- [x] Medido de novo com o JACK do miniaudio (18/11): **36,8 ms** (buffer 128) e **26,0 ms** (buffer 64).
+  Ajuste linear: **≈ 15 ms fixos + 8 × buffer**. Os 8 ciclos (o mínimo seria 2–3) vêm dos buffers intermediários
+  do miniaudio; os ~15 ms fixos vêm da placa (AudioBox USB full speed) e de o PipeWire tratar entrada e saída dela
+  como dispositivos separados (reamostrador entre eles).
+- [x] **Backend JACK próprio** (18/11) — esperado ≈ 19 ms com buffer 64:
+  - [x] cgo com `dlopen` da libjack (`audio/jack_linux.c` + `jack_linux.go`): sem headers para compilar; carrega a
+    libjack do PipeWire direto (dispensa o `pw-jack`); sem JACK, o app volta para o miniaudio
+  - [x] cliente `ampsim` com as portas de entrada da placa escolhida (até 8) e 2 de saída (L/R), ligadas **só** à
+    placa escolhida (conferido com `pw-link -l`: só AudioBox)
+  - [x] callback direto (`ampsimJackProcess`): entrada → `LiveInput` → engine → saídas, sem buffer intermediário
+  - [x] buffer pedido ao PipeWire (`PIPEWIRE_LATENCY`) e lido de volta do JACK (o ciclo real aparece na tela)
+  - [x] `Host` com escolha de backend: automático no Linux = JACK próprio se disponível, senão PulseAudio (com aviso)
+  - [x] lista de placas do JACK (portas físicas agrupadas por placa, sem monitores) no painel Áudio… e no console;
+    backend em uso mostrado no topo, no painel e no console
+  - [x] teste na placa, em silêncio: ciclo 64 de verdade (`pw-top`), ~17 s sem nenhum atraso com 64 e 128
+    (CPU mediana 13% / 9%); só a partida pode gerar 1 atraso
+  - [x] bug achado: nomes das portas vazios ao listar sem cliente aberto (o JACK do PipeWire libera os nomes ao
+    fechar o cliente temporário) — a lista agora é copiada antes
+  - [x] medida com o backend próprio (18/11, buffer 64): **31,6 ms** (32,2 com a cadeia). Em dúvida: havia uma chamada
+    com voz entrando durante a medição. Com o PipeWire (`pw-dump`), a saída da AudioBox estava com **headroom de 512
+    quadros (10,7 ms)**, contra 64 nas medições anteriores, o que explica boa parte da diferença
+  - [x] o teste agora confere se as 5 medições concordam (variação ≤ 1 ms); se não, avisa que o resultado não é
+    confiável (testado com "voz" entrando numa janela)
+  - [x] medido de novo em silêncio (18/11, buffer 64): **31,2 ms**, variação 0,7 ms (31,9 com a cadeia) — confirma
+- [ ] → débito técnico (seção 6.1): fixar o headroom/período da AudioBox em 64 com regra do WirePlumber (só a AudioBox; reiniciar o WirePlumber
+  interrompe o áudio do sistema por 1–2 s — fazer fora de chamadas). Esperado ≈ 22 ms. Arquivo proposto
+  `~/.config/wireplumber/main.lua.d/51-audiobox-baixa-latencia.lua` com `api.alsa.period-size = 64` e
+  `api.alsa.headroom = 64` para `alsa_*.usb-PreSonus_Audio_AudioBox_USB-01*`
+- [x] Conta atual da latência com buffer 64: app ~3,3 ms (2 ciclos + cadeia) + headroom da saída 10,7 ms + entrada 1 ms
+  + ~16,6 ms de driver USB do kernel, USB 1.1 e conversores (fora do alcance do app)
+- [ ] → débito técnico (seção 6.1): testar o perfil **Pro Audio** da AudioBox no PipeWire
+- [x] Meta de latência do MVP revista: 31 ms aceitos para os primeiros testes (18/11); alvo futuro ~20 ms com esta placa
+
+- [x] Estalos: nenhum atraso em ~17 s com buffer 64 e 128 (só pode haver 1 na partida); otimização da cadeia segue na Fase 5
+
+**Notas**
+- **Investigação dos 46 ms** (18/11, com `pw-top`/`pw-dump`, app em silêncio): o grafo do PipeWire já roda com
+  quantum **128** (2,7 ms) na AudioBox; o ALSA da AudioBox usa períodos de 64/128 com headroom 64/128; os streams do app
+  negociam buffers pequenos (tlength 256 quadros, fragsize 128). O caminho de hardware explicaria ~12 ms. O resto vem da
+  **camada PulseAudio** (pipewire-pulse) e do duplex do miniaudio sobre ela (dois streams separados sincronizados por um
+  buffer intermediário). A saída é a API JACK do PipeWire: entrada e saída no mesmo ciclo do grafo.
+- O PipeWire tem quantum padrão configurado de 1024 (≈21 ms) e mínimo 32 (na prática negociou 128). O app pede o buffer escolhido, mas a latência
+  final depende do que o PipeWire concede: por isso a medida por loopback. Se ficar alta, dá para forçar com
+  `pw-metadata -n settings 0 clock.force-quantum 128`.
+- O JACK instalado é o jackd2 (sem servidor rodando); o backend usado é o PulseAudio (pipewire-pulse).
+- Com buffer 64 a margem de CPU fica pequena com muitos pedais: a otimização da Fase 5 (FFT real, `tanh` mais
+  barata) passa a ter efeito prático.
+- Bugs achados: medidor da placa lido cedo demais no console (não era a placa: era o momento da leitura); `fill`
+  ocupando a altura numa linha (painel de entrada esticava a tela) — separado em `hfill`/`vfill`, com teste.
+
+### 6.1 Débitos técnicos
+
+Registrados para resolver depois do MVP. Em ordem de ganho esperado.
+
+| # | Débito | Detalhe | Ganho / motivo |
+|---|---|---|---|
+| D1 | **Latência: headroom da saída da AudioBox** | O PipeWire escolheu período e headroom de 512 quadros na saída da AudioBox (10,7 ms). Regra do WirePlumber em `~/.config/wireplumber/main.lua.d/51-audiobox-baixa-latencia.lua` com `api.alsa.period-size = 64` e `api.alsa.headroom = 64` para `alsa_*.usb-PreSonus_Audio_AudioBox_USB-01*`; reiniciar o WirePlumber (interrompe o áudio do sistema por 1–2 s; fazer fora de chamadas). Se estalar, usar 128. | ≈ 9 ms (31 → ~22 ms) |
+| D2 | **Latência: perfil Pro Audio** | Testar o perfil Pro Audio da AudioBox no PipeWire (entrada e saída no mesmo relógio, sem reamostrador entre elas). | parte dos ~16 ms fixos |
+| D3 | **Latência: meta original de ~10 ms** | Com esta placa (USB 1.1) e o driver USB do kernel, ~16 ms ficam fora do alcance do app. Rever com outra placa ou com ajustes do kernel (`snd-usb-audio`). | — |
+| D4 | **Atraso na partida do JACK** | Pode haver 1 callback atrasado quando o PipeWire troca de ciclo (ex.: 1024 → 64) e a primeira chamada de Go numa thread nova é lenta. Considerar silenciar os primeiros ciclos. | estalo inicial |
+| D5 | **Backend miniaudio** | Continua como alternativa (PulseAudio/ALSA) com ~46 ms; no Linux o padrão é o JACK próprio. Avaliar se vale manter o caminho JACK do miniaudio (hoje removido). | simplicidade |
+| D6 | **Texto da placa aberta no painel Áudio…** | A linha com backend, placas, taxa e buffer é cortada em janelas estreitas; quebrar em duas linhas. | visual |
+| D7 | **CPU com buffer 64** | Até ~45% do ciclo nos piores momentos, só com gate e amp, pelo backend miniaudio; 13% de mediana no JACK. Com muitos pedais pode estourar: otimização na Fase 5 (FFT real, `tanh` mais barata). | estabilidade |
 
 ### Fase 5: Recursos extras do standalone (~1 a 2 semanas)
 - [ ] Presets: salvar, carregar e alguns de fábrica (Clean, Crunch, Lead)
@@ -322,6 +412,15 @@ Depois: `go run ./cmd/ampapp` (janela) · `go run ./cmd/ampapp -console` (consol
 - [ ] Tone stack com modelo Fender/Marshall (estudo; análise de D. Yeh, transformada bilinear)
 - [ ] Otimização: FFT real na convolução e `tanh` aproximada no pré-amp (medir antes e depois)
 - [ ] Empacotamento Linux (e depois Windows e macOS)
+- [ ] **Áudio multiplataforma** (decidido em 18/11; o `Host` escolhe o backend por sistema):
+  - **Linux:** backend JACK próprio (PipeWire), com miniaudio (PulseAudio/ALSA) como alternativa
+  - **macOS:** miniaudio → CoreAudio (baixa latência nativa; AudioBox é class-compliant). Se o duplex do miniaudio
+    medir alto (unidades separadas + buffer), considerar um backend CoreAudio próprio
+  - **Windows:** miniaudio → **WASAPI exclusivo** como opção no painel Áudio… (~10–15 ms; o compartilhado fica em
+    ~20–30 ms). **ASIO** (padrão dos músicos; a PreSonus tem driver) fica como etapa separada: o miniaudio não suporta
+    e a licença do SDK da Steinberg precisa ser avaliada para um projeto MIT
+  - seletor de arquivo nativo em cada sistema (hoje usa `zenity`); build com cgo de cada plataforma (Xcode, MinGW)
+  - teste de latência em cada sistema (precisa de alguém com a máquina e um cabo de loopback)
 
 ### Fase 6: Plugin (~1 a 2 semanas)
 **Meta:** o amp e os pedais carregando no Audacity, com sliders genéricos.
@@ -388,7 +487,7 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 | CLI validado contra o Python (Fase 1) | ✅ concluído |
 | App tocando WAV ao vivo (Fase 2) | ✅ concluído |
 | App com GUI (Fase 3) | ✅ concluído (v0.1.0) |
-| **MVP:** tocando ao vivo (Fase 4) | ~1 semana a partir daqui |
+| **MVP:** tocando ao vivo (Fase 4) | ✅ concluído (18/11; latência 31 ms, débitos em 6.1) |
 | Standalone completo (Fase 5) | ~9 semanas |
 | Plugin LV2 no Audacity (Fase 6) | ~11 semanas |
 | Suporte a NAM (pós-MVP) | ~1,5 a 2 semanas, quando for priorizado |

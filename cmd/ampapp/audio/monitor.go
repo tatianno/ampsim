@@ -7,8 +7,11 @@ import (
 
 // Levels é o resumo dos medidores desde a última leitura.
 type Levels struct {
-	InPeak, OutPeak float32 // pico linear
-	Clips           uint64  // total acumulado de amostras cortadas
+	InPeak, OutPeak float32 // pico linear (InPeak = o que entra no engine, depois do trim)
+	InRaw           float32 // pico da placa, antes do trim
+	Clips           uint64  // total acumulado de amostras cortadas na saída
+	InClips         uint64  // total acumulado de clips do conversor de entrada
+	Overruns        uint64  // total acumulado de callbacks que passaram do tempo
 	MaxLoad         float32 // maior carga de CPU de um callback (0..1+)
 	GateOpen        bool
 	Bypassed        bool
@@ -47,6 +50,11 @@ func (m *Monitor) run() {
 			}
 			m.acc.InPeak = max(m.acc.InPeak, v.InPeak)
 			m.acc.OutPeak = max(m.acc.OutPeak, v.OutPeak)
+			m.acc.InRaw = max(m.acc.InRaw, v.InRaw)
+			m.acc.InClips += uint64(v.InClips)
+			if v.Overrun {
+				m.acc.Overruns++
+			}
 			m.acc.Clips += uint64(v.OutClips)
 			m.acc.MaxLoad = max(m.acc.MaxLoad, v.Load)
 			m.acc.GateOpen = v.GateOpen
@@ -56,12 +64,12 @@ func (m *Monitor) run() {
 	}
 }
 
-// Take devolve os valores acumulados e zera os picos (Clips continua acumulando).
+// Take devolve os valores acumulados e zera os picos (os contadores continuam acumulando).
 func (m *Monitor) Take() Levels {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	l := m.acc
-	m.acc.InPeak, m.acc.OutPeak, m.acc.MaxLoad = 0, 0, 0
+	m.acc.InPeak, m.acc.OutPeak, m.acc.InRaw, m.acc.MaxLoad = 0, 0, 0, 0
 	return l
 }
 

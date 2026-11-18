@@ -32,6 +32,8 @@ para Go em streaming, validados contra as saídas do Python.
   ```
   Sem essas bibliotecas, compile só o console com `-tags nogui`.
 - Opcional: `zenity` (diálogo de abrir arquivo na GUI)
+- Para tocar ao vivo com baixa latência no Linux (PipeWire): `sudo apt install pipewire-jack`. O app usa a API JACK
+  do PipeWire sozinho (não precisa de `pw-jack`); sem ela, usa o PulseAudio, com latência bem maior.
 
 ## Instalação
 
@@ -49,7 +51,12 @@ Ou clone o repositório e use `go run`, como abaixo.
 # GUI: toca um WAV em loop pelo amp (abre pausada: Play ou barra de espaço)
 go run ./cmd/ampapp -arquivo minha_di.wav -ir meu_gabinete.wav
 
-# console interativo (comandos: play, set pre.gain=8, on delay, mover delay depois cab, ab, ...)
+# guitarra ao vivo: escolha a entrada e o canal (veja os índices com -listar-dispositivos)
+go run ./cmd/ampapp -fonte guitarra -entrada 0 -canal 1 -buffer 64
+go run ./cmd/ampapp -listar-dispositivos
+
+# console interativo (comandos: play, set pre.gain=8, on delay, mover delay depois cab, ab,
+# fonte guitarra, trim 6, latencia, buffer 128, ...)
 go run ./cmd/ampapp -console -arquivo minha_di.wav -ir meu_gabinete.wav
 
 # processar um arquivo offline
@@ -58,6 +65,8 @@ go run ./cmd/ampcli -listar          # módulos e parâmetros
 ```
 
 Grave a guitarra direto na interface (DI), sem amp nem pedal, com pico entre −12 e −6 dBFS.
+Ao vivo, ajuste o **Trim** até o nível da guitarra ficar na faixa ideal marcada no painel ENTRADA.
+Para saber a latência real, ligue um cabo da saída da placa numa entrada e use **Áudio… → Medir latência**.
 A IR pode ser qualquer WAV de resposta ao impulso de gabinete (qualquer taxa; é reamostrada).
 
 ## testdata

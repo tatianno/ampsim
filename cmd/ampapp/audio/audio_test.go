@@ -1,6 +1,7 @@
 package audio
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
@@ -176,5 +177,253 @@ func precisa(t *testing.T, paths ...string) {
 		if _, err := os.Stat(p); err != nil {
 			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
 		}
+	}
+}
+
+// render com a cadeia vazia (saída = entrada) e a guitarra como fonte
+func renderVivo(t *testing.T) (*Renderer, *source.LiveInput) {
+	t.Helper()
+	const fs = 48000
+	chain := engine.NewChain()
+	chain.Prepare(fs, MaxBlock)
+	r := NewRenderer(chain, fs)
+	l := source.NewLiveInput(fs)
+	r.SetLive(l)
+	r.SetSource(l)
+	return r, l
+}
+
+func TestRenderDuplexGuitarra(t *testing.T) {
+	r, l := renderVivo(t)
+	l.SetChannel(1)
+	const n = 256
+	in := make([]float32, 2*n)
+	for i := 0; i < n; i++ {
+		in[2*i+1] = 0.3 // guitarra no canal 2
+	}
+	out := make([]float32, 2*n)
+	r.RenderDuplex(out, 2, in, 2, n)
+	for i, v := range out {
+		if math.Abs(float64(v)-0.3) > 1e-6 {
+			t.Fatalf("saída[%d] = %v, esperava 0,3", i, v)
+		}
+	}
+	m, _ := r.Meters().Pop()
+	if math.Abs(float64(m.InRaw)-0.3) > 1e-6 || m.InClips != 0 {
+		t.Errorf("medidor da placa: %.3f, %d clips", m.InRaw, m.InClips)
+	}
+
+	// conversor clipando
+	for i := range in {
+		in[i] = 1
+	}
+	r.RenderDuplex(out, 2, in, 2, n)
+	if m, _ := r.Meters().Pop(); m.InClips != n {
+		t.Errorf("esperava %d clips da placa, veio %d", n, m.InClips)
+	}
+}
+
+func TestRenderDuplexSemAlocacao(t *testing.T) {
+	r, _ := renderVivo(t)
+	in := make([]float32, 2*128)
+	out := make([]float32, 2*128)
+	if a := testing.AllocsPerRun(100, func() {
+		r.RenderDuplex(out, 2, in, 2, 128)
+		r.Meters().Pop()
+	}); a != 0 {
+		t.Errorf("aloca %.0f vezes por callback", a)
+	}
+}
+
+// loopback simulado: a entrada recebe a saída de atraso quadros atrás (mais um ruído baixo)
+func rodarLoopback(t *testing.T, r *Renderer, atraso int, ligado bool) LatencyResult {
+	t.Helper()
+	const n = 256
+	hist := make([]float32, 0, 1<<20)
+	in := make([]float32, 2*n)
+	out := make([]float32, 2*n)
+	for k := 0; k < 4000 && !r.LatencyResult().Done; k++ {
+		base := len(hist)
+		for i := 0; i < n; i++ {
+			v := float32(0.001 * math.Sin(float64(base+i)))
+			if j := base + i - atraso; ligado && j >= 0 {
+				v += 0.8 * hist[j]
+			}
+			in[2*i], in[2*i+1] = v, v
+		}
+		r.RenderDuplex(out, 2, in, 2, n)
+		r.Meters().Pop()
+		for i := 0; i < n; i++ {
+			hist = append(hist, out[2*i])
+		}
+	}
+	return r.LatencyResult()
+}
+
+func TestTesteDeLatencia(t *testing.T) {
+	r, _ := renderVivo(t)
+	if err := r.StartLatencyTest(); err != nil {
+		t.Fatal(err)
+	}
+	if !r.LatencyResult().Running {
+		t.Error("deveria indicar que está rodando")
+	}
+	res := rodarLoopback(t, r, 1234, true)
+	if !res.OK || res.Frames != 1234 || res.Successes != LatencyAttempts {
+		t.Fatalf("resultado %+v, esperava 1234 amostras em %d medições", res, LatencyAttempts)
+	}
+	if math.Abs(res.Ms-1234.0/48) > 1e-9 {
+		t.Errorf("%.3f ms", res.Ms)
+	}
+	// sem o cabo: o pulso nunca volta
+	r2, _ := renderVivo(t)
+	r2.StartLatencyTest()
+	if res := rodarLoopback(t, r2, 0, false); !res.Done || res.OK {
+		t.Errorf("sem loopback deveria falhar: %+v", res)
+	}
+}
+
+func TestTesteDeLatenciaPrecisaDeEntrada(t *testing.T) {
+	chain := engine.NewChain()
+	chain.Prepare(48000, MaxBlock)
+	if err := NewRenderer(chain, 48000).StartLatencyTest(); err != ErrNoInput {
+		t.Errorf("esperava ErrNoInput, veio %v", err)
+	}
+}
+
+// Bug relatado: com a fonte em Arquivo tocando, o áudio que já saiu volta pelo cabo durante
+// o silêncio inicial e infla a medida do ruído; o limiar fica acima do pulso e o teste falha.
+func TestLatenciaComArquivoTocando(t *testing.T) {
+	r, _, _ := novoRender(t) // cadeia completa + arquivo tocando
+	r.SetLive(source.NewLiveInput(48000))
+	const atraso = 4000 // 83 ms: maior que a margem inicial antiga de 50 ms
+	// toca um pouco do arquivo com o cabo ligado, para haver áudio "em trânsito"
+	const n = 256
+	hist := make([]float32, 0, 1<<20)
+	in := make([]float32, 2*n)
+	out := make([]float32, 2*n)
+	passo := func() {
+		base := len(hist)
+		for i := 0; i < n; i++ {
+			v := float32(0)
+			if j := base + i - atraso; j >= 0 {
+				v = 0.8 * hist[j]
+			}
+			in[2*i], in[2*i+1] = v, v
+		}
+		r.RenderDuplex(out, 2, in, 2, n)
+		r.Meters().Pop()
+		for i := 0; i < n; i++ {
+			hist = append(hist, out[2*i])
+		}
+	}
+	for k := 0; k < 100; k++ { // ~0,5 s de música
+		passo()
+	}
+	if err := r.StartLatencyTest(); err != nil {
+		t.Fatal(err)
+	}
+	for k := 0; k < 4000 && !r.LatencyResult().Done; k++ {
+		passo()
+	}
+	res := r.LatencyResult()
+	if !res.OK || res.Frames != atraso {
+		t.Fatalf("resultado %+v, esperava %d amostras", res, atraso)
+	}
+}
+
+// Retorno fraco, ruído de fundo e eco repetido (monitor direto da placa ligado):
+// a detecção pelo pico da janela continua achando a primeira chegada.
+func TestLatenciaRetornoFracoComEco(t *testing.T) {
+	r, _ := renderVivo(t)
+	r.StartLatencyTest()
+	const n, atraso = 256, 2000
+	hist := make([]float32, 0, 1<<20)
+	in := make([]float32, 2*n)
+	out := make([]float32, 2*n)
+	for k := 0; k < 4000 && !r.LatencyResult().Done; k++ {
+		base := len(hist)
+		for i := 0; i < n; i++ {
+			v := float32(0.004 * math.Sin(float64(base+i)*0.37)) // ruído/hum de fundo (−48 dBFS)
+			if j := base + i - atraso; j >= 0 {
+				v += 0.1 * hist[j] // volta só 10% (−20 dB)
+			}
+			if j := base + i - 2*atraso; j >= 0 {
+				v += 0.05 * hist[j] // eco
+			}
+			in[2*i], in[2*i+1] = v, v
+		}
+		r.RenderDuplex(out, 2, in, 2, n)
+		r.Meters().Pop()
+		for i := 0; i < n; i++ {
+			hist = append(hist, out[2*i])
+		}
+	}
+	res := r.LatencyResult()
+	if !res.OK || res.Frames != atraso {
+		t.Fatalf("resultado %+v, esperava %d amostras", res, atraso)
+	}
+	t.Logf("pico de volta %.1f dBFS, ruído %.1f dBFS", res.PeakDB, res.NoiseDB)
+}
+
+// Com mais de 2 canais de saída (JACK ligado a várias placas), só o primeiro par toca.
+func TestSaidaSoNoPrimeiroPar(t *testing.T) {
+	r, _ := renderVivo(t)
+	const n = 64
+	in := make([]float32, 2*n)
+	for i := range in {
+		in[i] = 0.25
+	}
+	out := make([]float32, 4*n)
+	for i := range out {
+		out[i] = 9 // lixo: tem que ser sobrescrito
+	}
+	r.RenderDuplex(out, 4, in, 2, n)
+	for i := 0; i < n; i++ {
+		f := out[4*i : 4*i+4]
+		if f[0] != 0.25 || f[1] != 0.25 || f[2] != 0 || f[3] != 0 {
+			t.Fatalf("quadro %d: %v, esperava [0,25 0,25 0 0]", i, f)
+		}
+	}
+}
+
+// Um som forte (voz) entrando numa das janelas é confundido com o pulso naquela medição:
+// a mediana ainda acerta, mas o resultado é marcado como inconsistente.
+func TestLatenciaComVozNaJanela(t *testing.T) {
+	r, _ := renderVivo(t)
+	r.StartLatencyTest()
+	const n, atraso = 256, 2000
+	hist := make([]float32, 0, 1<<20)
+	in := make([]float32, 2*n)
+	out := make([]float32, 2*n)
+	inicioVoz := -1
+	for k := 0; k < 4000 && !r.LatencyResult().Done; k++ {
+		base := len(hist)
+		// "voz" alta logo depois do 2º pulso (antes de ele voltar)
+		if inicioVoz < 0 && r.lt.attempt == 1 && r.lt.state == ltWait {
+			inicioVoz = base + 500
+		}
+		for i := 0; i < n; i++ {
+			v := float32(0)
+			if j := base + i - atraso; j >= 0 {
+				v += 0.3 * hist[j]
+			}
+			if inicioVoz >= 0 && base+i >= inicioVoz && base+i < inicioVoz+2400 {
+				v += 0.9 * float32(math.Sin(float64(base+i)*0.05))
+			}
+			in[2*i], in[2*i+1] = v, v
+		}
+		r.RenderDuplex(out, 2, in, 2, n)
+		r.Meters().Pop()
+		for i := 0; i < n; i++ {
+			hist = append(hist, out[2*i])
+		}
+	}
+	res := r.LatencyResult()
+	if !res.OK || res.Frames != atraso {
+		t.Fatalf("a mediana deveria acertar: %+v", res)
+	}
+	if res.Consistent {
+		t.Errorf("deveria marcar como inconsistente (variação %.1f ms)", res.SpreadMs)
 	}
 }

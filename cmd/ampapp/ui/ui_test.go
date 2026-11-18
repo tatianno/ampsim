@@ -230,17 +230,12 @@ func novoApp(t *testing.T) (*App, *source.FilePlayer) {
 	if err := chain.Cab().LoadIRFile(irPath); err != nil {
 		t.Fatal(err)
 	}
-	chain.Prepare(fs, audio.MaxBlock)
-	r := audio.NewRenderer(chain, fs)
-	p := source.NewFilePlayer(fs)
-	if err := p.Load(diPath); err != nil {
+	s := audio.NewSession(chain, fs) // sem abrir a placa
+	t.Cleanup(s.Close)
+	if err := s.Player.Load(diPath); err != nil {
 		t.Fatal(err)
 	}
-	r.SetSource(p)
-	mon := audio.NewMonitor(r)
-	t.Cleanup(mon.Close)
-	a := NewApp(chain, p, r, mon, Info{Device: "teste", SampleRate: fs, Buffer: 256, LatencyMs: 11.3})
-	return a, p
+	return NewApp(s), s.Player
 }
 
 func TestSeekNaBarra(t *testing.T) {
@@ -354,5 +349,58 @@ func precisa(t *testing.T, paths ...string) {
 		if _, err := os.Stat(p); err != nil {
 			t.Skipf("arquivo de teste ausente: %s (veja README, seção testdata)", p)
 		}
+	}
+}
+
+func TestPainelDeEntradaTrocaFonte(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 120)
+	w := func(gtx layout.Context) layout.Dimensions { return a.input.Layout(gtx, a.th, &a.meters) }
+	y := float32(h.frame(w).Size.Y) / 2
+	// os botões Arquivo/Guitarra ficam logo depois do rótulo ENTRADA; acha pelo clique varrendo a linha
+	clicou := false
+	for x := float32(60); x < 300 && !clicou; x += 6 {
+		h.click(w, x, y)
+		h.t += time.Second
+		clicou = a.Session.Source() == audio.SourceGuitar
+	}
+	if !clicou {
+		t.Fatal("não achei o botão Guitarra")
+	}
+	// e o Arquivo volta
+	for x := float32(60); x < 300 && a.Session.Source() == audio.SourceGuitar; x += 6 {
+		h.click(w, x, y)
+		h.t += time.Second
+	}
+	if a.Session.Source() != audio.SourceFile {
+		t.Error("não voltou para Arquivo")
+	}
+}
+
+func TestPainelDeAudioAbreELatencia(t *testing.T) {
+	a, _ := novoApp(t)
+	a.input.OnAudio()
+	if a.Opened() != AudioID {
+		t.Fatal("o painel de áudio deveria abrir")
+	}
+	h := newHarness(1280, 800)
+	h.frame(a.Layout) // placa fechada: o painel desenha mesmo assim
+	h.r.Queue(key.Event{Name: key.NameEscape, State: key.Press})
+	h.frame(a.Layout)
+	if a.Opened() != "" {
+		t.Error("Esc deveria fechar o painel de áudio")
+	}
+	if a.audioSet.Measured() != 0 {
+		t.Error("sem medição ainda")
+	}
+}
+
+// O painel de entrada é uma linha: não pode ocupar a altura da janela (bug visto na captura de tela).
+func TestPainelDeEntradaAlturaDeUmaLinha(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	d := h.frame(func(gtx layout.Context) layout.Dimensions { return a.input.Layout(gtx, a.th, &a.meters) })
+	if d.Size.Y > 120 {
+		t.Errorf("painel de entrada com %d px de altura", d.Size.Y)
 	}
 }

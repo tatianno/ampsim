@@ -10,20 +10,13 @@ import (
 	"gioui.org/unit"
 
 	"github.com/tatianno/ampsim/cmd/ampapp/audio"
-	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/cmd/ampapp/ui"
-	"github.com/tatianno/ampsim/engine"
 )
 
-// runGUI abre a janela. Não retorna: app.Main assume a goroutine principal e o
+// runGUI abre a janela. Não retorna: gioapp.Main assume a goroutine principal e o
 // processo termina quando a janela fecha.
-func runGUI(chain *engine.Chain, out *audio.Output, player *source.FilePlayer, mon *audio.Monitor, cleanup func()) error {
-	a := ui.NewApp(chain, player, out.Renderer(), mon, ui.Info{
-		Device:     out.Name(),
-		SampleRate: out.SampleRate(),
-		Buffer:     int(out.Buffer()),
-		LatencyMs:  out.OutputLatencyMs(chain.Latency()),
-	})
+func runGUI(s *audio.Session, cleanup func()) error {
+	a := ui.NewApp(s)
 	// AMPSIM_ABRIR=<pedal> abre um pedal ao iniciar (útil para conferir o visual / capturas de tela).
 	if id := os.Getenv("AMPSIM_ABRIR"); id != "" {
 		a.Open(id)

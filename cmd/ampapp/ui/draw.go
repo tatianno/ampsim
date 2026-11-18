@@ -107,9 +107,15 @@ func spacer(w, h unit.Dp) layout.Widget {
 	}
 }
 
-// fill ocupa todo o espaço que receber (para empurrar o que vem depois num Flex).
-func fill(gtx layout.Context) layout.Dimensions {
-	return layout.Dimensions{Size: gtx.Constraints.Max}
+// vfill ocupa todo o espaço vertical que receber (empurra o que vem depois num Flex vertical).
+func vfill(gtx layout.Context) layout.Dimensions {
+	return layout.Dimensions{Size: image.Pt(0, gtx.Constraints.Max.Y)}
+}
+
+// hfill ocupa todo o espaço horizontal que receber (empurra o que vem depois numa linha).
+// Não pode ocupar a altura: numa linha, isso esticaria a linha inteira.
+func hfill(gtx layout.Context) layout.Dimensions {
+	return layout.Dimensions{Size: image.Pt(gtx.Constraints.Max.X, 0)}
 }
 
 func offset(ops *op.Ops, x, y int) op.TransformStack {

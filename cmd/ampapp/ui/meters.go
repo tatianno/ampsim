@@ -23,9 +23,13 @@ const (
 // Meters mostra os níveis de entrada e saída (com queda suave), clip, gate e CPU.
 type Meters struct {
 	in, out   float32
+	inRaw     float32 // pico da placa (antes do trim), com queda suave
 	load      float32
 	clips     uint64
 	clipUntil time.Time
+	inClips   uint64
+	inUntil   time.Time
+	overruns  uint64
 	gate      bool
 	bypass    bool
 	last      time.Time
@@ -41,14 +45,23 @@ func (m *Meters) Update(l audio.Levels, now time.Time) {
 	m.last = now
 	m.in = max(l.InPeak, m.in*decay)
 	m.out = max(l.OutPeak, m.out*decay)
+	m.inRaw = max(l.InRaw, m.inRaw*decay)
 	m.load = max(l.MaxLoad, m.load*decay)
 	if l.Clips > m.clips {
 		m.clipUntil = now.Add(time.Second)
 	}
 	m.clips = l.Clips
+	if l.InClips > m.inClips {
+		m.inUntil = now.Add(time.Second)
+	}
+	m.inClips = l.InClips
+	m.overruns = l.Overruns
 	m.gate = l.GateOpen
 	m.bypass = l.Bypassed
 }
+
+// InputClipping informa se o LED de clip da placa (conversor de entrada) está aceso.
+func (m *Meters) InputClipping(now time.Time) bool { return now.Before(m.inUntil) }
 
 // Clipping informa se o LED de clip está aceso.
 func (m *Meters) Clipping(now time.Time) bool { return now.Before(m.clipUntil) }
@@ -68,6 +81,13 @@ func (m *Meters) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 		layout.Rigid(spacer(14, 0)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, fmt.Sprintf("CPU %2.0f%%", 100*m.load), textOpts{size: 11, color: th.Dim, width: gtx.Dp(58)})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if m.overruns == 0 {
+				return layout.Dimensions{}
+			}
+			// callbacks que passaram do tempo: prováveis estalos (aumente o buffer)
+			return drawText(gtx, th, fmt.Sprintf("atrasos %d", m.overruns), textOpts{size: 11, color: th.Warn})
 		}),
 	)
 }

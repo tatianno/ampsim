@@ -22,21 +22,13 @@ import (
 	"github.com/tatianno/ampsim/engine"
 )
 
-// Info descreve a saída de áudio (só para exibição).
-type Info struct {
-	Device     string
-	SampleRate float64
-	Buffer     int
-	LatencyMs  float64
-}
-
 // App é a tela principal.
 type App struct {
+	Session  *audio.Session
 	Chain    *engine.Chain
 	Player   *source.FilePlayer
 	Renderer *audio.Renderer
 	Monitor  *audio.Monitor
-	Info     Info
 
 	// Invalidate pede um novo quadro (a janela define; usado por callbacks de outras goroutines).
 	Invalidate func()
@@ -48,6 +40,8 @@ type App struct {
 	head      *Head
 	cab       *CabPanel
 	board     *Board
+	input     *InputPanel
+	audioSet  *AudioPanel
 	meters    Meters
 	pedals    map[string]*Pedal
 	bypass    widget.Clickable
@@ -65,15 +59,22 @@ type App struct {
 	pending []func()
 }
 
-// NewApp monta a tela.
-func NewApp(chain *engine.Chain, player *source.FilePlayer, r *audio.Renderer, mon *audio.Monitor, info Info) *App {
+// NewApp monta a tela sobre a sessão de áudio.
+func NewApp(s *audio.Session) *App {
+	chain := s.Chain
 	a := &App{
-		Chain: chain, Player: player, Renderer: r, Monitor: mon, Info: info,
+		Session: s, Chain: chain, Player: s.Player, Renderer: s.Renderer, Monitor: s.Monitor,
 		Pick:   PickWAV,
 		th:     NewTheme(),
 		pedals: map[string]*Pedal{},
 	}
-	a.transport = NewTransport(player)
+	a.transport = NewTransport(s.Player)
+	a.input = NewInputPanel(s)
+	a.audioSet = NewAudioPanel(s, a.Post)
+	a.input.OnAudio = func() {
+		a.audioSet.Refresh()
+		a.open = AudioID
+	}
 	a.head = NewHead(chain)
 	a.cab = NewCabPanel(chain)
 	a.board = NewBoard(chain)
@@ -96,8 +97,14 @@ func NewApp(chain *engine.Chain, player *source.FilePlayer, r *audio.Renderer, m
 	return a
 }
 
-// Open abre o pedal id na sobreposição.
-func (a *App) Open(id string) { a.board.OnOpen(id) }
+// Open abre na sobreposição o pedal id, ou as configurações de áudio (AudioID).
+func (a *App) Open(id string) {
+	if id == AudioID {
+		a.input.OnAudio()
+		return
+	}
+	a.board.OnOpen(id)
+}
 
 // Opened devolve o pedal aberto ("" se nenhum).
 func (a *App) Opened() string { return a.open }
@@ -170,6 +177,12 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 					return a.transport.Layout(gtx, th)
 				})
 			}),
+			layout.Rigid(spacer(0, 8)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return panel(gtx, th.Panel, 10, 8, func(gtx layout.Context) layout.Dimensions {
+					return a.input.Layout(gtx, th, &a.meters)
+				})
+			}),
 			layout.Rigid(spacer(0, 12)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Flex{}.Layout(gtx,
@@ -194,7 +207,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 					)
 				})
 			}),
-			layout.Flexed(1, fill), // empurra o rodapé para baixo
+			layout.Flexed(1, vfill), // empurra o rodapé para baixo
 			layout.Rigid(a.footer),
 		)
 	})
@@ -227,8 +240,19 @@ func (a *App) keys(gtx layout.Context) {
 
 func (a *App) topBar(gtx layout.Context) layout.Dimensions {
 	th := a.th
-	info := fmt.Sprintf("saída: %s  ·  %.0f Hz  ·  buffer %d  ·  latência %.1f ms",
-		a.Info.Device, a.Info.SampleRate, a.Info.Buffer, a.Info.LatencyMs)
+	info := "placa fechada"
+	if st := a.Session.Host.State(); st.Open {
+		in := "nenhuma"
+		if st.Duplex {
+			in = st.InputName
+		}
+		lat := fmt.Sprintf("latência ~%.1f ms", a.Session.Host.EstimatedLatencyMs(a.Chain.Latency()))
+		if m := a.audioSet.Measured(); m > 0 {
+			lat = fmt.Sprintf("latência medida %.1f ms", m)
+		}
+		info = fmt.Sprintf("%s  ·  saída: %s  ·  entrada: %s  ·  %.0f Hz  ·  buffer %d  ·  %s",
+			st.Backend, st.OutputName, in, st.SampleRate, st.Buffer, lat)
+	}
 	return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, "ampsim", textOpts{size: 22, color: th.Gold, bold: true})
@@ -274,8 +298,12 @@ func (a *App) footer(gtx layout.Context) layout.Dimensions {
 // overlay mostra o pedal aberto por cima da tela; clicar fora, Esc ou "×" fecha.
 func (a *App) overlay(gtx layout.Context) {
 	th := a.th
-	p := a.pedals[a.open]
-	if p == nil {
+	var content func(gtx layout.Context) layout.Dimensions
+	if a.open == AudioID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.audioSet.Layout(gtx, th) }
+	} else if p := a.pedals[a.open]; p != nil {
+		content = func(gtx layout.Context) layout.Dimensions { return p.Layout(gtx, th) }
+	} else {
 		a.open = ""
 		return
 	}
@@ -305,7 +333,7 @@ func (a *App) overlay(gtx layout.Context) {
 
 	gtx.Constraints.Min = image.Point{}
 	m := op.Record(gtx.Ops)
-	dims := p.Layout(gtx, th)
+	dims := content(gtx)
 	call := m.Stop()
 	x := (gtx.Constraints.Max.X - dims.Size.X) / 2
 	y := (gtx.Constraints.Max.Y - dims.Size.Y) / 2
