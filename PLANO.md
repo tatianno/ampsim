@@ -635,6 +635,8 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - testes de DSP: boost limpo; harmônicos crescem com o drive; wah com o pico na posição certa e o envelope abrindo
     com a palhetada; octave com 110/55/440 Hz dominando para 220 Hz; rotary acelerando com inércia e pulsando;
     vibe passa-tudo no vibrato e variando no chorus; pitch +12/−12/+7/0 st no lugar certo
+- [x] **Release v0.5.0** (18/11/2026): EQ, tremolo, vibrato, adicionar/remover pedais e os 6 pedais novos; níveis
+  conferidos com a DI (cada pedal no padrão fica entre −4 e +5 dB de RMS; o wah subiu 5 dB, estava em −8 dB)
 - [x] **Tap tempo no tremolo**: botão TAP e subdivisões 1/4, 1/8 (inicial), 1/8T e 1/16 (ciclos por tempo); o
   `TapControl` serve a um parâmetro de tempo (delay, ms) ou de taxa (tremolo, Hz). Tecla T: com um pedal com TAP
   aberto, só nele; com nenhum aberto, em todos (andamento global)

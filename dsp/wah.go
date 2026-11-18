@@ -117,7 +117,7 @@ func (w *Wah) ProcessBlock(buf []float64) {
 		w.fc = WahMinHz * math.Pow(w.top.Next()/WahMinHz, w.pos)
 		q := w.q.Next()
 		bp, _ := w.svf.Process(x, w.fc, q, w.fs)
-		wet := 2 * bp / q // passa-banda com +6 dB no pico
+		wet := 3.5 * bp / q // passa-banda com +11 dB no pico: no geral, perto do nível da entrada
 		m := w.mix.Next()
 		buf[i] = (1-m)*x + m*wet
 	}
