@@ -52,14 +52,14 @@ para Go em streaming, validados contra as saídas do Python.
 **Pacotes prontos (Linux, amd64)** — baixe na página de releases do GitHub:
 
 ```sh
-sudo apt install ./ampsim_0.3.1_amd64.deb      # Ubuntu/Debian: instala no sistema, com as dependências
+sudo apt install ./ampsim_0.4.0_amd64.deb      # Ubuntu/Debian: instala no sistema, com as dependências
 # ou, sem sudo:
-tar xzf ampsim-0.3.1-linux-amd64.tar.gz && ampsim-0.3.1-linux-amd64/install.sh
+tar xzf ampsim-0.4.0-linux-amd64.tar.gz && ampsim-0.4.0-linux-amd64/install.sh
 ```
 
 Depois é só procurar **ampsim** no menu de aplicativos (ou rodar `ampsim` / `ampsim-cli` no terminal).
 Sem nenhuma IR escolhida, o gabinete usa a 2x12 SM57 incluída. Para gerar os pacotes a partir do código:
-`scripts/empacotar.sh 0.3.1` (saem em `dist/`).
+`scripts/empacotar.sh 0.4.0` (saem em `dist/`).
 
 **Pelo Go:**
 

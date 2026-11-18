@@ -598,6 +598,8 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   CLI e testes continuam com o simulado por padrão
 - [x] Área **Sobre** (botão no topo): ícone, versão, repositório e contato do autor, com botões que abrem o
   navegador e o e-mail (`xdg-open`); crédito ao Neural Amp Modeler
+- [x] **Release v0.4.0** (18/11/2026) com o NAM, as capturas e as IRs de fábrica (`.deb` e `.tar.gz`, conferidos
+  fora da pasta do projeto)
 - [x] GUI: seletor **Amp: Simulado | NAM** no cabeçote; no modo NAM, a seção mostra o botão do modelo (lista
   "MODELOS NAM" com as incluídas + "Abrir arquivo .nam…", filtro `*.nam` no zenity), Lite | Completo, canais e
   tamanho em uso, aviso de taxa diferente e o knob de entrada; o power mostra só o volume; o bloco PRÉ da cadeia
