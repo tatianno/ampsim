@@ -635,6 +635,7 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - testes de DSP: boost limpo; harmônicos crescem com o drive; wah com o pico na posição certa e o envelope abrindo
     com a palhetada; octave com 110/55/440 Hz dominando para 220 Hz; rotary acelerando com inércia e pulsando;
     vibe passa-tudo no vibrato e variando no chorus; pitch +12/−12/+7/0 st no lugar certo
+- [x] **Release v0.8.0** (18/11/2026): presets de fábrica novos e pedaleira
 - [x] **Presets de fábrica novos** (18/11): Clean, Crunch, Blues, Rock Clássico, Solo Hard Rock (estilo Slash),
   Metal, Funk, Country, Surf, Psicodélico, Modulação, Worship, Ambiente e Synth. Cada um escolhe o amp (captura NAM
   incluída ou o simulado), o gabinete (IR incluída) e os pedais; o estado extra só aponta para capturas/IRs
