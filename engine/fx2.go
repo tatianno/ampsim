@@ -1,7 +1,9 @@
 package engine
 
 import (
+	"fmt"
 	"math"
+	"sync/atomic"
 
 	"github.com/tatianno/ampsim/dsp"
 )
@@ -203,4 +205,68 @@ func (m *Pitch) Process(buf []float64) {
 	det := m.get("detune")
 	m.p.Set(dsp.Semitones(m.get("voice1"), det), dsp.Semitones(m.get("voice2"), -det), m.pct("level2"), m.pct("mix"))
 	m.p.ProcessBlock(buf)
+}
+
+// ---------------------------------------------------------------- Synth
+
+// Synth é o filtro de sintetizador: ladder de 4 polos (LP/BP/HP) com ressonância, o corte
+// modulado por envelope, LFO ou uma sequência de 8 passos (s1..s8), e FM pelo próprio sinal.
+type Synth struct {
+	base
+	f     *dsp.SynthFilter
+	steps [dsp.SynthSteps]*Param
+	step  atomic.Int32
+}
+
+// SynthStepDefaults é a sequência inicial (em %).
+var SynthStepDefaults = [dsp.SynthSteps]float64{100, 25, 60, 10, 85, 40, 70, 15}
+
+// NewSynth cria o módulo do filtro de sintetizador.
+func NewSynth() *Synth {
+	infos := []ParamInfo{
+		{ID: "cutoff", Name: "Cutoff", Unit: "Hz", Min: 60, Max: 8000, Default: 300, Log: true},
+		{ID: "res", Name: "Resson.", Unit: "%", Min: 0, Max: 100, Default: 60},
+		{ID: "depth", Name: "Profund.", Unit: "oct", Min: 0, Max: 5, Default: 3},
+		{ID: "fm", Name: "FM", Unit: "%", Min: 0, Max: 100, Default: 0},
+		{ID: "sens", Name: "Sensib.", Unit: "%", Min: 0, Max: 100, Default: 60},
+		{ID: "rate", Name: "Rate", Unit: "Hz", Min: 0.1, Max: 20, Default: 8, Log: true},
+		{ID: "glide", Name: "Glide", Unit: "ms", Min: 0, Max: 200, Default: 20},
+		{ID: "drive", Name: "Drive", Unit: "dB", Min: 0, Max: 24, Default: 0},
+		{ID: "mix", Name: "Mix", Unit: "%", Min: 0, Max: 100, Default: 100},
+		{ID: "level", Name: "Level", Unit: "dB", Min: -12, Max: 12, Default: 0},
+		{ID: "mode", Name: "Modo", Min: 0, Max: 2, Default: dsp.SynthEnvelope, Step: 1,
+			Choices: []string{"Envelope", "LFO", "Sequência"}},
+		{ID: "type", Name: "Filtro", Min: 0, Max: 2, Default: dsp.SynthLP, Step: 1,
+			Choices: []string{"LP", "BP", "HP"}},
+	}
+	for i, v := range SynthStepDefaults {
+		infos = append(infos, ParamInfo{ID: fmt.Sprintf("s%d", i+1), Name: fmt.Sprintf("%d", i+1), Unit: "%", Min: 0, Max: 100, Default: v})
+	}
+	m := &Synth{base: base{id: "synth", name: "Synth", paramSet: newParamSet(infos...)}}
+	for i := range m.steps {
+		m.steps[i] = m.Param(fmt.Sprintf("s%d", i+1))
+	}
+	return m
+}
+
+func (m *Synth) Prepare(fs float64, _ int) { m.f = dsp.NewSynthFilter(fs) }
+func (m *Synth) Reset()                    { m.f.Reset() }
+func (m *Synth) Latency() int              { return dsp.SynthLatency }
+
+// CurrentStep devolve o passo da sequência que está tocando (seguro de outra goroutine).
+func (m *Synth) CurrentStep() int { return int(m.step.Load()) }
+
+// Steps devolve os parâmetros dos passos (s1..s8).
+func (m *Synth) Steps() [dsp.SynthSteps]*Param { return m.steps }
+
+func (m *Synth) Process(buf []float64) {
+	var st [dsp.SynthSteps]float64
+	for i, p := range m.steps {
+		st[i] = p.Get() / 100
+	}
+	m.f.SetSteps(st, m.get("glide"))
+	m.f.Set(int(m.get("mode")), int(m.get("type")), m.get("cutoff"), m.pct("res"), m.get("depth"), m.pct("sens"),
+		m.get("rate"), m.pct("fm"), m.get("drive"), m.pct("mix"), m.get("level"))
+	m.f.ProcessBlock(buf)
+	m.step.Store(int32(m.f.Step()))
 }

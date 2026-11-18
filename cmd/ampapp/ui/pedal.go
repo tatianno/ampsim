@@ -25,6 +25,7 @@ type Pedal struct {
 	foot  widget.Clickable
 	tap   *TapControl // delay e tremolo
 	eq    *eqView     // só no EQ (curva e knobs por banda)
+	synth *synthView  // só no Synth (sequência, knobs e chaves)
 	rm    widget.Clickable
 	// OnRemoved é chamado depois de tirar o pedal da cadeia (o app fecha a sobreposição).
 	OnRemoved func()
@@ -38,6 +39,12 @@ func NewPedal(chain *engine.Chain, mod engine.Module) *Pedal {
 		p.tap = NewTapControl(mod.Param("time"))
 	case "tremolo":
 		p.tap = NewRateTapControl(mod.Param("rate"), engine.TremoloSubdivisions, 1) // 1/8: 5 Hz = 150 BPM
+	case "synth":
+		p.tap = NewRateTapControl(mod.Param("rate"), engine.TremoloSubdivisions, 3) // 1/16: 8 Hz = 120 BPM
+	}
+	if m, ok := mod.(*engine.Synth); ok {
+		p.synth = newSynthView(m)
+		return p
 	}
 	if m, ok := mod.(*engine.EQ); ok {
 		p.eq = newEQView(m)
@@ -69,7 +76,7 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	on := p.chain.Enabled(id)
 	st := p.style
 	w := gtx.Dp(PedalWidthDp)
-	if p.eq != nil {
+	if p.eq != nil || p.synth != nil {
 		w = gtx.Dp(EQPedalWidthDp)
 	}
 	gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Constraints.Max.Y)}
@@ -82,6 +89,11 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 		if p.eq != nil {
 			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return p.eq.controls(gtx, th, st, on)
+			}), layout.Rigid(spacer(0, 10)))
+		}
+		if p.synth != nil {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return p.synth.controls(gtx, th, st)
 			}), layout.Rigid(spacer(0, 10)))
 		}
 		perRow := 3

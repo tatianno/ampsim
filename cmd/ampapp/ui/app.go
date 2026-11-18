@@ -372,13 +372,13 @@ func (a *App) tunerTransitions() {
 }
 
 // Tap toca o tap tempo (tecla T): com um pedal com TAP aberto, só nele; senão, em todos os
-// pedais com TAP (delay e tremolo), como um andamento global.
+// pedais com TAP (delay, tremolo e synth), como um andamento global.
 func (a *App) Tap(now time.Time) {
 	if p := a.pedals[a.open]; p != nil && p.tap != nil {
 		p.tap.TapAt(now)
 		return
 	}
-	for _, id := range []string{"delay", "tremolo"} {
+	for _, id := range []string{"delay", "tremolo", "synth"} {
 		if p := a.pedals[id]; p != nil && p.tap != nil {
 			p.tap.TapAt(now)
 		}

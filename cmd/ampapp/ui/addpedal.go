@@ -20,7 +20,7 @@ var pedalGroups = []struct {
 }{
 	{"DINÂMICA", []string{"gate", "comp"}},
 	{"DRIVE", []string{"drive"}},
-	{"FILTRO E EQ", []string{"wah", "eq"}},
+	{"FILTRO E EQ", []string{"wah", "synth", "eq"}},
 	{"MODULAÇÃO", []string{"chorus", "flanger", "phaser", "vibrato", "tremolo", "rotary", "vibe"}},
 	{"TOM", []string{"octave", "pitch"}},
 	{"AMBIÊNCIA", []string{"delay", "reverb"}},

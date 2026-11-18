@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"gioui.org/f32"
 	"gioui.org/io/key"
 
 	"github.com/tatianno/ampsim/capturas"
@@ -216,4 +217,25 @@ func TestAdicionarERemoverPedal(t *testing.T) {
 	a.Chain.SetOrder(engine.DefaultOrder)
 	a.Open(AddPedalID)
 	h.frame(a.Layout)
+}
+
+func TestPedalSynth(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	a.Open("synth")
+	h.frame(a.Layout)
+	v := a.pedals["synth"].synth
+	if v == nil || v.area.X == 0 {
+		t.Fatal("o editor da sequência deveria ter sido desenhado")
+	}
+	// clicar no alto da barra 3 e arrastar até o pé da barra 6
+	v.setFrom(f32.Pt(float32(v.area.X)*2.5/8, 0))
+	v.setFrom(f32.Pt(float32(v.area.X)*5.5/8, float32(v.area.Y)))
+	steps := a.Chain.Module("synth").(*engine.Synth).Steps()
+	if steps[2].Get() != 100 || steps[5].Get() != 0 {
+		t.Errorf("passos 3 e 6 = %.0f%% e %.0f%%, esperava 100%% e 0%%", steps[2].Get(), steps[5].Get())
+	}
+	if a.pedals["synth"].tap == nil {
+		t.Error("o synth tem tap tempo")
+	}
 }

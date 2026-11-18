@@ -102,7 +102,7 @@ func TestBypassMantemLatencia(t *testing.T) {
 	}
 	c.Prepare(fs, 128)
 	lat := c.Latency()
-	if want := dsp.PreampLatency + dsp.DriveLatency; lat != want { // os únicos com latência
+	if want := dsp.PreampLatency + dsp.DriveLatency + dsp.SynthLatency; lat != want { // os únicos com latência
 		t.Errorf("latência %d, esperava %d", lat, want)
 	}
 	x := di[:10000]

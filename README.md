@@ -4,7 +4,7 @@
 
 Simulador de amplificador de guitarra e pedais em Go, feito como estudo de DSP:
 pré-amp com saturação sobreamostrada, tone stack, power amp, gabinete por resposta ao
-impulso (IR) e 17 pedais: gate, compressor, wah, oitavador, drive (boost/overdrive/distorção/fuzz), EQ
+impulso (IR) e 18 pedais: gate, compressor, wah, oitavador, filtro de sintetizador, drive (boost/overdrive/distorção/fuzz), EQ
 paramétrico, chorus, flanger, phaser, vibe, vibrato, tremolo, rotary (Leslie), pitch shifter, delay e reverb — tocando em
 tempo real, com GUI.
 
@@ -29,6 +29,9 @@ para Go em streaming, validados contra as saídas do Python.
 - **Drive** com 4 modos (Boost, Overdrive, Distorção, Fuzz, ceifamento com oversampling 4x), **Wah** automático
   (envelope, LFO ou fixo), **Octave** (−1/−2/+1 oitava, estilo OC-2), **Rotary** (Leslie, lento/rápido com
   aceleração), **Vibe** (chorus/vibrato) e **Pitch** (2 vozes até ±1 oitava, emendas sincronizadas com o período).
+- **Synth**: filtro de sintetizador (ladder de 4 polos estilo Moog, LP/BP/HP, ressonância até oscilar) com o corte
+  modulado por envelope, LFO ou uma **sequência de 8 passos** editada no próprio pedal (com tap tempo e glide), e
+  **FM** pelo próprio sinal da guitarra.
 - **Cadeia configurável** com **loop de efeitos** (send/return): os pedais podem ficar na
   frente do amp, entre o pré-amp e o power amp, ou depois do gabinete. A ordem muda ao vivo,
   sem estalo.

@@ -67,6 +67,7 @@ var pedalStyles = map[string]PedalStyle{
 	"rotary":  {Body: rgb(0x7a4a24), Text: rgb(0xf6e3c8), Knob: rgb(0x151515)},
 	"vibe":    {Body: rgb(0x3b2a4a), Text: rgb(0xe9dcf7), Knob: rgb(0x111111)},
 	"pitch":   {Body: rgb(0x0f6fb0), Text: rgb(0xeaf4fb), Knob: rgb(0x111111)},
+	"synth":   {Body: rgb(0x1d1f2b), Text: rgb(0x7ef0d0), Knob: rgb(0x0b0c12)},
 	"comp":    {Body: rgb(0xb8322a), Text: rgb(0xfbeee6), Knob: rgb(0x151515)},
 	"chorus":  {Body: rgb(0x4aa3c9), Text: rgb(0x0d2633), Knob: rgb(0x1a1a1a)},
 	"flanger": {Body: rgb(0x7b4fa8), Text: rgb(0xf4ecff), Knob: rgb(0x1a1a1a)},

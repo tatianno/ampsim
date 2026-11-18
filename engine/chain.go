@@ -75,7 +75,7 @@ func NewChain(mods ...Module) *Chain {
 // DefaultOrder é a ordem padrão: dinâmica, wah, oitavador e drive na frente do amp; EQ,
 // modulações, pitch e ambiências no loop de efeitos. Um pedal adicionado entra na posição
 // dele nesta ordem.
-var DefaultOrder = []string{"gate", "comp", "wah", "octave", "drive", PreID, "eq", "chorus", "flanger", "phaser", "vibe", "vibrato", "tremolo", "rotary", "pitch", "delay", "reverb", PowerID, CabID}
+var DefaultOrder = []string{"gate", "comp", "wah", "octave", "synth", "drive", PreID, "eq", "chorus", "flanger", "phaser", "vibe", "vibrato", "tremolo", "rotary", "pitch", "delay", "reverb", PowerID, CabID}
 
 // StartOrder é a cadeia com que o app abre: o gate e o amp (os outros pedais são
 // adicionados pelo "+").
@@ -86,7 +86,7 @@ var StartOrder = []string{"gate", PreID, PowerID, CabID}
 func NewDefaultChain() *Chain {
 	pre, pow := NewPre(), NewPower()
 	pow.FollowAmpMode(pre)
-	c := NewChain(NewGate(), NewCompressor(), NewWah(), NewOctave(), NewDrive(), pre, NewEQ(), NewChorus(), NewFlanger(),
+	c := NewChain(NewGate(), NewCompressor(), NewWah(), NewOctave(), NewSynth(), NewDrive(), pre, NewEQ(), NewChorus(), NewFlanger(),
 		NewPhaser(), NewVibe(), NewVibrato(), NewTremolo(), NewRotary(), NewPitch(), NewDelay(), NewReverb(), pow, NewCab())
 	for _, m := range c.AllModules() { // pedais começam desligados (o gate e o amp, ligados)
 		id := m.ID()

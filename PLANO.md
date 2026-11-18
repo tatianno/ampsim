@@ -635,6 +635,16 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - testes de DSP: boost limpo; harmônicos crescem com o drive; wah com o pico na posição certa e o envelope abrindo
     com a palhetada; octave com 110/55/440 Hz dominando para 220 Hz; rotary acelerando com inércia e pulsando;
     vibe passa-tudo no vibrato e variando no chorus; pitch +12/−12/+7/0 st no lugar certo
+- [x] **Synth (filtro de sintetizador)** (18/11, `dsp/synthfilter.go`): ladder de 4 polos não linear (Huovilainen,
+  tanh racional em cada estágio e na realimentação com compensação de graves), a 4x; saídas LP, BP e HP; ressonância
+  até a auto-oscilação. Corte = Cutoff · 2^(Profund.·mod), mod por Envelope, LFO ou Sequência de 8 passos (s1..s8,
+  glide, rate em passos/s com tap tempo e subdivisões 1/4..1/16; inicial 1/16); FM na velocidade do áudio pelo próprio
+  sinal normalizado pelo envelope (até ±2 oitavas, independe da palhetada). Drive de entrada, Mix (seco alinhado com a
+  latência) e Level. GUI: editor dos passos (arrastar as barras, passo atual aceso), knobs em 2 linhas de 5, chaves
+  de modo e de filtro, TAP (a tecla T também vale para ele). Nível na DI: −1,4 a −0,3 dB; CPU 2,4% com FM.
+  Testes: LP/HP/BP no lugar, ressonância sem salto nos graves, sequência e envelope movendo o corte, estabilidade com
+  FM e ressonância máximas, editor de passos na GUI. (Guitar synth com detecção de nota: descartado, latência e
+  monofonia o tornam pouco viável)
 - [x] **Release v0.5.0** (18/11/2026): EQ, tremolo, vibrato, adicionar/remover pedais e os 6 pedais novos; níveis
   conferidos com a DI (cada pedal no padrão fica entre −4 e +5 dB de RMS; o wah subiu 5 dB, estava em −8 dB)
 - [x] **Tap tempo no tremolo**: botão TAP e subdivisões 1/4, 1/8 (inicial), 1/8T e 1/16 (ciclos por tempo); o
