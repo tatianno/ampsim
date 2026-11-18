@@ -214,32 +214,50 @@ func (t *TunerPanel) strings(gtx layout.Context, th *Theme, rd audio.Reading) la
 
 // ---------------------------------------------------------------- tap tempo
 
-// TapControl é o tap tempo do delay: botão TAP, subdivisão e andamento em BPM.
+// TapControl é o tap tempo de um pedal: botão TAP, subdivisão e andamento em BPM. Serve ao
+// delay (parâmetro de tempo em ms) e ao tremolo (parâmetro de taxa em Hz).
 type TapControl struct {
-	time  *engine.Param
-	tt    engine.TapTempo
-	tap   widget.Clickable
-	subs  []widget.Clickable
-	sub   int
-	flash time.Time
+	param *engine.Param
+	list  []engine.Subdivision
+	// toValue converte andamento e subdivisão no valor do parâmetro; toBPM faz o caminho inverso.
+	toValue func(bpm float64, s engine.Subdivision) float64
+	toBPM   func(v float64, s engine.Subdivision) float64
+	tt      engine.TapTempo
+	tap     widget.Clickable
+	subs    []widget.Clickable
+	sub     int
+	flash   time.Time
 }
 
 // NewTapControl cria o tap tempo para o parâmetro de tempo do delay (ms).
 func NewTapControl(p *engine.Param) *TapControl {
-	return &TapControl{time: p, subs: make([]widget.Clickable, len(engine.Subdivisions))}
+	return newTap(p, engine.Subdivisions, engine.DelayMs, engine.BPM)
+}
+
+// NewRateTapControl cria o tap tempo para um parâmetro de taxa (Hz), como o do tremolo,
+// começando na subdivisão sub.
+func NewRateTapControl(p *engine.Param, list []engine.Subdivision, sub int) *TapControl {
+	c := newTap(p, list, engine.RateHz, engine.BPMFromRate)
+	c.sub = sub
+	return c
+}
+
+func newTap(p *engine.Param, list []engine.Subdivision, to func(float64, engine.Subdivision) float64,
+	back func(float64, engine.Subdivision) float64) *TapControl {
+	return &TapControl{param: p, list: list, toValue: to, toBPM: back, subs: make([]widget.Clickable, len(list))}
 }
 
 // Subdivision devolve a subdivisão escolhida.
-func (c *TapControl) Subdivision() engine.Subdivision { return engine.Subdivisions[c.sub] }
+func (c *TapControl) Subdivision() engine.Subdivision { return c.list[c.sub] }
 
-// BPM devolve o andamento correspondente ao tempo atual do delay.
-func (c *TapControl) BPM() float64 { return engine.BPM(c.time.Get(), c.Subdivision()) }
+// BPM devolve o andamento correspondente ao valor atual do parâmetro.
+func (c *TapControl) BPM() float64 { return c.toBPM(c.param.Get(), c.Subdivision()) }
 
 // TapAt registra um toque no instante now (botão TAP ou tecla T).
 func (c *TapControl) TapAt(now time.Time) {
 	c.flash = now
 	if ms, ok := c.tt.Tap(now); ok {
-		c.time.Set(ms * c.Subdivision().Factor)
+		c.param.Set(c.toValue(60000/ms, c.Subdivision()))
 	}
 }
 
@@ -252,7 +270,7 @@ func (c *TapControl) Layout(gtx layout.Context, th *Theme, st PedalStyle) layout
 		if c.subs[i].Clicked(gtx) && i != c.sub {
 			bpm := c.BPM() // troca a subdivisão mantendo o andamento
 			c.sub = i
-			c.time.Set(engine.DelayMs(bpm, c.Subdivision()))
+			c.param.Set(c.toValue(bpm, c.Subdivision()))
 		}
 	}
 	lit := gtx.Now.Sub(c.flash) < 120*time.Millisecond
@@ -270,7 +288,7 @@ func (c *TapControl) Layout(gtx layout.Context, th *Theme, st PedalStyle) layout
 		})
 	}
 	var subs []layout.FlexChild
-	for i, s := range engine.Subdivisions {
+	for i, s := range c.list {
 		subs = append(subs, layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 			bg := withAlpha(rgb(0x000000), 70)
 			fg := st.Text

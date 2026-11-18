@@ -46,6 +46,22 @@ func (d *DelayLine) Read(delay float64) float64 {
 	return a*(1-f) + b*f
 }
 
+// ReadCubic lê com atraso fracionário por interpolação cúbica (Hermite de 4 pontos), que
+// não abafa os agudos como a linear quando o atraso varia (vibrato). delay ≥ 2.
+func (d *DelayLine) ReadCubic(delay float64) float64 {
+	di := math.Floor(delay)
+	f := delay - di
+	i := int(di)
+	xm1 := d.buf[(d.w-i+1)&d.mask] // x[t-i+1]
+	x0 := d.buf[(d.w-i)&d.mask]    // x[t-i]
+	x1 := d.buf[(d.w-i-1)&d.mask]  // x[t-i-1]
+	x2 := d.buf[(d.w-i-2)&d.mask]  // x[t-i-2]
+	c1 := 0.5 * (x1 - xm1)
+	c2 := xm1 - 2.5*x0 + 2*x1 - 0.5*x2
+	c3 := 0.5*(x2-xm1) + 1.5*(x0-x1)
+	return ((c3*f+c2)*f+c1)*f + x0
+}
+
 // Reset zera o buffer.
 func (d *DelayLine) Reset() {
 	clear(d.buf)

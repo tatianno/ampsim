@@ -23,15 +23,18 @@ type Pedal struct {
 	knobs []*Knob
 	sels  []*Selector
 	foot  widget.Clickable
-	tap   *TapControl // só no delay
+	tap   *TapControl // delay e tremolo
 	eq    *eqView     // só no EQ (curva e knobs por banda)
 }
 
 // NewPedal cria a vista do pedal para o módulo.
 func NewPedal(chain *engine.Chain, mod engine.Module) *Pedal {
 	p := &Pedal{chain: chain, mod: mod, style: StyleFor(mod.ID())}
-	if mod.ID() == "delay" {
+	switch mod.ID() {
+	case "delay":
 		p.tap = NewTapControl(mod.Param("time"))
+	case "tremolo":
+		p.tap = NewRateTapControl(mod.Param("rate"), engine.TremoloSubdivisions, 1) // 1/8: 5 Hz = 150 BPM
 	}
 	if m, ok := mod.(*engine.EQ); ok {
 		p.eq = newEQView(m)

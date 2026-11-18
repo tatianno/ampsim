@@ -688,3 +688,54 @@ func (m *Compressor) Process(buf []float64) {
 
 // GainReductionDB devolve a redução de ganho atual (seguro de outra goroutine).
 func (m *Compressor) GainReductionDB() float64 { return math.Float64frombits(m.gr.Load()) }
+
+// ---------------------------------------------------------------- Tremolo
+
+// Tremolo é o pedal de tremolo (volume modulado).
+type Tremolo struct {
+	base
+	t *dsp.Tremolo
+}
+
+// NewTremolo cria o módulo de tremolo.
+func NewTremolo() *Tremolo {
+	return &Tremolo{base: base{id: "tremolo", name: "Tremolo", paramSet: newParamSet(
+		ParamInfo{ID: "rate", Name: "Rate", Unit: "Hz", Min: 0.5, Max: 15, Default: 5, Log: true},
+		ParamInfo{ID: "depth", Name: "Depth", Unit: "%", Min: 0, Max: 100, Default: 50},
+		ParamInfo{ID: "shape", Name: "Forma", Min: 0, Max: 2, Default: dsp.WaveSine, Step: 1,
+			Choices: []string{"Seno", "Triângulo", "Quadrada"}},
+	)}}
+}
+
+func (m *Tremolo) Prepare(fs float64, _ int) { m.t = dsp.NewTremolo(fs) }
+func (m *Tremolo) Reset()                    { m.t.Reset() }
+func (m *Tremolo) Latency() int              { return 0 }
+func (m *Tremolo) Process(buf []float64) {
+	m.t.Set(m.get("rate"), m.pct("depth"), int(m.get("shape")))
+	m.t.ProcessBlock(buf)
+}
+
+// ---------------------------------------------------------------- Vibrato
+
+// Vibrato é o pedal de vibrato (tom modulado, sem o sinal seco). Latência 0, como o chorus:
+// o atraso médio (de 2 amostras a ~2,5 ms) faz parte do efeito.
+type Vibrato struct {
+	base
+	v *dsp.Vibrato
+}
+
+// NewVibrato cria o módulo de vibrato.
+func NewVibrato() *Vibrato {
+	return &Vibrato{base: base{id: "vibrato", name: "Vibrato", paramSet: newParamSet(
+		ParamInfo{ID: "rate", Name: "Rate", Unit: "Hz", Min: 0.5, Max: 12, Default: 5, Log: true},
+		ParamInfo{ID: "depth", Name: "Depth", Unit: "ms", Min: 0, Max: dsp.VibratoMaxMs, Default: 0.6},
+	)}}
+}
+
+func (m *Vibrato) Prepare(fs float64, _ int) { m.v = dsp.NewVibrato(fs) }
+func (m *Vibrato) Reset()                    { m.v.Reset() }
+func (m *Vibrato) Latency() int              { return 0 }
+func (m *Vibrato) Process(buf []float64) {
+	m.v.Set(m.get("rate"), m.get("depth"))
+	m.v.ProcessBlock(buf)
+}

@@ -1,11 +1,14 @@
 package ui
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 	"time"
+
+	"gioui.org/io/key"
 
 	"github.com/tatianno/ampsim/capturas"
 	"github.com/tatianno/ampsim/engine"
@@ -138,5 +141,46 @@ func TestSobre(t *testing.T) {
 	h.frame(a.Layout)
 	if !slices.Equal(opened, []string{RepoURL, "mailto:" + Contact + "?subject=ampsim"}) {
 		t.Errorf("links abertos: %v", opened)
+	}
+}
+
+func TestTapTempoDoTremolo(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	tap := func(n int, every time.Duration) {
+		for i := 0; i < n; i++ {
+			h.r.Queue(key.Event{Name: "T", State: key.Press})
+			h.frame(a.Layout)
+			h.now = h.now.Add(every - 16*time.Millisecond) // frame() já anda 16 ms
+		}
+	}
+	rate := a.Chain.Module("tremolo").Param("rate")
+	delay := a.Chain.Module("delay").Param("time")
+
+	// pedal do tremolo aberto: T só mexe nele (120 BPM em colcheia, a subdivisão inicial = 4 Hz)
+	a.Open("tremolo")
+	h.frame(a.Layout)
+	antes := delay.Get()
+	tap(5, 500*time.Millisecond)
+	if math.Abs(rate.Get()-4) > 0.01 {
+		t.Fatalf("tremolo a 120 BPM: %.3f Hz, esperava 4", rate.Get())
+	}
+	if delay.Get() != antes {
+		t.Error("com o tremolo aberto, T não deveria mexer no delay")
+	}
+	// semínima mantém os 120 BPM: 2 Hz
+	tr := a.pedals["tremolo"].tap
+	tr.subs[0].Click()
+	h.frame(a.Layout)
+	if math.Abs(rate.Get()-2) > 0.01 || math.Abs(tr.BPM()-120) > 0.5 {
+		t.Errorf("1/4 a 120 BPM: %.3f Hz (%.1f BPM), esperava 2 Hz", rate.Get(), tr.BPM())
+	}
+
+	// nada aberto: T marca o andamento dos dois (100 BPM)
+	a.open = ""
+	h.now = h.now.Add(3 * time.Second) // começa uma contagem nova
+	tap(5, 600*time.Millisecond)
+	if math.Abs(delay.Get()-600) > 1 || math.Abs(tr.BPM()-100) > 0.5 {
+		t.Errorf("andamento global de 100 BPM: delay %.1f ms, tremolo %.1f BPM", delay.Get(), tr.BPM())
 	}
 }

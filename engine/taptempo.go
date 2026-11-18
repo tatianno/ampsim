@@ -62,3 +62,17 @@ func DelayMs(bpm float64, s Subdivision) float64 { return 60000 / bpm * s.Factor
 
 // BPM converte tempo de delay e subdivisão de volta em andamento.
 func BPM(delayMs float64, s Subdivision) float64 { return 60000 * s.Factor / delayMs }
+
+// TremoloSubdivisions são as divisões do tremolo: quantos ciclos por tempo (semínima).
+var TremoloSubdivisions = []Subdivision{
+	{"1/4", 1},
+	{"1/8", 0.5},
+	{"1/8T", 1.0 / 3}, // tercina
+	{"1/16", 0.25},
+}
+
+// RateHz converte andamento (BPM) e subdivisão na frequência de um LFO (um ciclo por subdivisão).
+func RateHz(bpm float64, s Subdivision) float64 { return bpm / 60 / s.Factor }
+
+// BPMFromRate converte a frequência do LFO e a subdivisão de volta em andamento.
+func BPMFromRate(hz float64, s Subdivision) float64 { return 60 * hz * s.Factor }

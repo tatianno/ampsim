@@ -65,6 +65,8 @@ var pedalStyles = map[string]PedalStyle{
 	"chorus":  {Body: rgb(0x4aa3c9), Text: rgb(0x0d2633), Knob: rgb(0x1a1a1a)},
 	"flanger": {Body: rgb(0x7b4fa8), Text: rgb(0xf4ecff), Knob: rgb(0x1a1a1a)},
 	"phaser":  {Body: rgb(0xe07b24), Text: rgb(0x2b1503), Knob: rgb(0x1a1a1a)},
+	"vibrato": {Body: rgb(0xb0417e), Text: rgb(0xfdeef6), Knob: rgb(0x1a1a1a)},
+	"tremolo": {Body: rgb(0xd8b02a), Text: rgb(0x2a2105), Knob: rgb(0x1a1a1a)},
 	"delay":   {Body: rgb(0x3f9d5a), Text: rgb(0x0c2414), Knob: rgb(0x1a1a1a)},
 	"reverb":  {Body: rgb(0x2f5f8f), Text: rgb(0xe6f0fa), Knob: rgb(0x111111)},
 	"pre":     {Body: rgb(0x1b1b1b), Text: rgb(0xd4af37), Knob: rgb(0x111111)},

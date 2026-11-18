@@ -604,6 +604,15 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   (`ParamInfo.Log`). Coeficientes recalculados só quando um knob muda, sem alocar. Pedal próprio na GUI: curva de
   resposta (20 Hz–20 kHz, ±18 dB, calculada por `EQ.ResponseDB`) e uma coluna por banda. Testes: resposta calculada
   × medida com senos, plano = transparente, zero alocação, knob logarítmico
+- [x] **Tremolo e vibrato** (18/11, `dsp/modulation.go`): tremolo com Rate 0,5–15 Hz, Depth 0–100% e Forma
+  (Seno | Triângulo | Quadrada suavizada; ganho suavizado em ~1,5 ms, sem estalo); vibrato 100% molhado por linha de
+  atraso modulada com interpolação cúbica (Hermite; não abafa os agudos), Rate 0,5–12 Hz, Depth 0–2,5 ms, latência
+  0 como o chorus. Padrão no loop, depois do phaser, desligados. Testes: depth 0 = transparente/atraso puro, ganho de
+  0 a 1 no ritmo certo nas 3 formas, desvio de tom medido = 2π·rate·depth, 8 kHz sem perda. Com 13 blocos, o rótulo
+  do bloco diminui a fonte ou abrevia (FLANG, VIB, TREM...) quando não cabe
+- [x] **Tap tempo no tremolo**: botão TAP e subdivisões 1/4, 1/8 (inicial), 1/8T e 1/16 (ciclos por tempo); o
+  `TapControl` serve a um parâmetro de tempo (delay, ms) ou de taxa (tremolo, Hz). Tecla T: com um pedal com TAP
+  aberto, só nele; com nenhum aberto, em todos (andamento global)
 - [x] **Nome AmpSim** padronizado no que o usuário vê (janela, topo, cabeçote, Sobre, `-versao`, menu, pacote,
   READMEs); identificadores técnicos continuam `ampsim` (módulo Go, executáveis, `~/.config/ampsim`, arquivos de
   gravação, cliente JACK)

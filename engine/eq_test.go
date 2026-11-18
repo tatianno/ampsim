@@ -93,3 +93,16 @@ func TestParametroLog(t *testing.T) {
 		t.Errorf("0,25 do knob = %g Hz", v)
 	}
 }
+
+func TestTapTempoDoTremolo(t *testing.T) {
+	// 120 BPM: semínima = 2 Hz, colcheia = 4 Hz, tercina = 6 Hz, semicolcheia = 8 Hz
+	for i, want := range []float64{2, 4, 6, 8} {
+		s := TremoloSubdivisions[i]
+		if got := RateHz(120, s); math.Abs(got-want) > 1e-9 {
+			t.Errorf("%s a 120 BPM = %g Hz, esperava %g", s.Name, got, want)
+		}
+		if got := BPMFromRate(want, s); math.Abs(got-120) > 1e-9 {
+			t.Errorf("%s: %g Hz = %g BPM, esperava 120", s.Name, want, got)
+		}
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/text"
+	"gioui.org/unit"
 
 	"github.com/tatianno/ampsim/engine"
 )
@@ -276,8 +277,34 @@ func (b *Board) drawChip(gtx layout.Context, th *Theme, id string, alpha float32
 	case engine.CabID:
 		name = "CAB"
 	}
-	defer offset(gtx.Ops, gtx.Dp(6), sz.Y/2-gtx.Sp(9)).Pop()
-	drawText(gtx, th, strings.ToUpper(name), textOpts{size: 12, color: ink, bold: true, width: sz.X - gtx.Dp(12), align: text.Middle})
+	avail := sz.X - gtx.Dp(12)
+	label, size := chipLabel(gtx, th, id, strings.ToUpper(name), avail)
+	defer offset(gtx.Ops, gtx.Dp(6), sz.Y/2-gtx.Sp(size*0.75)).Pop()
+	drawText(gtx, th, label, textOpts{size: size, color: ink, bold: true, width: avail, align: text.Middle})
+}
+
+// chipShort são as abreviações usadas quando o nome não cabe no bloco (janela estreita).
+var chipShort = map[string]string{"flanger": "FLANG", "vibrato": "VIB", "tremolo": "TREM", "chorus": "CHOR", "phaser": "PHASE", "reverb": "VERB"}
+
+// chipLabel escolhe o rótulo do bloco: o nome inteiro, o nome com a fonte menor ou a abreviação.
+func chipLabel(gtx layout.Context, th *Theme, id, name string, avail int) (string, unit.Sp) {
+	width := func(s string, size unit.Sp) int {
+		m := op.Record(gtx.Ops)
+		gtx := gtx
+		gtx.Constraints.Min.X = 0
+		d := drawText(gtx, th, s, textOpts{size: size, bold: true})
+		m.Stop()
+		return d.Size.X
+	}
+	for _, size := range []unit.Sp{12, 10.5} {
+		if width(name, size) <= avail {
+			return name, size
+		}
+	}
+	if short, ok := chipShort[id]; ok {
+		return short, 12
+	}
+	return name, 10.5
 }
 
 func strokeRRect(gtx layout.Context, r image.Rectangle, radius int, c color.NRGBA) {

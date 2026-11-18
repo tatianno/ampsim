@@ -4,7 +4,7 @@
 
 Simulador de amplificador de guitarra e pedais em Go, feito como estudo de DSP:
 pré-amp com saturação sobreamostrada, tone stack, power amp, gabinete por resposta ao
-impulso (IR) e pedais de gate, compressor, EQ paramétrico, chorus, flanger, phaser, delay e reverb — tocando em
+impulso (IR) e pedais de gate, compressor, EQ paramétrico, chorus, flanger, phaser, vibrato, tremolo, delay e reverb — tocando em
 tempo real, com GUI.
 
 Os algoritmos começaram como protótipos em Python (`referencia_python/`) e foram portados
@@ -31,7 +31,7 @@ para Go em streaming, validados contra as saídas do Python.
 - **GUI (Gio)**: cabeçote e gabinete com knobs, cadeia em que se arrastam os pedais, pedais
   que abrem por cima da tela, transporte com loop de trecho, medidores e bypass A/B.
 - **Gravar** a saída e a DI (para reamplificar) em WAV 24 bits, e **exportar** um arquivo processado pelo som atual.
-- **Afinador** (YIN, saída muda enquanto afina) e **tap tempo** no delay (botão TAP ou tecla T, com subdivisões).
+- **Afinador** (YIN, saída muda enquanto afina) e **tap tempo** no delay e no tremolo (botão TAP ou tecla T, com subdivisões).
 - **Presets**: de fábrica (Clean, Crunch, Lead, Ambiente) e os seus, salvos em `~/.config/ampsim/presets`
   (JSON, o mesmo formato servirá para o futuro plugin LV2); `-preset Lead` funciona no app e no CLI.
 - **CLI** para processar arquivos offline.
