@@ -59,7 +59,9 @@ func run() error {
 		listar(chain)
 		return nil
 	}
-	if *ir != "" {
+	irSet := false
+	flag.Visit(func(f *flag.Flag) { irSet = irSet || f.Name == "ir" })
+	if _, statErr := os.Stat(*ir); *ir != "" && (statErr == nil || irSet) { // sem IR: gabinete genérico
 		if err := chain.Cab().LoadIRFile(*ir); err != nil {
 			return err
 		}

@@ -481,7 +481,21 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
   - precisão inalterada (saturação −63,8 dB e gabinete −151 dB contra o Python)
   - ao vivo (JACK, buffer 64, amp + 8 pedais ligados, ~22 s): **0 atrasos**; pior callback por janela de 200 ms:
     mediana 27%, p90 37%, máx 54% — os picos vêm de agendamento/pausas do Go, não do DSP
-- [ ] Empacotamento Linux (e depois Windows e macOS)
+- [x] **Empacotamento Linux** (18/11): `scripts/empacotar.sh VERSAO` gera em `dist/`:
+  - `ampsim_VERSAO_amd64.deb` (`/usr/bin/ampsim` e `ampsim-cli`, atalho no menu, ícone, `copyright` = MIT;
+    `Depends` levantado das bibliotecas diretas do binário com `readelf` + `dpkg -S`; `Recommends`: pipewire-jack,
+    zenity, xdg-user-dirs)
+  - `ampsim-VERSAO-linux-amd64.tar.gz` com `install.sh`/`uninstall.sh` (pasta pessoal, sem sudo; atalho com caminho
+    completo)
+  - o app passou a funcionar fora da pasta do projeto: DI/IR padrão ausentes são ignoradas (erro só se pedidas
+    explicitamente); **IR interna genérica** (`dsp.GenericCabIR`, curva de gabinete sintética, sem licença de
+    terceiros) quando nenhuma IR é carregada; a janela abre mesmo se a placa falhar (aviso + escolher em Áudio…);
+    versão no binário (`-versao`, título da janela)
+  - ícone: o logo do usuário (`img/logo.webp`, combo + pedal), com o fundo e a sombra removidos (transparente), em
+    PNG 48–512 px no tema `hicolor` (`packaging/linux/icons/`); também no topo do README
+  - conferido: `.desktop` válido, metadados e permissões do `.deb`, instalação/remoção do `.tar.gz` numa pasta
+    temporária rodando de fora do projeto
+- [ ] Empacotamento Windows e macOS (ver "Áudio multiplataforma" abaixo)
 - [ ] **Áudio multiplataforma** (decidido em 18/11; o `Host` escolhe o backend por sistema):
   - **Linux:** backend JACK próprio (PipeWire), com miniaudio (PulseAudio/ALSA) como alternativa
   - **macOS:** miniaudio → CoreAudio (baixa latência nativa; AudioBox é class-compliant). Se o duplex do miniaudio

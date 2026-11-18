@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=ampsim
+GenericName=Simulador de amplificador
+Comment=Simulador de amplificador de guitarra e pedais
+Exec=ampsim
+Icon=ampsim
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+Keywords=guitarra;amplificador;pedal;afinador;guitar;amp;tuner;
+StartupWMClass=ampsim

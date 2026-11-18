@@ -165,7 +165,7 @@ func (c *CabPanel) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	if c.pick.Clicked(gtx) && c.OnPick != nil {
 		c.OnPick()
 	}
-	ir := "sem IR (só filtros)"
+	ir := "interna (genérica)"
 	if cab := c.chain.Cab(); cab != nil && cab.IRPath() != "" {
 		ir = filepath.Base(cab.IRPath())
 	}

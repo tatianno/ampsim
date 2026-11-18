@@ -53,3 +53,31 @@ func PrepareIR(ir []float64, fsIR, fsTarget int, maxMs float64) []float64 {
 	}
 	return out
 }
+
+// GenericCabIR gera a resposta ao impulso de um gabinete genérico (sintética, sem licença
+// de terceiros), usada quando nenhuma IR foi carregada. É só uma curva de EQ típica de
+// gabinete de guitarra com alto-falante de 12": corte de graves, ressonância do gabinete,
+// vale "caixa", presença do cone e queda forte acima de ~5 kHz. Fase mínima (filtros IIR).
+func GenericCabIR(fs float64) []float64 {
+	stages := [][]Coefs{
+		ButterworthHighpass(2, fs, 75),
+		{Peaking(fs, 110, 1.2, 3)},  // ressonância do gabinete
+		{Peaking(fs, 450, 1.0, -4)}, // vale "caixa"
+		{Peaking(fs, 2200, 1.4, 4)}, // presença do cone
+		{Peaking(fs, 3800, 2.0, 2)},
+		ButterworthLowpass(4, fs, 5200),
+		ButterworthLowpass(2, fs, 8000),
+	}
+	var all []Coefs
+	for _, s := range stages {
+		all = append(all, s...)
+	}
+	c := NewCascade(all)
+	ir := make([]float64, int(0.06*fs)) // 60 ms: os filtros já decaíram
+	ir[0] = 1
+	c.ProcessBlock(ir)
+	return PrepareIR(ir, int(fs), int(fs), IRGenericMs)
+}
+
+// IRGenericMs é o comprimento da IR genérica.
+const IRGenericMs = 60.0

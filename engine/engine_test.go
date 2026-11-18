@@ -662,3 +662,28 @@ func TestToneStackSemAlocacao(t *testing.T) {
 		t.Errorf("aloca %.0f vezes por bloco", a)
 	}
 }
+
+// Sem IR carregada, o gabinete usa a IR interna genérica (o som muda em relação a não ter
+// gabinete), e o caminho da IR fica vazio.
+func TestGabineteGenericoSemIR(t *testing.T) {
+	fs, di := lerDI(t)
+	render := func(cab bool) []float64 {
+		c := NewDefaultChain()
+		c.SetEnabled(CabID, cab)
+		c.Prepare(fs, 256)
+		x := append([]float64(nil), di[:40000]...)
+		c.ProcessMono(x)
+		return x
+	}
+	com, sem := render(true), render(false)
+	d := 0.0
+	for i := range com {
+		d += (com[i] - sem[i]) * (com[i] - sem[i])
+	}
+	if d < 1e-3 {
+		t.Error("o gabinete genérico deveria mudar o som")
+	}
+	if NewDefaultChain().Cab().IRPath() != "" {
+		t.Error("sem IR carregada, IRPath é vazio")
+	}
+}

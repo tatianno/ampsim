@@ -140,3 +140,33 @@ func BenchmarkTMBStack(b *testing.B) {
 	s.Set(6, 4, 7)
 	bench(b, s.ProcessBlock)
 }
+
+// A IR genérica tem o formato de um gabinete de guitarra: presença em 2,2 kHz, vale "caixa"
+// em 450 Hz, graves cortados abaixo da ressonância e agudos bem atenuados.
+func TestGenericCabIR(t *testing.T) {
+	const fs = 48000.0
+	ir := GenericCabIR(fs)
+	mag := func(f float64) float64 {
+		var acc complex128
+		for n, v := range ir {
+			acc += complex(v, 0) * cmplx.Exp(complex(0, -2*math.Pi*f*float64(n)/fs))
+		}
+		return dbOf(acc)
+	}
+	g := map[float64]float64{}
+	for _, f := range []float64{50, 110, 450, 1000, 2200, 10000} {
+		g[f] = mag(f)
+	}
+	t.Logf("50 Hz %.1f · 110 Hz %.1f · 450 Hz %.1f · 1 kHz %.1f · 2,2 kHz %.1f · 10 kHz %.1f dB",
+		g[50], g[110], g[450], g[1000], g[2200], g[10000])
+	switch {
+	case g[2200] <= g[1000]:
+		t.Error("deveria ter presença em 2,2 kHz (acima de 1 kHz)")
+	case g[450] >= g[1000]:
+		t.Error("deveria ter o vale em 450 Hz (abaixo de 1 kHz)")
+	case g[10000] > g[1000]-25:
+		t.Error("10 kHz deveria estar pelo menos 25 dB abaixo de 1 kHz")
+	case g[50] >= g[110]:
+		t.Error("abaixo da ressonância (50 Hz) deveria ter menos grave que em 110 Hz")
+	}
+}

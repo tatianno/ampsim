@@ -26,6 +26,28 @@ import (
 	"github.com/tatianno/ampsim/wav"
 )
 
+// version é definida no build (-ldflags "-X main.version=0.3.0").
+var version = "dev"
+
+// flagSet informa se a opção foi passada na linha de comando.
+func flagSet(name string) bool {
+	set := false
+	flag.Visit(func(f *flag.Flag) { set = set || f.Name == name })
+	return set
+}
+
+// optionalFile diz se o arquivo padrão de uma opção deve ser usado: se a opção não foi
+// passada e o arquivo não existe (ex.: app instalado, sem a pasta testdata), é ignorado.
+func optionalFile(name, path string) bool {
+	if path == "" {
+		return false
+	}
+	if _, err := os.Stat(path); err != nil && !flagSet(name) {
+		return false
+	}
+	return true
+}
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "erro:", err)
@@ -49,16 +71,21 @@ func run() error {
 		tocar    = flag.Bool("tocar", false, "começa tocando o arquivo (padrão: sim no console, não na janela)")
 		console  = flag.Bool("console", false, "usa o console em vez da janela")
 		semLoop  = flag.Bool("sem-loop", false, "toca o arquivo uma vez só")
+		versao   = flag.Bool("versao", false, "mostra a versão e sai")
 		comandos = flag.String("comandos", "", "comandos iniciais separados por ';' (ex.: \"set pre.gain=8; on delay\")")
 	)
 	flag.Parse()
 
+	if *versao {
+		fmt.Println("ampsim", version)
+		return nil
+	}
 	if *listar {
 		return listarDispositivos(*backend)
 	}
 
 	chain := engine.NewDefaultChain()
-	if *ir != "" {
+	if optionalFile("ir", *ir) { // sem IR: o gabinete usa a IR interna genérica
 		if err := chain.Cab().LoadIRFile(*ir); err != nil {
 			return err
 		}
@@ -76,7 +103,7 @@ func run() error {
 	s := audio.NewSession(chain, float64(*taxa))
 	defer s.Close()
 	s.Player.SetLoop(!*semLoop)
-	if *arquivo != "" {
+	if optionalFile("arquivo", *arquivo) {
 		if err := s.Player.Load(*arquivo); err != nil {
 			return err
 		}
@@ -90,13 +117,21 @@ func run() error {
 		return fmt.Errorf("-fonte: use arquivo ou guitarra, veio %q", *fonte)
 	}
 
+	aviso := ""
 	if err := s.Host.Open(audio.Config{
 		Backend: *backend, Output: *saida, Input: *entrada, Buffer: uint32(*buffer),
 	}); err != nil {
-		return err
+		if *console {
+			return err
+		}
+		// na janela, segue sem som e deixa escolher outra placa em Áudio…
+		aviso = "a placa de som não abriu: " + err.Error() + " — escolha outra em Áudio…"
 	}
 	if w := s.Host.State().Warning; w != "" {
-		fmt.Fprintln(os.Stderr, "aviso:", w)
+		aviso = w
+	}
+	if aviso != "" {
+		fmt.Fprintln(os.Stderr, "aviso:", aviso)
 	}
 	tocarSet := false
 	flag.Visit(func(f *flag.Flag) { tocarSet = tocarSet || f.Name == "tocar" })
@@ -106,7 +141,7 @@ func run() error {
 
 	if !*console {
 		// A janela assume o processo (app.Main não retorna); ao fechar, libera o áudio e sai.
-		return runGUI(s, s.Close)
+		return runGUI(s, s.Close, version, aviso)
 	}
 
 	a := &app{s: s, chain: chain, player: s.Player}

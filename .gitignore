@@ -16,3 +16,6 @@ saida/
 # Veja o README, seção "testdata".
 testdata/*.wav
 testdata/referencia/
+
+# Pacotes gerados por scripts/empacotar.sh
+/dist/

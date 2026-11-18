@@ -199,6 +199,9 @@ func (a *App) pickAsync(title string, apply func(path string) error) {
 	}()
 }
 
+// SetStatus mostra uma mensagem no rodapé (ex.: aviso na abertura).
+func (a *App) SetStatus(s string, isErr bool) { a.setStatus(s, isErr) }
+
 func (a *App) setStatus(s string, isErr bool) {
 	a.status, a.statusErr = s, isErr
 	a.statusUntil = time.Now().Add(6 * time.Second)

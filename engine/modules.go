@@ -267,9 +267,11 @@ func (m *Cab) Prepare(fs float64, _ int) {
 
 	m.mu.Lock()
 	m.prepFS = fs
-	m.conv = nil
 	if m.irRaw != nil {
 		m.conv = dsp.NewConvolver(dsp.PrepareIR(m.irRaw, m.irFS, int(fs), IRMaxMs), IRPartition)
+	} else {
+		// sem IR carregada: gabinete genérico interno (sem ele o amp soa áspero e chiado)
+		m.conv = dsp.NewConvolver(dsp.GenericCabIR(fs), IRPartition)
 	}
 	m.pending.Store(nil)
 	m.mu.Unlock()
@@ -341,7 +343,7 @@ func (m *Cab) LoadIRFile(path string) error {
 	return nil
 }
 
-// IRPath devolve o caminho da IR carregada ("" se nenhuma).
+// IRPath devolve o caminho da IR carregada ("" = a IR interna genérica).
 func (m *Cab) IRPath() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
