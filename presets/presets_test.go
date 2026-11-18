@@ -9,10 +9,12 @@ import (
 )
 
 func TestFabricaCompletaESemIR(t *testing.T) {
-	n := len(engine.NewDefaultChain().Modules())
 	for _, p := range Factory() {
-		if len(p.State.Modules) != n {
-			t.Errorf("%s: %d módulos, esperava %d", p.Name, len(p.State.Modules), n)
+		// só o amp e os pedais usados, todos ligados
+		for _, m := range p.State.Modules {
+			if !m.Enabled {
+				t.Errorf("%s: %s está na cadeia desligado", p.Name, m.ID)
+			}
 		}
 		for _, m := range p.State.Modules {
 			if m.Extra != nil {

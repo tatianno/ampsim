@@ -610,6 +610,31 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   0 como o chorus. Padrão no loop, depois do phaser, desligados. Testes: depth 0 = transparente/atraso puro, ganho de
   0 a 1 no ritmo certo nas 3 formas, desvio de tom medido = 2π·rate·depth, 8 kHz sem perda. Com 13 blocos, o rótulo
   do bloco diminui a fonte ou abrevia (FLANG, VIB, TREM...) quando não cabe
+- [x] **Adicionar e remover pedais** (18/11): a ordem da cadeia é a lista dos módulos presentes (todos existem e são
+  preparados; só os presentes processam). `Chain.Add` (posição padrão pela `DefaultOrder`, ligado), `Remove` (as
+  partes do amp não saem), `Available`, `AllModules`; a troca usa a rampa de reordenação e o módulo que entra começa
+  limpo (Reset, sem alocar). Latência = só dos presentes. Preset **versão 3** (só os presentes); v2 abre com os
+  ligados + o amp; v1 na ordem padrão. O app abre com `StartOrder` (gate + amp); presets de fábrica só com os pedais
+  usados. GUI: bloco "+" no fim da cadeia → "ADICIONAR PEDAL" (grupos); "Remover" em cada pedal; `on <pedal>`
+  no console adiciona
+- [x] **Novos pedais** (18/11), `dsp/drive.go`, `wah.go`, `octave.go`, `rotary.go`, `pitchshift.go`:
+  - **Drive**: Boost (até +20 dB limpo), Overdrive (Tube Screamer: passa-alta de 720 Hz antes do tanh e o limpo
+    somado), Distorção (RAT: até 600x, joelho duro), Fuzz (assimétrico, vale nos médios); ceifamento a 4x (latência
+    de 32 amostras, só com o drive na cadeia); Tone = tilt ±6 dB em 1 kHz; níveis calibrados (Drive 5 e Level 0 dB =
+    nível da entrada); troca de modo com crossfade
+  - **Wah**: SVF TPT (Simper) passa-banda de 350 Hz ao topo da Faixa (1,2–3,5 kHz), Envelope / LFO / Fixo
+  - **Octave**: divisores por 2 em cascata (flip-flop com histerese sobre o sinal filtrado, estilo OC-2) e +1 oitava
+    por retificação
+  - **Rotary**: divisor Linkwitz-Riley em 800 Hz; corneta e tambor com Doppler (atraso modulado, interpolação
+    cúbica) e volume modulado; 0,8/6,7 Hz e 0,67/5,9 Hz com inércia diferente
+  - **Vibe**: 4 passa-tudo escalonados (90 Hz a 3,8 kHz) com LFO de lâmpada; Chorus ou Vibrato
+  - **Pitch**: 2 vozes (±12 st) e detune; leitura de linha de atraso com **emendas sincronizadas** (o salto de maior
+    correlação, como no SOLA) e crossfade de 5 ms: afinação exata (a versão de 2 janelas fixas saía ~1% desafinada
+    em tons puros); atraso do molhado de 4 a 45 ms
+  - CPU (um núcleo, bloco 256): drive 1,3%, pitch 1,0%, vibe 1,0%, wah 0,8%, rotary 0,7%, octave 0,1%
+  - testes de DSP: boost limpo; harmônicos crescem com o drive; wah com o pico na posição certa e o envelope abrindo
+    com a palhetada; octave com 110/55/440 Hz dominando para 220 Hz; rotary acelerando com inércia e pulsando;
+    vibe passa-tudo no vibrato e variando no chorus; pitch +12/−12/+7/0 st no lugar certo
 - [x] **Tap tempo no tremolo**: botão TAP e subdivisões 1/4, 1/8 (inicial), 1/8T e 1/16 (ciclos por tempo); o
   `TapControl` serve a um parâmetro de tempo (delay, ms) ou de taxa (tremolo, Hz). Tecla T: com um pedal com TAP
   aberto, só nele; com nenhum aberto, em todos (andamento global)

@@ -40,9 +40,16 @@ func (c *Chain) SetList(list string) error {
 }
 
 // EnableList liga (on=true) ou desliga os módulos de uma lista separada por vírgula ou espaço.
+// Ligar um módulo que está fora da cadeia o coloca nela (Add).
 func (c *Chain) EnableList(list string, on bool) error {
 	for _, id := range SplitList(list) {
-		if err := c.SetEnabled(id, on); err != nil {
+		var err error
+		if on && !c.InChain(id) {
+			err = c.Add(id)
+		} else {
+			err = c.SetEnabled(id, on)
+		}
+		if err != nil {
 			return err
 		}
 	}

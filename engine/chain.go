@@ -28,6 +28,7 @@ const (
 type slot struct {
 	m       Module
 	enabled atomic.Bool
+	mark    uint64 // usado na troca de ordem para achar os módulos que entram na cadeia
 
 	lat     int
 	gain    float64 // 0 = bypass total, 1 = efeito total
@@ -48,6 +49,7 @@ type Chain struct {
 	active *[]*slot // ordem em uso
 	rgain  float64  // ganho da rampa de reordenação
 	rstep  float64
+	gen    uint64
 
 	fs       float64
 	maxBlock int
@@ -70,22 +72,33 @@ func NewChain(mods ...Module) *Chain {
 	return c
 }
 
-// DefaultOrder é a ordem padrão: gate e compressor na frente do amp; EQ e os outros pedais no loop de efeitos.
-var DefaultOrder = []string{"gate", "comp", PreID, "eq", "chorus", "flanger", "phaser", "vibrato", "tremolo", "delay", "reverb", PowerID, CabID}
+// DefaultOrder é a ordem padrão: dinâmica, wah, oitavador e drive na frente do amp; EQ,
+// modulações, pitch e ambiências no loop de efeitos. Um pedal adicionado entra na posição
+// dele nesta ordem.
+var DefaultOrder = []string{"gate", "comp", "wah", "octave", "drive", PreID, "eq", "chorus", "flanger", "phaser", "vibe", "vibrato", "tremolo", "rotary", "pitch", "delay", "reverb", PowerID, CabID}
+
+// StartOrder é a cadeia com que o app abre: o gate e o amp (os outros pedais são
+// adicionados pelo "+").
+var StartOrder = []string{"gate", PreID, PowerID, CabID}
 
 // NewDefaultChain monta a cadeia padrão (DefaultOrder). Gate e amp começam ligados;
 // os outros pedais, desligados.
 func NewDefaultChain() *Chain {
 	pre, pow := NewPre(), NewPower()
 	pow.FollowAmpMode(pre)
-	c := NewChain(NewGate(), NewCompressor(), pre, NewEQ(), NewChorus(), NewFlanger(), NewPhaser(), NewVibrato(), NewTremolo(), NewDelay(), NewReverb(), pow, NewCab())
-	for _, id := range []string{"comp", "eq", "chorus", "flanger", "phaser", "vibrato", "tremolo", "delay", "reverb"} {
+	c := NewChain(NewGate(), NewCompressor(), NewWah(), NewOctave(), NewDrive(), pre, NewEQ(), NewChorus(), NewFlanger(),
+		NewPhaser(), NewVibe(), NewVibrato(), NewTremolo(), NewRotary(), NewPitch(), NewDelay(), NewReverb(), pow, NewCab())
+	for _, m := range c.AllModules() { // pedais começam desligados (o gate e o amp, ligados)
+		id := m.ID()
+		if id == "gate" || Required(id) {
+			continue
+		}
 		c.SetEnabled(id, false)
 	}
 	return c
 }
 
-// Modules devolve os módulos na ordem da cadeia (a última pedida).
+// Modules devolve os módulos que estão na cadeia, na ordem (a última pedida).
 func (c *Chain) Modules() []Module {
 	ord := *c.want.Load()
 	out := make([]Module, len(ord))
@@ -93,6 +106,78 @@ func (c *Chain) Modules() []Module {
 		out[i] = s.m
 	}
 	return out
+}
+
+// AllModules devolve todos os módulos, inclusive os que estão fora da cadeia (na ordem de criação).
+func (c *Chain) AllModules() []Module {
+	out := make([]Module, len(c.all))
+	for i, s := range c.all {
+		out[i] = s.m
+	}
+	return out
+}
+
+// Required informa se o módulo é obrigatório na cadeia (as três partes do amp).
+func Required(id string) bool { return id == PreID || id == PowerID || id == CabID }
+
+// InChain informa se o módulo está na cadeia.
+func (c *Chain) InChain(id string) bool { return slices.Contains(c.Order(), id) }
+
+// Available devolve os módulos fora da cadeia (que podem ser adicionados), na ordem de criação.
+func (c *Chain) Available() []Module {
+	ord := *c.want.Load()
+	var out []Module
+	for _, s := range c.all {
+		if !slices.Contains(ord, s) {
+			out = append(out, s.m)
+		}
+	}
+	return out
+}
+
+// Add coloca um módulo na cadeia, ligado, na posição padrão: logo depois do módulo que o
+// precede na ordem de criação (DefaultOrder) e está na cadeia. Seguro com o áudio rodando.
+func (c *Chain) Add(id string) error {
+	s := c.byID[id]
+	if s == nil {
+		return fmt.Errorf("módulo desconhecido: %q", id)
+	}
+	ids := c.Order()
+	if slices.Contains(ids, id) {
+		return c.SetEnabled(id, true)
+	}
+	s.enabled.Store(true)
+	return c.SetOrder(insertDefault(ids, id, c.allIDs()))
+}
+
+// insertDefault insere id em ids logo depois do módulo que o precede em ref e está em ids.
+func insertDefault(ids []string, id string, ref []string) []string {
+	pos := 0
+	if i := slices.Index(ref, id); i > 0 {
+		for j := i - 1; j >= 0; j-- {
+			if k := slices.Index(ids, ref[j]); k >= 0 {
+				pos = k + 1
+				break
+			}
+		}
+	}
+	return slices.Insert(slices.Clone(ids), pos, id)
+}
+
+// Remove tira um módulo da cadeia (as partes do amp não saem). Seguro com o áudio rodando.
+func (c *Chain) Remove(id string) error {
+	if c.byID[id] == nil {
+		return fmt.Errorf("módulo desconhecido: %q", id)
+	}
+	if Required(id) {
+		return fmt.Errorf("%q faz parte do amp e não sai da cadeia", id)
+	}
+	ids := c.Order()
+	i := slices.Index(ids, id)
+	if i < 0 {
+		return nil
+	}
+	return c.SetOrder(slices.Delete(ids, i, i+1))
 }
 
 // Module busca um módulo pelo ID (nil se não existir).
@@ -140,8 +225,8 @@ func (c *Chain) Order() []string {
 	return ids
 }
 
-// SetOrder define a ordem completa da cadeia. Precisa conter todos os módulos uma vez,
-// com pre antes de power e power antes de cab. Seguro com o áudio rodando: a troca
+// SetOrder define a cadeia: os módulos presentes, na ordem. Cada um aparece uma vez; pre,
+// power e cab são obrigatórios, nessa ordem. Os módulos de fora não são processados. Seguro com o áudio rodando: a troca
 // acontece com uma rampa curta, sem estalo.
 func (c *Chain) SetOrder(ids []string) error {
 	ord, err := c.validate(ids)
@@ -195,10 +280,6 @@ func (c *Chain) moveRel(id, ref string, off int) error {
 }
 
 func (c *Chain) validate(ids []string) ([]*slot, error) {
-	if len(ids) != len(c.all) {
-		return nil, fmt.Errorf("a ordem precisa ter os %d módulos (%s), veio %d",
-			len(c.all), strings.Join(c.allIDs(), ", "), len(ids))
-	}
 	seen := make(map[string]bool, len(ids))
 	ord := make([]*slot, len(ids))
 	for i, id := range ids {
@@ -211,6 +292,11 @@ func (c *Chain) validate(ids []string) ([]*slot, error) {
 		}
 		seen[id] = true
 		ord[i] = s
+	}
+	for _, id := range []string{PreID, PowerID, CabID} {
+		if c.byID[id] != nil && !seen[id] {
+			return nil, fmt.Errorf("a cadeia precisa ter %q (parte do amp)", id)
+		}
 	}
 	pos := func(id string) int { return slices.Index(ids, id) }
 	if p, w := pos(PreID), pos(PowerID); p >= 0 && w >= 0 && p > w {
@@ -304,11 +390,12 @@ func (c *Chain) Reset() {
 	}
 }
 
-// Latency devolve a latência total em amostras. É constante: módulos em bypass
-// continuam atrasando o sinal seco, e a ordem não muda a soma.
+// Latency devolve a latência total em amostras dos módulos na cadeia. Ligar e desligar
+// não muda (módulos em bypass continuam atrasando o sinal seco), nem a ordem; só
+// adicionar ou remover um módulo com latência (ex.: o drive, com oversampling).
 func (c *Chain) Latency() int {
 	total := 0
-	for _, s := range c.all {
+	for _, s := range *c.want.Load() {
 		total += s.m.Latency()
 	}
 	return total
@@ -337,7 +424,7 @@ func (c *Chain) reorderRamp(b []float64, want *[]*slot) {
 			if c.rgain <= 0 {
 				c.rgain = 0
 				clear(b[i:])
-				c.active = want // a nova ordem vale a partir do próximo bloco
+				c.enterOrder(want) // a nova ordem vale a partir do próximo bloco
 				return
 			}
 		} else if c.rgain < 1 {
@@ -345,6 +432,24 @@ func (c *Chain) reorderRamp(b []float64, want *[]*slot) {
 		}
 		b[i] *= c.rgain
 	}
+}
+
+// enterOrder troca para a nova ordem; os módulos que entram na cadeia começam limpos
+// (sem o resto de quando saíram). Não aloca.
+func (c *Chain) enterOrder(want *[]*slot) {
+	c.gen++
+	for _, s := range *c.active {
+		s.mark = c.gen
+	}
+	for _, s := range *want {
+		if s.mark != c.gen {
+			s.m.Reset()
+			if s.dryLine != nil {
+				s.dryLine.Reset()
+			}
+		}
+	}
+	c.active = want
 }
 
 // Process é a interface multicanal (float32) usada pelo app e pelo plugin:

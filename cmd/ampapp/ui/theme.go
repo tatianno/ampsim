@@ -61,6 +61,12 @@ type PedalStyle struct {
 var pedalStyles = map[string]PedalStyle{
 	"gate":    {Body: rgb(0x3a3f44), Text: rgb(0xf2f2f2), Knob: rgb(0x111111)},
 	"eq":      {Body: rgb(0xc4c8cd), Text: rgb(0x16191c), Knob: rgb(0x1a1a1a)},
+	"drive":   {Body: rgb(0x8c1d1d), Text: rgb(0xfbe9d7), Knob: rgb(0x151515)},
+	"wah":     {Body: rgb(0x8bc34a), Text: rgb(0x16220a), Knob: rgb(0x1a1a1a)},
+	"octave":  {Body: rgb(0x16867a), Text: rgb(0xe6fbf7), Knob: rgb(0x111111)},
+	"rotary":  {Body: rgb(0x7a4a24), Text: rgb(0xf6e3c8), Knob: rgb(0x151515)},
+	"vibe":    {Body: rgb(0x3b2a4a), Text: rgb(0xe9dcf7), Knob: rgb(0x111111)},
+	"pitch":   {Body: rgb(0x0f6fb0), Text: rgb(0xeaf4fb), Knob: rgb(0x111111)},
 	"comp":    {Body: rgb(0xb8322a), Text: rgb(0xfbeee6), Knob: rgb(0x151515)},
 	"chorus":  {Body: rgb(0x4aa3c9), Text: rgb(0x0d2633), Knob: rgb(0x1a1a1a)},
 	"flanger": {Body: rgb(0x7b4fa8), Text: rgb(0xf4ecff), Knob: rgb(0x1a1a1a)},

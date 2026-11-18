@@ -48,6 +48,7 @@ type App struct {
 	th        *Theme
 	transport *Transport
 	head      *Head
+	addPedal  *AddPedal
 	about     *About
 	aboutBtn  widget.Clickable
 	namList   *AssetList
@@ -130,9 +131,14 @@ func NewApp(s *audio.Session) *App {
 	}
 	a.cab = NewCabPanel(chain)
 	a.board = NewBoard(chain)
-	for _, m := range chain.Modules() {
+	a.addPedal = NewAddPedal(chain)
+	a.board.OnAdd = func() { a.open = AddPedalID }
+	a.addPedal.OnAdded = func(id string) { a.open = id } // abre o pedal recém-adicionado
+	for _, m := range chain.AllModules() {               // inclusive os de fora da cadeia (podem ser adicionados)
 		if !isAmpBlock(m.ID()) {
-			a.pedals[m.ID()] = NewPedal(chain, m)
+			p := NewPedal(chain, m)
+			p.OnRemoved = func() { a.open = "" }
+			a.pedals[m.ID()] = p
 		}
 	}
 	a.board.OnOpen = func(id string) {
@@ -171,7 +177,7 @@ func (a *App) Open(id string) {
 	switch id {
 	case AudioID:
 		a.input.OnAudio()
-	case PresetListID, TunerID, AboutID, NAMListID, IRListID:
+	case PresetListID, TunerID, AboutID, NAMListID, IRListID, AddPedalID:
 		a.open = id
 	case RecordingsID:
 		a.recs.dir = a.RecordDir
@@ -331,7 +337,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 						layout.Rigid(spacer(0, 6)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.board.Layout(gtx, th) }),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return drawText(gtx, th, "clique: abrir o pedal  ·  LED: liga/desliga  ·  arraste: muda a ordem (entre o amp e o POWER = loop de efeitos)",
+							return drawText(gtx, th, "clique: abrir o pedal  ·  LED: liga/desliga  ·  arraste: muda a ordem (entre o amp e o POWER = loop de efeitos)  ·  +: adicionar pedal",
 								textOpts{size: 11, color: withAlpha(th.Dim, 200)})
 						}),
 					)
@@ -511,6 +517,8 @@ func (a *App) overlay(gtx layout.Context) {
 		content = func(gtx layout.Context) layout.Dimensions { return a.recs.Layout(gtx, th) }
 	} else if a.open == TunerID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.tuner.Layout(gtx, th) }
+	} else if a.open == AddPedalID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.addPedal.Layout(gtx, th) }
 	} else if a.open == AboutID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.about.Layout(gtx, th) }
 	} else if a.open == IRListID {

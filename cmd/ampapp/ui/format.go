@@ -43,6 +43,11 @@ func FormatValue(in engine.ParamInfo, v float64) string {
 		s = fmt.Sprintf("%.0f%%", v)
 	case ":1": // razão de compressão
 		s = fmt.Sprintf("%.1f:1", v)
+	case "st": // semitons
+		s = fmt.Sprintf("%+.0f st", v)
+		if v == 0 {
+			s = "0 st"
+		}
 	case "oct":
 		s = fmt.Sprintf("%.1f oct", v)
 	case "":

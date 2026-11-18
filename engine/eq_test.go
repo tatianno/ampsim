@@ -106,3 +106,36 @@ func TestTapTempoDoTremolo(t *testing.T) {
 		}
 	}
 }
+
+// Trocar o modo do drive ao vivo: crossfade (sem salto) e sem alocar.
+func TestDriveTrocaDeModo(t *testing.T) {
+	m := NewDrive()
+	m.Param("drive").Set(3)
+	m.Prepare(48000, 256)
+	buf := make([]float64, 256)
+	k, prev, maxJump := 0, 0.0, 0.0
+	run := func() {
+		for i := range buf {
+			buf[i] = 0.2 * math.Sin(float64(k*256+i)*2*math.Pi*110/48000)
+		}
+		m.Process(buf)
+		for _, v := range buf {
+			maxJump = math.Max(maxJump, math.Abs(v-prev))
+			prev = v
+		}
+		k++
+	}
+	for i := 0; i < 40; i++ {
+		run()
+	}
+	base := maxJump
+	if a := testing.AllocsPerRun(80, func() {
+		m.Param("mode").Set(float64(k / 10 % 4)) // troca a cada 10 blocos
+		run()
+	}); a != 0 {
+		t.Errorf("aloca %.0f vezes por bloco", a)
+	}
+	if maxJump > 3*base+0.05 {
+		t.Errorf("salto de %.3f nas trocas de modo (sem troca: %.3f)", maxJump, base)
+	}
+}

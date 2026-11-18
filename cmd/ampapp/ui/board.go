@@ -16,6 +16,7 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
+	"gioui.org/widget"
 
 	"github.com/tatianno/ampsim/engine"
 )
@@ -24,12 +25,15 @@ import (
 //
 //   - clicar num pedal abre o pedal (OnOpen);
 //   - clicar no LED de um bloco liga/desliga;
-//   - arrastar um pedal reordena a cadeia (soltar entre PRÉ e POWER = loop de efeitos).
+//   - arrastar um pedal reordena a cadeia (soltar entre PRÉ e POWER = loop de efeitos);
+//   - o bloco "+" no fim abre a lista de pedais para adicionar (OnAdd).
 //
 // Os blocos do amp (PRÉ, POWER, CAB) ficam fixos; só os pedais se movem.
 type Board struct {
 	chain  *engine.Chain
 	OnOpen func(id string)
+	OnAdd  func()
+	add    widget.Clickable
 
 	chips map[string]*chip
 
@@ -155,14 +159,18 @@ func (b *Board) ledHit(p f32.Point) bool {
 // Layout desenha a faixa.
 func (b *Board) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	b.update(gtx)
+	if b.add.Clicked(gtx) && b.OnAdd != nil {
+		b.OnAdd()
+	}
 
 	ids := b.chain.Order()
 	n := len(ids)
 	b.gapPx = gtx.Dp(10)
-	b.chipW = min(gtx.Dp(108), (gtx.Constraints.Max.X-(n-1)*b.gapPx)/n)
+	plusW := gtx.Dp(40) // bloco "+"
+	b.chipW = min(gtx.Dp(108), (gtx.Constraints.Max.X-n*b.gapPx-plusW)/n)
 	b.chipH = gtx.Dp(64)
 	b.top = gtx.Dp(22)
-	totalW := b.slotX(n-1) + b.chipW
+	totalW := b.slotX(n) + plusW
 	height := b.top + b.chipH + gtx.Dp(10)
 
 	pre, pow := slices.Index(ids, engine.PreID), slices.Index(ids, engine.PowerID)
@@ -207,6 +215,26 @@ func (b *Board) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 			area.Pop()
 		}()
 	}
+
+	// bloco "+": adicionar pedal
+	func() {
+		defer offset(gtx.Ops, b.slotX(n), b.top).Pop()
+		b.add.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+			sz := image.Pt(plusW, b.chipH)
+			bg := withAlpha(th.Gold, 30)
+			if b.add.Hovered() {
+				bg = withAlpha(th.Gold, 60)
+			}
+			fillRRect(gtx.Ops, image.Rectangle{Max: sz}, gtx.Dp(8), bg)
+			strokeRRect(gtx, image.Rectangle{Max: sz}, gtx.Dp(8), withAlpha(th.Gold, 140))
+			c := f32.Pt(float32(sz.X)/2, float32(sz.Y)/2)
+			r := float32(gtx.Dp(9))
+			strokeLine(gtx.Ops, f32.Pt(c.X-r, c.Y), f32.Pt(c.X+r, c.Y), float32(gtx.Dp(2.5)), th.Gold)
+			strokeLine(gtx.Ops, f32.Pt(c.X, c.Y-r), f32.Pt(c.X, c.Y+r), float32(gtx.Dp(2.5)), th.Gold)
+			pointer.CursorPointer.Add(gtx.Ops)
+			return layout.Dimensions{Size: sz}
+		})
+	}()
 
 	if b.drag.active {
 		// marcador de onde o pedal vai cair

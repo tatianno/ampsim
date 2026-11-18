@@ -85,8 +85,11 @@ func run() error {
 	}
 
 	chain := engine.NewDefaultChain()
-	chain.Pre().Param("amp").Set(engine.AmpNAM) // o app abre no amp NAM (um -preset pode trocar)
-	if optionalFile("ir", *ir) {                // sem IR: o gabinete usa a IR interna (2x12 SM57)
+	chain.Pre().Param("amp").Set(engine.AmpNAM)               // o app abre no amp NAM (um -preset pode trocar)
+	if err := chain.SetOrder(engine.StartOrder); err != nil { // e só com o gate: os pedais entram pelo "+"
+		return err
+	}
+	if optionalFile("ir", *ir) { // sem IR: o gabinete usa a IR interna (2x12 SM57)
 		if err := chain.Cab().LoadIRRef(engine.ResolveIR(*ir)); err != nil {
 			return err
 		}

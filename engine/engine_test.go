@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/tatianno/ampsim/dsp"
 	"github.com/tatianno/ampsim/wav"
 )
 
@@ -101,8 +102,8 @@ func TestBypassMantemLatencia(t *testing.T) {
 	}
 	c.Prepare(fs, 128)
 	lat := c.Latency()
-	if lat != 32 {
-		t.Errorf("latência %d, esperava 32", lat)
+	if want := dsp.PreampLatency + dsp.DriveLatency; lat != want { // os únicos com latência
+		t.Errorf("latência %d, esperava %d", lat, want)
 	}
 	x := di[:10000]
 	out := append([]float64(nil), x...)
@@ -201,7 +202,7 @@ func TestPresetIdaEVolta(t *testing.T) {
 		t.Errorf("IR = %q", c.Cab().IRPath())
 	}
 
-	st.Modules = append(st.Modules, ModuleState{ID: "wah"})
+	st.Modules = append(st.Modules, ModuleState{ID: "talkbox"})
 	if err := c.ApplyState(st); err == nil {
 		t.Error("módulo desconhecido deveria gerar erro")
 	}
@@ -267,9 +268,9 @@ func TestCrossfadeDeBypass(t *testing.T) {
 func TestOrdemValidacao(t *testing.T) {
 	c := NewDefaultChain()
 	ruins := map[string][]string{
-		"faltando":        {"gate", PreID, PowerID, CabID},
+		"sem o power":     {"gate", PreID, CabID},
 		"repetido":        {"gate", PreID, "chorus", "chorus", "phaser", "delay", "reverb", PowerID, CabID},
-		"desconhecido":    {"gate", PreID, "chorus", "wah", "phaser", "delay", "reverb", PowerID, CabID},
+		"desconhecido":    {"gate", PreID, "chorus", "talkbox", "phaser", "delay", "reverb", PowerID, CabID},
 		"power antes pre": {"gate", PowerID, "chorus", "flanger", "phaser", "delay", "reverb", PreID, CabID},
 		"cab antes power": {"gate", PreID, "chorus", "flanger", "phaser", "delay", "reverb", CabID, PowerID},
 	}
@@ -292,7 +293,9 @@ func TestOrdemValidacao(t *testing.T) {
 	if err := c.MoveBefore("chorus", PreID); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"gate", "comp", "chorus", PreID, "eq", "flanger", "phaser", "vibrato", "tremolo", "reverb", PowerID, CabID, "delay"}
+	want := slices.DeleteFunc(slices.Clone(DefaultOrder), func(id string) bool { return id == "delay" || id == "chorus" })
+	want = append(want, "delay")
+	want = slices.Insert(want, slices.Index(want, PreID), "chorus")
 	if got := c.Order(); !slices.Equal(got, want) {
 		t.Errorf("ordem %v, esperava %v", got, want)
 	}
@@ -417,8 +420,9 @@ func TestPresetV1Migracao(t *testing.T) {
 	if c.Cab().IRPath() != irPath {
 		t.Errorf("IR = %q", c.Cab().IRPath())
 	}
-	if !slices.Equal(c.Order(), DefaultOrder) {
-		t.Error("preset v1 não define ordem: tem que ficar a padrão")
+	// v1 não tinha ordem: ficam na cadeia o amp e os pedais ligados, na ordem padrão
+	if want := []string{PreID, "delay", PowerID, CabID}; !slices.Equal(c.Order(), want) {
+		t.Errorf("ordem %v, esperava %v", c.Order(), want)
 	}
 }
 
@@ -440,11 +444,14 @@ func TestCabFiltrosAoVivoSemAlocacao(t *testing.T) {
 
 func TestDescricaoDaCadeia(t *testing.T) {
 	c := NewDefaultChain()
+	if err := c.SetOrder([]string{"gate", "comp", PreID, "eq", "chorus", "delay", "reverb", PowerID, CabID}); err != nil {
+		t.Fatal(err)
+	}
 	c.SetEnabled("delay", true)
 	if err := c.MoveAfter("reverb", CabID); err != nil {
 		t.Fatal(err)
 	}
-	want := "Gate → Compressor (off) → Pré-amp → [loop: EQ (off) → Chorus (off) → Flanger (off) → Phaser (off) → Vibrato (off) → Tremolo (off) → Delay] → Power amp → Gabinete → Reverb (off)"
+	want := "Gate → Compressor (off) → Pré-amp → [loop: EQ (off) → Chorus (off) → Delay] → Power amp → Gabinete → Reverb (off)"
 	if got := c.String(); got != want {
 		t.Errorf("\n got: %s\nwant: %s", got, want)
 	}
@@ -461,27 +468,9 @@ func precisa(t *testing.T, paths ...string) {
 	}
 }
 
-func TestMergeOrder(t *testing.T) {
-	atual := DefaultOrder // gate, comp, pre, eq, chorus, flanger, phaser, vibrato, tremolo, delay, reverb, power, cab
-	casos := []struct {
-		preset, want []string
-	}{
-		// preset antigo (sem compressor), com o delay depois do gabinete
-		{[]string{"gate", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"},
-			[]string{"gate", "comp", PreID, "eq", "chorus", "flanger", "phaser", "vibrato", "tremolo", "reverb", PowerID, CabID, "delay"}},
-		// preset completo: igual
-		{DefaultOrder, DefaultOrder},
-		// id desconhecido é ignorado; o resto completa
-		{[]string{"wah", PreID, PowerID, CabID}, []string{"gate", "comp", PreID, "eq", "chorus", "flanger", "phaser", "vibrato", "tremolo", "delay", "reverb", PowerID, CabID}},
-	}
-	for _, c := range casos {
-		if got := MergeOrder(c.preset, atual); !slices.Equal(got, c.want) {
-			t.Errorf("MergeOrder(%v)\n got %v\nwant %v", c.preset, got, c.want)
-		}
-	}
-}
-
 // Preset salvo antes do compressor existir: a ordem do preset vale e o compressor entra no lugar padrão.
+// Preset da versão 2 (listava todos os módulos): ficam na cadeia os ligados e o amp, na
+// ordem do preset; os desligados saem (não mudavam o som).
 func TestPresetAntigoSemCompressor(t *testing.T) {
 	st := State{Version: 2}
 	for _, id := range []string{"gate", PreID, "chorus", "flanger", "phaser", "reverb", PowerID, CabID, "delay"} {
@@ -491,12 +480,9 @@ func TestPresetAntigoSemCompressor(t *testing.T) {
 	if err := c.ApplyState(st); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"gate", "comp", PreID, "eq", "chorus", "flanger", "phaser", "vibrato", "tremolo", "reverb", PowerID, CabID, "delay"}
+	want := []string{"gate", PreID, PowerID, CabID, "delay"}
 	if !slices.Equal(c.Order(), want) {
 		t.Errorf("ordem %v, esperava %v", c.Order(), want)
-	}
-	if c.Enabled("comp") {
-		t.Error("o compressor não estava no preset: deveria continuar como estava (desligado)")
 	}
 }
 
@@ -693,5 +679,99 @@ func TestGabineteInternoSemIR(t *testing.T) {
 	}
 	if NewDefaultChain().Cab().IRPath() != "" {
 		t.Error("sem IR carregada, IRPath é vazio")
+	}
+}
+
+// Adicionar e remover pedais: posição padrão, partes do amp fixas, estado v3 só com os
+// presentes, latência só dos presentes e o pedal que volta começa limpo.
+func TestAdicionarERemover(t *testing.T) {
+	c := NewDefaultChain()
+	if err := c.SetOrder([]string{"gate", PreID, PowerID, CabID}); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Add("delay"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Add("comp"); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Add("chorus"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"gate", "comp", PreID, "chorus", "delay", PowerID, CabID}
+	if !slices.Equal(c.Order(), want) || !c.Enabled("delay") {
+		t.Fatalf("ordem %v (delay ligado: %v), esperava %v", c.Order(), c.Enabled("delay"), want)
+	}
+	if err := c.Remove(PowerID); err == nil {
+		t.Error("o power não pode sair da cadeia")
+	}
+	if err := c.Remove("chorus"); err != nil || c.InChain("chorus") {
+		t.Errorf("remover o chorus: %v", err)
+	}
+	av := c.Available()
+	if len(av)+len(c.Order()) != len(c.AllModules()) {
+		t.Error("disponíveis + na cadeia = todos")
+	}
+	// estado só com os presentes, e volta igual
+	st := c.State()
+	if st.Version != 3 || len(st.Modules) != len(c.Order()) {
+		t.Fatalf("estado v%d com %d módulos", st.Version, len(st.Modules))
+	}
+	d := NewDefaultChain()
+	if err := d.ApplyState(st); err != nil || !slices.Equal(d.Order(), c.Order()) {
+		t.Errorf("aplicar o estado: %v, ordem %v", err, d.Order())
+	}
+	// latência: só dos presentes (o pré tem a do oversampling)
+	if c.Latency() != NewChain(NewPre()).Latency() {
+		t.Errorf("latência %d", c.Latency())
+	}
+	// ligar pela lista adiciona
+	if err := c.EnableList("reverb", true); err != nil || !c.InChain("reverb") {
+		t.Errorf("on reverb: %v", err)
+	}
+}
+
+// Ao vivo: o pedal que entra começa limpo (sem a cauda de quando saiu) e não aloca.
+func TestAdicionarAoVivo(t *testing.T) {
+	c := NewChain(NewGate(), NewDelay()) // só o delay soa (o gate fica desligado)
+	c.SetEnabled("gate", false)
+	c.Module("delay").Param("mix").Set(100)
+	c.Prepare(48000, 256)
+	buf := make([]float64, 256)
+	buf[0] = 1
+	c.ProcessMono(buf) // impulso entra no delay
+	if err := c.Remove("delay"); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 10; i++ { // rampa de troca
+		clear(buf)
+		c.ProcessMono(buf)
+	}
+	if err := c.Add("delay"); err != nil {
+		t.Fatal(err)
+	}
+	peak := 0.0
+	for i := 0; i < 200; i++ { // 1 s: o eco do impulso antigo não pode aparecer
+		clear(buf)
+		c.ProcessMono(buf)
+		for _, v := range buf {
+			peak = math.Max(peak, math.Abs(v))
+		}
+	}
+	if peak > 1e-6 {
+		t.Errorf("o delay voltou com a cauda antiga (pico %g)", peak)
+	}
+	// trocar de pedais com o áudio rodando não aloca na thread de áudio
+	d := NewDefaultChain()
+	d.Prepare(48000, 256)
+	ords := [][]string{{PreID, PowerID, CabID}, {"gate", PreID, "delay", PowerID, CabID}}
+	for _, o := range ords { // as ordens já validadas (SetOrder aloca, mas fora do áudio)
+		d.SetOrder(o)
+		for i := 0; i < 5; i++ {
+			d.ProcessMono(buf)
+		}
+	}
+	if a := testing.AllocsPerRun(30, func() { d.ProcessMono(buf) }); a != 0 {
+		t.Errorf("processar aloca %.0f vezes", a)
 	}
 }

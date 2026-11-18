@@ -11,8 +11,9 @@ import (
 // StateVersion é a versão do formato de preset.
 //
 //	1: um módulo "amp" único (Fase 1).
-//	2: amp dividido em pre/power/cab e a lista de módulos na ordem da cadeia.
-const StateVersion = 2
+//	2: amp dividido em pre/power/cab e a lista de módulos na ordem da cadeia (todos).
+//	3: a lista tem só os módulos que estão na cadeia (os outros ficam de fora).
+const StateVersion = 3
 
 // State é o estado completo da cadeia: o mesmo JSON serve de preset no app e de state no plugin.
 // Na versão 2, Modules vem na ordem da cadeia; um preset com todos os módulos define a ordem.
@@ -48,15 +49,20 @@ func (c *Chain) State() State {
 
 // ApplyState aplica um estado. Parâmetros ausentes ficam como estão; módulos ou
 // parâmetros desconhecidos geram erro (mas o resto é aplicado).
+//
+// A cadeia passa a ter os módulos do estado, na ordem dele (e as partes do amp, se faltarem).
+// Num estado da versão 2, que listava todos os módulos, ficam na cadeia só os ligados: os
+// desligados não mudavam o som.
 func (c *Chain) ApplyState(st State) error {
 	var errs []error
 	if st.Version > StateVersion {
 		errs = append(errs, fmt.Errorf("preset versão %d é mais nova que a suportada (%d)", st.Version, StateVersion))
 	}
-	applyOrder := st.Version >= 2
-	if st.Version < 2 {
+	v1 := st.Version < 2
+	if v1 {
 		st = migrateV1(st)
 	}
+	var ids []string
 	for _, ms := range st.Modules {
 		s := c.byID[ms.ID]
 		if s == nil {
@@ -77,15 +83,21 @@ func (c *Chain) ApplyState(st State) error {
 				errs = append(errs, fmt.Errorf("%s: %w", ms.ID, err))
 			}
 		}
-	}
-	if applyOrder && len(st.Modules) > 0 {
-		ids := make([]string, len(st.Modules))
-		for i, ms := range st.Modules {
-			ids[i] = ms.ID
+		if (st.Version >= 3 || ms.Enabled || Required(ms.ID)) && !slices.Contains(ids, ms.ID) {
+			ids = append(ids, ms.ID)
 		}
-		// Preset de antes de um módulo novo existir (ex.: compressor): mantém a ordem do
-		// preset e encaixa os módulos que faltam na posição em que estão agora.
-		if err := c.SetOrder(MergeOrder(ids, c.Order())); err != nil {
+	}
+	if v1 { // a versão 1 não tinha ordem: cada um na posição padrão
+		all := c.allIDs()
+		slices.SortFunc(ids, func(a, b string) int { return slices.Index(all, a) - slices.Index(all, b) })
+	}
+	if len(st.Modules) > 0 {
+		for _, r := range []string{PreID, PowerID, CabID} {
+			if c.byID[r] != nil && !slices.Contains(ids, r) {
+				ids = insertDefault(ids, r, c.allIDs())
+			}
+		}
+		if err := c.SetOrder(ids); err != nil {
 			errs = append(errs, fmt.Errorf("ordem do preset: %w", err))
 		}
 	}
@@ -138,34 +150,4 @@ func (c *Chain) LoadState(path string) error {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	return c.ApplyState(st)
-}
-
-// MergeOrder completa a ordem de um preset (preset) com os módulos que faltam: cada módulo
-// ausente entra logo depois do módulo que o precede em current (ou no início, se nenhum
-// predecessor estiver no preset). IDs do preset que não existem em current são ignorados.
-func MergeOrder(preset, current []string) []string {
-	known := make(map[string]bool, len(current))
-	for _, id := range current {
-		known[id] = true
-	}
-	var out []string
-	for _, id := range preset {
-		if known[id] && !slices.Contains(out, id) {
-			out = append(out, id)
-		}
-	}
-	for i, id := range current {
-		if slices.Contains(out, id) {
-			continue
-		}
-		pos := 0
-		for j := i - 1; j >= 0; j-- {
-			if k := slices.Index(out, current[j]); k >= 0 {
-				pos = k + 1
-				break
-			}
-		}
-		out = slices.Insert(out, pos, id)
-	}
-	return out
 }

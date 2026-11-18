@@ -184,3 +184,36 @@ func TestTapTempoDoTremolo(t *testing.T) {
 		t.Errorf("andamento global de 100 BPM: delay %.1f ms, tremolo %.1f BPM", delay.Get(), tr.BPM())
 	}
 }
+
+func TestAdicionarERemoverPedal(t *testing.T) {
+	a, _ := novoApp(t)
+	if err := a.Chain.SetOrder(engine.StartOrder); err != nil {
+		t.Fatal(err)
+	}
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.board.add.Click()
+	h.frame(a.Layout)
+	if a.Opened() != AddPedalID {
+		t.Fatalf("aberto %q, esperava a lista de adicionar", a.Opened())
+	}
+	h.frame(a.Layout)
+	a.addPedal.btns["delay"].Click()
+	h.frame(a.Layout)
+	if !a.Chain.InChain("delay") || !a.Chain.Enabled("delay") {
+		t.Fatal("o delay deveria entrar na cadeia, ligado")
+	}
+	if a.Opened() != "delay" {
+		t.Errorf("depois de adicionar, o pedal abre; aberto %q", a.Opened())
+	}
+	h.frame(a.Layout)
+	a.pedals["delay"].rm.Click()
+	h.frame(a.Layout)
+	if a.Chain.InChain("delay") || a.Opened() != "" {
+		t.Errorf("remover: na cadeia %v, aberto %q", a.Chain.InChain("delay"), a.Opened())
+	}
+	// com todos na cadeia, a lista avisa (e não quebra)
+	a.Chain.SetOrder(engine.DefaultOrder)
+	a.Open(AddPedalID)
+	h.frame(a.Layout)
+}

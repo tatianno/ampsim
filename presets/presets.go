@@ -43,11 +43,15 @@ func Factory() []Preset {
 	type set map[string]float64
 	mk := func(name string, on []string, params map[string]set) Preset {
 		c := engine.NewDefaultChain()
-		for _, m := range c.Modules() {
-			c.SetEnabled(m.ID(), false)
+		var ids []string // na cadeia: o amp e os pedais do preset, na ordem padrão
+		for _, id := range engine.DefaultOrder {
+			if engine.Required(id) || slices.Contains(on, id) {
+				ids = append(ids, id)
+				c.SetEnabled(id, true)
+			}
 		}
-		for _, id := range append([]string{engine.PreID, engine.PowerID, engine.CabID}, on...) {
-			c.SetEnabled(id, true)
+		if err := c.SetOrder(ids); err != nil {
+			panic(err) // preset de fábrica mal escrito
 		}
 		for mod, ps := range params {
 			for id, v := range ps {

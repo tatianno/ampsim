@@ -4,7 +4,8 @@
 
 Simulador de amplificador de guitarra e pedais em Go, feito como estudo de DSP:
 pré-amp com saturação sobreamostrada, tone stack, power amp, gabinete por resposta ao
-impulso (IR) e pedais de gate, compressor, EQ paramétrico, chorus, flanger, phaser, vibrato, tremolo, delay e reverb — tocando em
+impulso (IR) e 17 pedais: gate, compressor, wah, oitavador, drive (boost/overdrive/distorção/fuzz), EQ
+paramétrico, chorus, flanger, phaser, vibe, vibrato, tremolo, rotary (Leslie), pitch shifter, delay e reverb — tocando em
 tempo real, com GUI.
 
 Os algoritmos começaram como protótipos em Python (`referencia_python/`) e foram portados
@@ -23,6 +24,11 @@ para Go em streaming, validados contra as saídas do Python.
   O app abre no modo NAM.
 - **EQ paramétrico de 5 bandas** (shelf de graves, 3 médios com Q ajustável, shelf de agudos e level), com a curva
   de resposta desenhada no pedal; anda pela cadeia como os outros pedais (padrão: no loop de efeitos).
+- **Monte a sua cadeia**: o botão **+** adiciona pedais (agrupados em dinâmica, drive, filtro, modulação, tom e
+  ambiência) e cada pedal tem **Remover**; a cadeia mostra só o que você usa.
+- **Drive** com 4 modos (Boost, Overdrive, Distorção, Fuzz, ceifamento com oversampling 4x), **Wah** automático
+  (envelope, LFO ou fixo), **Octave** (−1/−2/+1 oitava, estilo OC-2), **Rotary** (Leslie, lento/rápido com
+  aceleração), **Vibe** (chorus/vibrato) e **Pitch** (2 vozes até ±1 oitava, emendas sincronizadas com o período).
 - **Cadeia configurável** com **loop de efeitos** (send/return): os pedais podem ficar na
   frente do amp, entre o pré-amp e o power amp, ou depois do gabinete. A ordem muda ao vivo,
   sem estalo.

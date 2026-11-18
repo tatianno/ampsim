@@ -25,6 +25,9 @@ type Pedal struct {
 	foot  widget.Clickable
 	tap   *TapControl // delay e tremolo
 	eq    *eqView     // só no EQ (curva e knobs por banda)
+	rm    widget.Clickable
+	// OnRemoved é chamado depois de tirar o pedal da cadeia (o app fecha a sobreposição).
+	OnRemoved func()
 }
 
 // NewPedal cria a vista do pedal para o módulo.
@@ -60,6 +63,9 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	if p.foot.Clicked(gtx) {
 		p.chain.SetEnabled(id, !p.chain.Enabled(id))
 	}
+	if p.rm.Clicked(gtx) && p.chain.Remove(id) == nil && p.OnRemoved != nil {
+		p.OnRemoved()
+	}
 	on := p.chain.Enabled(id)
 	st := p.style
 	w := gtx.Dp(PedalWidthDp)
@@ -69,7 +75,10 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Constraints.Max.Y)}
 
 	return panel(gtx, st.Body, 18, 18, func(gtx layout.Context) layout.Dimensions {
-		var rows []layout.FlexChild
+		// "Remover" no canto superior esquerdo (o "×" de fechar fica no direito)
+		rows := []layout.FlexChild{layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return coloredButton(gtx, th, &p.rm, "Remover", 0, withAlpha(rgb(0x000000), 60), st.Text)
+		}), layout.Rigid(spacer(0, 8))}
 		if p.eq != nil {
 			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return p.eq.controls(gtx, th, st, on)

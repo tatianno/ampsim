@@ -74,7 +74,6 @@ func (v *eqView) controls(gtx layout.Context, th *Theme, st PedalStyle, on bool)
 	qRow := v.q
 	qRow[engine.EQBands-1] = v.level // o Level fica na coluna dos agudos, na linha do Q
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
-		layout.Rigid(spacer(0, 22)), // espaço para o "×" de fechar
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions { return v.plot(gtx, th, st, on) }),
 		layout.Rigid(spacer(0, 10)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
