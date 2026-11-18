@@ -154,6 +154,9 @@ valor exibido enquanto gira.
 
 ## 6. Plano de ação (TODO)
 
+> **MVP (primeira entrega):** Fases 0 a 4, ou seja, o app standalone tocando a guitarra **ao vivo** pelo amp e
+> pelos pedais, com GUI. O que vem depois (Fase 5, Fase 6 e o suporte a NAM) é pós-MVP.
+
 ### Fase 0: Preparação ✅
 - [x] Corrigir o ruído no fim do `main.py`: normalizar antes da média estéreo e aplicar fade na DI
 - [x] Arquivar os protótipos Python em `referencia_python/` e os WAVs em `testdata/`
@@ -255,7 +258,7 @@ pela distorção do pré-amp). É por isso que, em amp com distorção, delay e 
 **Ideias para depois:** mais de uma instância do mesmo pedal (ex.: dois delays); um "master" do power amp que controle
 o quanto ele satura.
 
-### Fase 3: GUI (janela funcionando; falta o teste de uso por você)
+### Fase 3: GUI ✅ (concluída em 17/11/2026)
 **Meta:** tela principal completa com knobs e pedais, mexendo no som com o loop tocando.
 
 - [x] Componente **Knob** (`ui/knob.go`): arrastar na vertical (180 dp = faixa inteira; Shift = 5x mais fino),
@@ -286,7 +289,7 @@ o quanto ele satura.
   botão de fechar desenhado (o "×" da fonte era cortado), pedal com 4 knobs em 2 + 2, valores com mais contraste,
   arco a partir do zero em knobs bipolares (feedback −90..+90%)
 - [x] `AMPSIM_ABRIR=<pedal>` abre um pedal ao iniciar (para conferir o visual)
-- [ ] Teste de uso de verdade (arrastar knobs e pedais com o som tocando) e ajustes que aparecerem
+- [x] Teste de uso de verdade (arrastar knobs e pedais com o som tocando): aprovado sem ajustes
 
 **Para compilar a janela no Ubuntu** (uma vez):
 ```
@@ -301,7 +304,7 @@ Depois: `go run ./cmd/ampapp` (janela) · `go run ./cmd/ampapp -console` (consol
 - A janela começa com o player pausado (Play ou barra de espaço); o console continua começando tocando.
 - Presets na GUI (salvar/carregar/de fábrica) ficaram para a Fase 5, como planejado.
 
-### Fase 4: Entrada ao vivo pela guitarra (~1 semana)
+### Fase 4: Entrada ao vivo pela guitarra (~1 semana) — fecha o MVP
 **Meta:** tocar ao vivo com latência total abaixo de ~10 ms.
 
 - [ ] `source/LiveInput`: full-duplex com malgo, escolha do dispositivo e do canal
@@ -331,16 +334,64 @@ Depois: `go run ./cmd/ampapp` (janela) · `go run ./cmd/ampapp -console` (consol
 - [ ] (Opcional) LADSPA, que é mais simples, sem seletor de IR
 - [ ] (Opcional, longo prazo) GUI própria no plugin; CLAP ou VST3
 
+### Pós-MVP: suporte a modelos NAM (Neural Amp Modeler) (~1,5 a 2 semanas)
+**Decidido em 18/11/2026:** fica para depois da entrega do MVP. A ordem em relação às Fases 5 e 6 será decidida então.
+Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada).
+
+**Meta:** carregar um arquivo `.nam` e tocar com ele no lugar do amp simulado.
+
+**O formato:** JSON com `architecture` (quase sempre `WaveNet`; às vezes `LSTM`; raramente `ConvNet`/`Linear`),
+`config` (camadas, canais, kernel, dilatações), `weights` (vetor com todos os pesos), `sample_rate` (normalmente
+48 kHz) e `metadata` (nome, calibração de nível de entrada/saída).
+
+**Decisões e abordagem**
+- **Go puro** (sem cgo/C++), no espírito de estudo e para não complicar o plugin LV2.
+  Alternativa se o desempenho não fechar: cgo com a NeuralAmpModelerCore (C++, MIT, usa Eigen).
+- **WaveNet genérico**, guiado pela `config` do arquivo: o mesmo código roda os tamanhos standard, lite, feather e
+  nano. Suportar "só o lite" não simplifica o código; o lite ajuda na CPU.
+- **Começar validando com capturas lite/feather** (rodam com folga em tempo real); depois medir a CPU com standard
+  e otimizar se precisar.
+- **LSTM fica para depois** (bem menos comum).
+
+**Tarefas**
+- [ ] `nam/`: leitura do `.nam` (JSON) e validação da `config`
+- [ ] WaveNet em streaming: convoluções causais dilatadas com buffers circulares, misturas 1×1, `tanh`, cabeça;
+  sem alocar no `Process`
+- [ ] Validar contra a inferência oficial (pacote Python `neural-amp-modeler` ou a NAM core), como foi feito com o
+  protótipo Python: mesma entrada, comparar saídas
+- [ ] Módulo `nam` no engine como **alternativa ao amp simulado** ("Amp: Simulado | NAM"): substitui `pre` + `power`,
+  seguido do nosso gabinete por IR (desligar a IR em capturas "full rig", que já incluem o gabinete)
+- [ ] Taxa de amostragem: rodar a placa na taxa do modelo (48 kHz) ou reamostrar em tempo real
+- [ ] Calibração de nível a partir da `metadata` (usa o trim da Fase 4)
+- [ ] GUI: seletor de arquivo `.nam`, nome e tamanho do modelo, CPU
+- [ ] Medir a CPU com standard; otimizar se precisar (processar em blocos, desenrolar laços, SIMD experimental do Go)
+- [ ] (Depois) LSTM
+
+**Consequências para o projeto**
+- **Sem knobs de amp:** a captura congela um ajuste do amp; trocar de som = trocar de arquivo. O tone stack atual pode
+  servir de EQ antes/depois.
+- **Loop de efeitos:** como a captura junta pré e power, o "loop" passa a ser entre o amp NAM e o gabinete.
+
+**Custo aproximado (a conferir com arquivos reais):** o custo cresce com o quadrado dos canais.
+
+| Tamanho | Canais (aprox.) | Custo relativo | Em Go puro (estimativa) |
+|---|---|---|---|
+| standard | 16 / 8 | 1× (~14 mil multiplicações por amostra) | pesado; provavelmente precisa otimizar |
+| lite | 12 / 6 | ~0,5× | deve rodar bem |
+| feather | 8 / 4 | ~0,25× | folgado |
+| nano | 4 / 2 | mínimo | folgado |
+
 ## 7. Estimativa total (meio período)
 
 | Marco | Acumulado |
 |---|---|
 | CLI validado contra o Python (Fase 1) | ✅ concluído |
 | App tocando WAV ao vivo (Fase 2) | ✅ concluído |
-| App com GUI (Fase 3) | ~3 semanas a partir daqui |
-| Tocando ao vivo (Fase 4) | ~7 semanas |
+| App com GUI (Fase 3) | ✅ concluído (v0.1.0) |
+| **MVP:** tocando ao vivo (Fase 4) | ~1 semana a partir daqui |
 | Standalone completo (Fase 5) | ~9 semanas |
 | Plugin LV2 no Audacity (Fase 6) | ~11 semanas |
+| Suporte a NAM (pós-MVP) | ~1,5 a 2 semanas, quando for priorizado |
 
 ## 8. Riscos
 
@@ -351,6 +402,7 @@ Depois: `go run ./cmd/ampapp` (janela) · `go run ./cmd/ampapp -console` (consol
 | Diferença de nível entre a DI gravada e a guitarra ao vivo | Trim de entrada com medidor |
 | Dois runtimes Go no mesmo host (plugin) | Um único `.so` para todos os efeitos |
 | GUI do plugin dentro da janela da DAW | Começar com a UI genérica do host |
+| NAM standard pesado demais em Go puro | Validar com lite/feather primeiro; otimizar; em último caso, cgo com a NAM core |
 
 ## 9. Referência Python (`referencia_python/`)
 
