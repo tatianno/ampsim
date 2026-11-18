@@ -45,7 +45,8 @@ para Go em streaming, validados contra as saídas do Python.
   Psicodélico, Modulação, Worship, Ambiente, Synth), cada um com seu amp NAM, gabinete e pedais, todos no mesmo
   volume; e os seus, salvos em `~/.config/ampsim/presets`
   (JSON, o mesmo formato servirá para o futuro plugin LV2); `-preset Metal` funciona no app e no CLI.
-- **Pedaleira de presets** abaixo da cadeia: 6 footswitches por banco, como um controlador (teclas 1 a 6).
+- **Pedaleira de presets** abaixo da cadeia: 6 footswitches por banco, como um controlador (teclas 1 a 6); em
+  **Editar**, escolha o preset de cada footswitch (ou **Restaurar padrão**).
 - **CLI** para processar arquivos offline.
 
 ## Requisitos

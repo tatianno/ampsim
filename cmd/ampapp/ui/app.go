@@ -167,7 +167,11 @@ func NewApp(s *audio.Session) *App {
 // UsePresetDir troca a pasta dos presets do usuário (os testes usam uma pasta temporária).
 func (a *App) UsePresetDir(dir string) {
 	a.presetBar = NewPresetBar(a.Chain, dir, a.setStatus, func(id string) { a.open = id })
-	a.pedalboard = NewPedalboard(a.presetBar)
+	cfg := "" // pedaleira.json fica ao lado da pasta de presets (~/.config/ampsim/)
+	if dir != "" {
+		cfg = filepath.Join(filepath.Dir(dir), "pedaleira.json")
+	}
+	a.pedalboard = NewPedalboard(a.presetBar, cfg, a.setStatus, func(id string) { a.open = id })
 }
 
 // Pedalboard devolve a pedaleira de presets.
@@ -548,6 +552,8 @@ func (a *App) overlay(gtx layout.Context) {
 		content = func(gtx layout.Context) layout.Dimensions { return a.recs.Layout(gtx, th) }
 	} else if a.open == TunerID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.tuner.Layout(gtx, th) }
+	} else if a.open == PedalboardPickID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.pedalboard.PickLayout(gtx, th, closeOverlay) }
 	} else if a.open == AddPedalID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.addPedal.Layout(gtx, th) }
 	} else if a.open == AboutID {

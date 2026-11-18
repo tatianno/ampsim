@@ -327,3 +327,86 @@ func TestPedaleira(t *testing.T) {
 		t.Errorf("banco antes do 1º = o último; está no %d", b.Bank()+1)
 	}
 }
+
+// Configurar os footswitches: escolher o preset de um footswitch, salvar, reabrir, preset
+// apagado e restaurar o padrão.
+func TestPedaleiraConfiguravel(t *testing.T) {
+	a, _ := novoApp(t)
+	cfg := filepath.Join(t.TempDir(), "pedaleira.json")
+	a.pedalboard = NewPedalboard(a.Presets(), cfg, a.setStatus, func(id string) { a.open = id })
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	pb, b := a.Presets(), a.pedalboard
+	if b.Custom() {
+		t.Fatal("começa na ordem padrão")
+	}
+	// modo de edição: o footswitch 1 abre a escolha em vez de trocar de preset
+	b.edit.Click()
+	h.frame(a.Layout)
+	b.sw[0].Click()
+	h.frame(a.Layout)
+	if a.Opened() != PedalboardPickID {
+		t.Fatalf("aberto %q, esperava a escolha do footswitch", a.Opened())
+	}
+	h.frame(a.Layout)
+	metal := -1
+	for i, p := range pb.list {
+		if p.Name == "Metal" {
+			metal = i
+		}
+	}
+	b.rows[metal].Click()
+	h.frame(a.Layout)
+	if a.Opened() != "" || b.slotName(0) != "Metal" || !b.Custom() {
+		t.Fatalf("footswitch 1 = %q (aberto %q)", b.slotName(0), a.Opened())
+	}
+	// fora da edição, o footswitch 1 carrega o Metal; o 2 continua o padrão (Crunch)
+	b.edit.Click()
+	h.frame(a.Layout)
+	b.Press(0)
+	if c, _ := pb.Current(); c.Name != "Metal" {
+		t.Errorf("footswitch 1 carregou %q, esperava Metal", c.Name)
+	}
+	if b.slotName(1) != "Crunch" {
+		t.Errorf("footswitch 2 = %q, esperava o padrão (Crunch)", b.slotName(1))
+	}
+	// salvo em disco: uma pedaleira nova lê a mesma configuração
+	if c := NewPedalboard(pb, cfg, nil, nil); c.slotName(0) != "Metal" {
+		t.Errorf("reaberto: footswitch 1 = %q", c.slotName(0))
+	}
+	// preset que não existe mais: aparece apagado e não faz nada
+	if err := b.Assign(2, "Não Existe"); err != nil {
+		t.Fatal(err)
+	}
+	antes, _ := pb.Current()
+	b.Press(2)
+	if c, _ := pb.Current(); c.Name != antes.Name || b.slotPreset(2) != -1 {
+		t.Error("footswitch com preset apagado não deveria trocar de preset")
+	}
+	// restaurar o padrão: 1º clique arma, 2º confirma; o arquivo some
+	b.edit.Click()
+	h.frame(a.Layout)
+	b.reset.Click()
+	h.frame(a.Layout)
+	if !b.Custom() {
+		t.Fatal("o 1º clique só arma a restauração")
+	}
+	b.reset.Click()
+	h.frame(a.Layout)
+	if b.Custom() || b.slotName(0) != "Clean" {
+		t.Errorf("restaurado: footswitch 1 = %q", b.slotName(0))
+	}
+	if _, err := os.Stat(cfg); !os.IsNotExist(err) {
+		t.Error("restaurar deveria apagar pedaleira.json")
+	}
+}
+
+func TestPedaleiraEdicaoVisual(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	a.open = PedalboardPickID // sem footswitch escolhido: fecha, sem quebrar
+	h.frame(a.Layout)
+	if a.Opened() != "" {
+		t.Error("a escolha sem footswitch deveria fechar")
+	}
+}

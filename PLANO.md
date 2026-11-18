@@ -644,6 +644,10 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 - [x] **Pedaleira de presets** (18/11, `cmd/ampapp/ui/pedalboard.go`): abaixo da cadeia, 6 footswitches por banco
   (◀ BANCO ▶), LED no preset atual, teclas 1 a 6; o banco acompanha o preset atual. Some em janelas com menos de
   720 dp de altura (o rodapé tem prioridade; as teclas continuam valendo). A dica da cadeia subiu para a linha do título
+- [x] **Pedaleira configurável** (18/11): botão "Editar" → clicar num footswitch abre a lista de presets (fábrica,
+  meus e "Vazio"); "Restaurar padrão" (2 cliques) volta à ordem da lista e apaga a configuração. Salva em
+  `~/.config/ampsim/pedaleira.json` (nomes dos presets; preset apagado aparece "(apagado)" e não faz nada); mínimo
+  de 3 bancos; o banco acompanha o preset atual pelo footswitch que o contém
 - [ ] **Controle por MIDI** (futuro; pedido em 18/11):
   - entrada MIDI pelo backend JACK próprio (porta MIDI do cliente `ampsim`) e, nos outros sistemas, pelo backend do
     miniaudio ou uma biblioteca de MIDI
