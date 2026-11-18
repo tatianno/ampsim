@@ -585,11 +585,14 @@ func TestControlesDeArquivoSoComFonteArquivo(t *testing.T) {
 }
 
 func TestGravarPeloRodape(t *testing.T) {
-	a, p := novoApp(t)
+	a, _ := novoApp(t)
 	a.RecordDir = t.TempDir()
 	h := newHarness(1280, 800)
 	h.frame(a.Layout)
-	p.Play()
+	// gravar é para a guitarra ao vivo: o modo da sessão é Guitarra, e no lugar da placa
+	// entra um seno (o teste não tem placa de som)
+	a.Session.SetSource(audio.SourceGuitar)
+	a.Renderer.SetSource(&senoFonte{f: 196})
 	a.recBtn.Click()
 	h.frame(a.Layout)
 	if !a.Session.Recorder.Recording() {
@@ -622,8 +625,10 @@ func TestGravarPeloRodape(t *testing.T) {
 		t.Fatalf("lista %+v", a.recs.list)
 	}
 	h.frame(a.Layout)
+	if a.recs.last.Silent() {
+		t.Errorf("com sinal, a gravação não é muda (pico %.1f dBFS)", a.recs.last.PeakDB)
+	}
 	// "DI (reamp)" abre a guitarra limpa no player, com a fonte em Arquivo, e toca
-	a.Session.SetSource(audio.SourceGuitar)
 	a.recs.rows[0].di.Click()
 	h.frame(a.Layout)
 	for deadline := time.Now().Add(5 * time.Second); a.Opened() != "" && time.Now().Before(deadline); {
@@ -762,5 +767,47 @@ func TestRodapeCabeNaJanelaMinima(t *testing.T) {
 	})
 	if d.Size.X > 960-28 {
 		t.Errorf("o rodapé precisa de %d px e a janela mínima tem %d", d.Size.X, 960-28)
+	}
+}
+
+// Com a fonte em Arquivo, o Gravar não grava (arquivo mudo confundia): explica e aponta o Exportar.
+func TestGravarSoComGuitarra(t *testing.T) {
+	a, _ := novoApp(t)
+	a.RecordDir = t.TempDir()
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.recBtn.Click()
+	h.frame(a.Layout)
+	if a.Session.Recorder.Recording() {
+		t.Fatal("com a fonte em Arquivo, não deveria começar a gravar")
+	}
+	if !a.statusErr || !strings.Contains(a.status, "Exportar") {
+		t.Errorf("status %q", a.status)
+	}
+	if arquivos, _ := filepath.Glob(filepath.Join(a.RecordDir, "*.wav")); len(arquivos) != 0 {
+		t.Errorf("não deveria criar arquivos: %v", arquivos)
+	}
+}
+
+// Guitarra sem sinal: a gravação é marcada como muda e o painel avisa.
+func TestGravacaoMudaAvisa(t *testing.T) {
+	a, _ := novoApp(t)
+	a.RecordDir = t.TempDir()
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.Session.SetSource(audio.SourceGuitar) // sem placa: a entrada fica em silêncio
+	a.recBtn.Click()
+	h.frame(a.Layout)
+	out := make([]float32, 2*256)
+	for k := 0; k < 40; k++ {
+		a.Renderer.Render(out, 2, 256)
+	}
+	a.recBtn.Click()
+	h.frame(a.Layout)
+	if a.recs.last == nil || !a.recs.last.Silent() {
+		t.Fatalf("esperava a gravação marcada como muda: %+v", a.recs.last)
+	}
+	if !a.statusErr {
+		t.Error("o rodapé deveria avisar (em destaque) que a gravação ficou muda")
 	}
 }

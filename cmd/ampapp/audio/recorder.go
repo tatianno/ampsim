@@ -3,6 +3,7 @@ package audio
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -26,8 +27,15 @@ const (
 type Take struct {
 	Out, DI string // arquivos (DI vazio se não gravou a DI)
 	Seconds float64
-	Dropped uint64 // amostras perdidas (o disco não acompanhou)
+	Dropped uint64  // amostras perdidas (o disco não acompanhou)
+	PeakDB  float64 // pico da gravação (dBFS); muito baixo = gravou silêncio
 }
+
+// SilentDB é o pico abaixo do qual uma gravação é considerada muda.
+const SilentDB = -60.0
+
+// Silent informa se a gravação ficou em silêncio (ex.: fonte parada, guitarra sem sinal).
+func (t Take) Silent() bool { return t.PeakDB < SilentDB }
 
 // Recorder grava a saída (e, opcionalmente, a DI: o sinal limpo da entrada, para reamplificar
 // depois). A thread de áudio só copia para filas sem trava; uma goroutine escreve os arquivos.
@@ -37,6 +45,7 @@ type Recorder struct {
 	on              atomic.Bool
 	withDI          atomic.Bool
 	dropped         atomic.Uint64
+	peak            float64 // maior |amostra| da saída (escrito só pela thread de áudio)
 
 	mu      sync.Mutex
 	out, di *wav.StreamWriter
@@ -109,6 +118,7 @@ func (c *Recorder) Start(dir string, withDI bool) (string, error) {
 	for c.drain(nil, c.outRing) || c.drain(nil, c.diRing) { // descarta restos antigos
 	}
 	c.dropped.Store(0)
+	c.peak = 0
 	c.err = nil
 	c.withDI.Store(withDI)
 	c.started = time.Now()
@@ -135,6 +145,7 @@ func (c *Recorder) Stop() (Take, error) {
 	t := c.take
 	t.Seconds = float64(c.out.Samples()) / c.r.SampleRate()
 	t.Dropped = c.dropped.Load()
+	t.PeakDB = 20 * math.Log10(c.peak+1e-12) // a thread de áudio já parou de escrever (on = false)
 	return t, c.err
 }
 
@@ -204,6 +215,7 @@ func (c *Recorder) closeFiles() {
 // feed é chamado pela thread de áudio com a DI (entrada antes da cadeia) e a saída.
 func (c *Recorder) feed(di, out []float64) {
 	for _, v := range out {
+		c.peak = math.Max(c.peak, math.Abs(v))
 		if !c.outRing.Push(float32(v)) {
 			c.dropped.Add(1)
 		}

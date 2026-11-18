@@ -159,17 +159,27 @@ func (p *RecordingsPanel) takeBox(gtx layout.Context, th *Theme) layout.Dimensio
 	} else {
 		lines = append(lines, "DI: não gravada (chave DI desligada)")
 	}
+	warn := 0
+	if t.Silent() {
+		lines = append(lines, fmt.Sprintf("ATENÇÃO: a gravação ficou em silêncio (pico %.0f dBFS). A guitarra estava tocando e com sinal no medidor da ENTRADA?", t.PeakDB))
+		warn++
+	}
 	if t.Dropped > 0 {
 		lines = append(lines, fmt.Sprintf("ATENÇÃO: %d amostras perdidas (o disco não acompanhou)", t.Dropped))
+		warn++
 	}
-	return panel(gtx, darken(th.Good, 0.7), 8, 10, func(gtx layout.Context) layout.Dimensions {
+	box := darken(th.Good, 0.7)
+	if t.Silent() {
+		box = darken(th.Warn, 0.75)
+	}
+	return panel(gtx, box, 8, 10, func(gtx layout.Context) layout.Dimensions {
 		var ch []layout.FlexChild
 		for i, l := range lines {
 			c := th.Text
 			if i == 0 {
 				c = th.Good
 			}
-			if t.Dropped > 0 && i == len(lines)-1 {
+			if i >= len(lines)-warn {
 				c = th.Warn
 			}
 			ch = append(ch, layout.Rigid(func(gtx layout.Context) layout.Dimensions {

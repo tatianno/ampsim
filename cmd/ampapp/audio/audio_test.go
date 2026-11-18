@@ -522,6 +522,9 @@ func TestGravarSaidaEDI(t *testing.T) {
 	if take.Dropped != 0 || math.Abs(take.Seconds-2) > 1e-9 {
 		t.Errorf("take %+v: esperava 2 s sem perdas", take)
 	}
+	if math.Abs(take.PeakDB-20*math.Log10(0.4)) > 0.1 || take.Silent() {
+		t.Errorf("pico %.2f dBFS, esperava %.2f", take.PeakDB, 20*math.Log10(0.4))
+	}
 	for _, path := range []string{take.Out, take.DI} {
 		fs, x, err := wav.ReadMonoFile(path)
 		if err != nil {

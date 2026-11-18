@@ -389,6 +389,10 @@ func (a *App) footer(gtx layout.Context) layout.Dimensions {
 	}
 	rec := a.Session.Recorder
 	recLabel, recBg := "● Gravar", th.PanelHi
+	recFg := th.Text
+	if a.Session.Source() != audio.SourceGuitar && !rec.Recording() {
+		recFg = withAlpha(th.Text, 90) // apagado: gravar é para a guitarra ao vivo
+	}
 	if rec.Recording() {
 		e := rec.Elapsed()
 		recLabel = fmt.Sprintf("■ Parar  %d:%02d", int(e.Minutes()), int(e.Seconds())%60)
@@ -400,7 +404,7 @@ func (a *App) footer(gtx layout.Context) layout.Dimensions {
 	return panel(gtx, th.Panel, 10, 10, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-				return coloredButton(gtx, th, &a.recBtn, recLabel, gtx.Dp(112), recBg, th.Text)
+				return coloredButton(gtx, th, &a.recBtn, recLabel, gtx.Dp(112), recBg, recFg)
 			}),
 			layout.Rigid(spacer(4, 0)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -507,10 +511,14 @@ func (a *App) toggleRecord() {
 			a.setStatus(err.Error(), true)
 			return
 		}
-		a.setStatus(fmt.Sprintf("gravação encerrada (%s)", humanDuration(take.Seconds)), take.Dropped > 0)
+		a.setStatus(fmt.Sprintf("gravação encerrada (%s)", humanDuration(take.Seconds)), take.Dropped > 0 || take.Silent())
 		a.recs.dir = a.RecordDir
 		a.recs.Show(&take) // painel "Gravação salva" com os arquivos e a lista
 		a.open = RecordingsID
+		return
+	}
+	if a.Session.Source() != audio.SourceGuitar {
+		a.setStatus("Gravar é para tocar ao vivo (fonte Guitarra). Para salvar o arquivo com efeitos, use Exportar…", true)
 		return
 	}
 	if _, err := rec.Start(a.RecordDir, a.recDI); err != nil {

@@ -433,6 +433,10 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
   **DI (reamp)**, que carrega no player, passa a fonte para Arquivo e toca; botão **Gravações** no rodapé abre a
   lista a qualquer hora; Abrir pasta (`xdg-open`); console `gravacoes`; rodapé reajustado para caber na janela
   mínima (com teste)
+- [x] **Gravar só com a fonte em Guitarra** (relatado em 18/11: com a fonte em Arquivo o botão ficava ativo e gerou um
+  arquivo mudo): com Arquivo o botão fica apagado e explica que o caminho é o Exportar…; o Parar sempre funciona;
+  o gravador mede o pico (`Take.PeakDB`) e, se a gravação ficou muda (< −60 dBFS), o painel e o rodapé avisam em
+  destaque; console `rec` com a mesma regra; testes
 - [x] **► Ouvir não reprocessa** (dúvida do usuário em 18/11 revelou o defeito): a gravação principal já tem os efeitos;
   tocá-la de novo pela cadeia aplicava amp sobre amp. Agora ► Ouvir toca em A/B SECO (como foi gravada) e DI (reamp)
   passa pela cadeia; o SECO ligado pelo app desliga sozinho ao trocar de fonte ou de arquivo; textos do painel

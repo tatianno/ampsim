@@ -390,7 +390,12 @@ func (a *app) exec(line string) bool {
 				if take.Dropped > 0 {
 					fmt.Printf("ATENÇÃO: %d amostras perdidas (o disco não acompanhou)\n", take.Dropped)
 				}
+				if take.Silent() {
+					fmt.Printf("ATENÇÃO: a gravação ficou em silêncio (pico %.0f dBFS)\n", take.PeakDB)
+				}
 			}
+		} else if a.s.Source() != audio.SourceGuitar {
+			err = fmt.Errorf("rec grava a guitarra ao vivo: use \"fonte guitarra\" antes (para o arquivo com efeitos, use exportar)")
 		} else {
 			var path string
 			if path, err = rec.Start(audio.DefaultRecordDir(), rest != "sem-di"); err == nil {
