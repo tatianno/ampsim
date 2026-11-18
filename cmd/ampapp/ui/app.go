@@ -20,6 +20,7 @@ import (
 	"github.com/tatianno/ampsim/cmd/ampapp/audio"
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/presets"
 )
 
 // App é a tela principal.
@@ -42,6 +43,7 @@ type App struct {
 	board     *Board
 	input     *InputPanel
 	audioSet  *AudioPanel
+	presetBar *PresetBar
 	meters    Meters
 	pedals    map[string]*Pedal
 	bypass    widget.Clickable
@@ -75,6 +77,11 @@ func NewApp(s *audio.Session) *App {
 		a.audioSet.Refresh()
 		a.open = AudioID
 	}
+	dir, err := presets.Dir()
+	if err != nil {
+		dir = "" // sem pasta de configuração: os de fábrica funcionam, salvar avisa o erro
+	}
+	a.UsePresetDir(dir)
 	a.head = NewHead(chain)
 	a.cab = NewCabPanel(chain)
 	a.board = NewBoard(chain)
@@ -97,13 +104,27 @@ func NewApp(s *audio.Session) *App {
 	return a
 }
 
-// Open abre na sobreposição o pedal id, ou as configurações de áudio (AudioID).
+// UsePresetDir troca a pasta dos presets do usuário (os testes usam uma pasta temporária).
+func (a *App) UsePresetDir(dir string) {
+	a.presetBar = NewPresetBar(a.Chain, dir, a.setStatus, func(id string) { a.open = id })
+}
+
+// Presets devolve a barra de presets.
+func (a *App) Presets() *PresetBar { return a.presetBar }
+
+// Open abre na sobreposição o pedal id, as configurações de áudio (AudioID), a lista de
+// presets (PresetListID) ou o "salvar preset" (SaveAsID).
 func (a *App) Open(id string) {
-	if id == AudioID {
+	switch id {
+	case AudioID:
 		a.input.OnAudio()
-		return
+	case PresetListID:
+		a.open = id
+	case SaveAsID:
+		a.presetBar.startSaveAs("")
+	default:
+		a.board.OnOpen(id)
 	}
-	a.board.OnOpen(id)
 }
 
 // Opened devolve o pedal aberto ("" se nenhum).
@@ -190,6 +211,12 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 					layout.Rigid(spacer(12, 0)),
 					layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.cab.Layout(gtx, th) }),
 				)
+			}),
+			layout.Rigid(spacer(0, 12)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return panel(gtx, th.Panel, 10, 8, func(gtx layout.Context) layout.Dimensions {
+					return a.presetBar.Layout(gtx, th)
+				})
 			}),
 			layout.Rigid(spacer(0, 12)),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -300,8 +327,13 @@ func (a *App) footer(gtx layout.Context) layout.Dimensions {
 func (a *App) overlay(gtx layout.Context) {
 	th := a.th
 	var content func(gtx layout.Context) layout.Dimensions
+	closeOverlay := func() { a.open = "" }
 	if a.open == AudioID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.audioSet.Layout(gtx, th) }
+	} else if a.open == PresetListID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.presetBar.ListLayout(gtx, th, closeOverlay) }
+	} else if a.open == SaveAsID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.presetBar.SaveAsLayout(gtx, th, closeOverlay) }
 	} else if p := a.pedals[a.open]; p != nil {
 		content = func(gtx layout.Context) layout.Dimensions { return p.Layout(gtx, th) }
 	} else {

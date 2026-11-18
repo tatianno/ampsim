@@ -235,7 +235,9 @@ func novoApp(t *testing.T) (*App, *source.FilePlayer) {
 	if err := s.Player.Load(diPath); err != nil {
 		t.Fatal(err)
 	}
-	return NewApp(s), s.Player
+	a := NewApp(s)
+	a.UsePresetDir(t.TempDir()) // nunca mexe nos presets de verdade do usuário
+	return a, s.Player
 }
 
 func TestSeekNaBarra(t *testing.T) {
@@ -402,5 +404,78 @@ func TestPainelDeEntradaAlturaDeUmaLinha(t *testing.T) {
 	d := h.frame(func(gtx layout.Context) layout.Dimensions { return a.input.Layout(gtx, a.th, &a.meters) })
 	if d.Size.Y > 120 {
 		t.Errorf("painel de entrada com %d px de altura", d.Size.Y)
+	}
+}
+
+func TestPresetsNavegarModificarSalvarExcluir(t *testing.T) {
+	a, _ := novoApp(t)
+	pb := a.Presets()
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+
+	pb.Load(0) // Clean (fábrica)
+	if c, ok := pb.Current(); !ok || c.Name != "Clean" || !c.Factory {
+		t.Fatalf("preset atual: %+v", c)
+	}
+	if g := a.Chain.Module(engine.PreID).Param("gain").Get(); g != 2 {
+		t.Errorf("Clean deveria ter ganho 2, tem %v", g)
+	}
+	h.now = h.now.Add(time.Second)
+	h.frame(a.Layout)
+	if pb.Dirty() {
+		t.Error("recém-carregado não está modificado")
+	}
+	a.Chain.Module(engine.PreID).Param("gain").Set(3)
+	h.now = h.now.Add(time.Second)
+	h.frame(a.Layout)
+	if !pb.Dirty() {
+		t.Error("mexer num knob deveria marcar como modificado")
+	}
+
+	// Salvar como pelo campo de texto: digita e aperta Enter
+	a.Open(SaveAsID)
+	h.frame(a.Layout) // aplica o foco no campo
+	h.r.Queue(key.EditEvent{Text: "Meu Clean"})
+	h.frame(a.Layout)
+	h.r.Queue(key.Event{Name: key.NameReturn, State: key.Press})
+	h.frame(a.Layout)
+	h.frame(a.Layout)
+	c, ok := pb.Current()
+	if !ok || c.Name != "Meu Clean" || c.Factory {
+		t.Fatalf("depois de salvar, o atual deveria ser \"Meu Clean\": %+v (status %q)", c, a.status)
+	}
+	if a.Opened() != "" {
+		t.Error("salvar deveria fechar a janela")
+	}
+	if pb.Dirty() {
+		t.Error("recém-salvo não está modificado")
+	}
+
+	// Excluir: o 1º clique só arma; apagar de fato vem no 2º
+	n := len(pb.list)
+	pb.confirmDel = h.now.Add(3 * time.Second)
+	pb.del.Click()
+	h.frame(a.Layout)
+	if len(pb.list) != n-1 {
+		t.Errorf("deveria ter excluído: %d → %d presets", n, len(pb.list))
+	}
+}
+
+func TestPresetsListaAbreECarrega(t *testing.T) {
+	a, _ := novoApp(t)
+	a.Open(PresetListID)
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	pb := a.Presets()
+	pb.rows[2].Click() // Lead
+	h.frame(a.Layout)
+	if c, _ := pb.Current(); c.Name != "Lead" {
+		t.Errorf("deveria ter carregado o Lead, atual %q", c.Name)
+	}
+	if a.Opened() != "" {
+		t.Error("escolher um preset deveria fechar a lista")
+	}
+	if !a.Chain.Enabled("delay") {
+		t.Error("o Lead liga o delay")
 	}
 }

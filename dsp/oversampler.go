@@ -7,7 +7,9 @@ const OversampleFactor = 4
 // de fase linear. A latência total (subir + descer) é um número inteiro de amostras
 // na taxa base: (taps-1)/4.
 type Oversampler4x struct {
-	h []float64 // protótipo passa-baixa (ganho DC 1); a interpolação multiplica por 4
+	h   []float64                   // protótipo passa-baixa (ganho DC 1), simétrico (fase linear)
+	sub [OversampleFactor][]float64 // fases da interpolação, contíguas e já com o ganho 4
+	hh  []float64                   // primeira metade de h (para a decimação dobrada)
 
 	// interpolação: histórico da entrada (buffer duplicado para leitura contígua)
 	upHist []float64
@@ -29,8 +31,14 @@ const (
 func NewOversampler4x() *Oversampler4x {
 	// Corte em 0,22 de Nyquist na taxa alta (≈ 0,88 do Nyquist da taxa base), Kaiser β=7 (~70 dB).
 	h := LowpassFIR(osTaps, 0.22, 7.0)
-	o := &Oversampler4x{h: h}
+	o := &Oversampler4x{h: h, hh: h[:osTaps/2]}
 	o.upLen = (osTaps + OversampleFactor - 1) / OversampleFactor
+	// polifásico: fase p usa h[p], h[p+4], h[p+8]... em sequência na memória
+	for p := range o.sub {
+		for j := p; j < osTaps; j += OversampleFactor {
+			o.sub[p] = append(o.sub[p], h[j]*OversampleFactor)
+		}
+	}
 	o.upHist = make([]float64, 2*o.upLen)
 	o.dnLen = osTaps + OversampleFactor - 1
 	o.dnHist = make([]float64, 2*o.dnLen)
@@ -59,12 +67,8 @@ func (o *Oversampler4x) Up(x float64, out *[OversampleFactor]float64) {
 	hist := o.upHist[o.upPos : o.upPos+o.upLen]
 
 	// u[4n+p] = 4 · Σ_i h[p+4i] · x[n-i]
-	for p := 0; p < OversampleFactor; p++ {
-		acc := 0.0
-		for i, j := 0, p; j < osTaps; i, j = i+1, j+OversampleFactor {
-			acc += o.h[j] * hist[i]
-		}
-		out[p] = acc * OversampleFactor
+	for p := range o.sub {
+		out[p] = dot(o.sub[p], hist)
 	}
 }
 
@@ -81,9 +85,31 @@ func (o *Oversampler4x) Down(in *[OversampleFactor]float64) float64 {
 	// d[n] = Σ_j h[j] · s[4n − j]. A amostra mais recente é s[4n+3] (em dnPos);
 	// s[4n] (fase 0) fica 3 posições depois. Usar a fase 0 deixa a latência inteira.
 	hist := o.dnHist[o.dnPos+OversampleFactor-1 : o.dnPos+OversampleFactor-1+osTaps]
-	acc := 0.0
-	for j, hj := range o.h {
-		acc += hj * hist[j]
+	// h é simétrico (h[j] = h[N-1-j]): soma as amostras em pares e multiplica uma vez só.
+	n := len(hist) - 1
+	mid := len(o.hh)
+	acc := o.h[mid] * hist[mid] // coeficiente central (N ímpar)
+	hist = hist[:n+1]
+	for j, hj := range o.hh {
+		acc += hj * (hist[j] + hist[n-j])
 	}
 	return acc
+}
+
+// dot é o produto escalar a·b (len(b) ≥ len(a)), com 4 acumuladores independentes
+// para o processador poder sobrepor as multiplicações.
+func dot(a, b []float64) float64 {
+	b = b[:len(a)]
+	var s0, s1, s2, s3 float64
+	i := 0
+	for ; i+4 <= len(a); i += 4 {
+		s0 += a[i] * b[i]
+		s1 += a[i+1] * b[i+1]
+		s2 += a[i+2] * b[i+2]
+		s3 += a[i+3] * b[i+3]
+	}
+	for ; i < len(a); i++ {
+		s0 += a[i] * b[i]
+	}
+	return (s0 + s1) + (s2 + s3)
 }

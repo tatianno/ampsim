@@ -19,8 +19,9 @@ para Go em streaming, validados contra as saídas do Python.
   32 amostras, nenhuma alocação na thread de áudio, saída idêntica com qualquer tamanho de bloco.
 - **GUI (Gio)**: cabeçote e gabinete com knobs, cadeia em que se arrastam os pedais, pedais
   que abrem por cima da tela, transporte com loop de trecho, medidores e bypass A/B.
-- **CLI** para processar arquivos offline e **presets em JSON** (o mesmo formato servirá para
-  o futuro plugin LV2).
+- **Presets**: de fábrica (Clean, Crunch, Lead, Ambiente) e os seus, salvos em `~/.config/ampsim/presets`
+  (JSON, o mesmo formato servirá para o futuro plugin LV2); `-preset Lead` funciona no app e no CLI.
+- **CLI** para processar arquivos offline.
 
 ## Requisitos
 

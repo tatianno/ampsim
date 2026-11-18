@@ -22,6 +22,7 @@ import (
 	"github.com/tatianno/ampsim/cmd/ampapp/audio"
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/presets"
 )
 
 func main() {
@@ -35,7 +36,7 @@ func run() error {
 	var (
 		arquivo  = flag.String("arquivo", "testdata/guitarra_di.wav", "WAV para tocar")
 		ir       = flag.String("ir", "testdata/gabinete_2x12_sm57.wav", "IR do gabinete (vazio = sem gabinete)")
-		preset   = flag.String("preset", "", "preset JSON para carregar")
+		preset   = flag.String("preset", "", "preset para carregar: arquivo .json ou nome (ex.: Lead)")
 		saida    = flag.Int("saida", -1, "índice da saída de áudio (-1 = padrão; veja -listar-dispositivos)")
 		entrada  = flag.Int("entrada", -1, "índice da entrada (-1 = padrão, -2 = sem entrada)")
 		canal    = flag.Int("canal", 1, "canal da entrada onde está a guitarra (1, 2, ...; 0 = média dos canais)")
@@ -62,7 +63,11 @@ func run() error {
 		}
 	}
 	if *preset != "" {
-		if err := chain.LoadState(*preset); err != nil {
+		st, err := presets.Resolve(*preset)
+		if err != nil {
+			return err
+		}
+		if err := chain.ApplyState(st); err != nil {
 			return err
 		}
 	}
@@ -215,7 +220,10 @@ const ajuda = `comandos:
   latencia                       mede a latência real (precisa de um cabo da saída para a entrada!)
   dispositivos                   lista saídas e entradas
   saida <n> | entrada <n>|nenhuma | buffer <quadros>   reabre a placa
-  salvar <arq.json> | carregar <arq.json>   presets
+  presets                        lista os presets (fábrica e seus)
+  preset <nome>                  carrega um preset
+  gravar <nome>                  salva o som atual como preset seu
+  salvar <arq.json> | carregar <arq.json|nome>   presets em arquivo
   sair`
 
 // exec executa um comando; devolve true para sair.
@@ -372,8 +380,30 @@ func (a *app) exec(line string) bool {
 		}
 	case "salvar":
 		err = a.chain.SaveState(rest)
-	case "carregar":
-		err = a.chain.LoadState(rest)
+	case "carregar", "preset":
+		var st engine.State
+		if st, err = presets.Resolve(rest); err == nil {
+			err = a.chain.ApplyState(st)
+		}
+	case "presets":
+		dir, _ := presets.Dir()
+		list, lerr := presets.List(dir)
+		for _, p := range list {
+			tipo := "seu"
+			if p.Factory {
+				tipo = "fábrica"
+			}
+			fmt.Printf("  %-24s (%s)\n", p.Name, tipo)
+		}
+		err = lerr
+	case "gravar":
+		dir, derr := presets.Dir()
+		if err = derr; err == nil {
+			var p presets.Preset
+			if p, err = presets.Save(dir, rest, a.chain.State()); err == nil {
+				fmt.Println("salvo em", p.Path)
+			}
+		}
 	default:
 		err = fmt.Errorf("comando desconhecido %q (digite ajuda)", cmd)
 	}

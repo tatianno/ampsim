@@ -9,6 +9,8 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/layout"
 	"gioui.org/op"
+	"gioui.org/op/clip"
+	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
 	"gioui.org/widget"
@@ -76,5 +78,28 @@ func closeButton(gtx layout.Context, c *widget.Clickable, size unit.Dp) layout.D
 		strokeLine(gtx.Ops, f32.Pt(r-k, r-k), f32.Pt(r+k, r+k), w, rgb(0xffffff))
 		strokeLine(gtx.Ops, f32.Pt(r-k, r+k), f32.Pt(r+k, r-k), w, rgb(0xffffff))
 		return layout.Dimensions{Size: image.Pt(d, d)}
+	})
+}
+
+// arrowButton é um botão com um triângulo desenhado (dir = −1 esquerda, +1 direita).
+func arrowButton(gtx layout.Context, th *Theme, c *widget.Clickable, dir int) layout.Dimensions {
+	return c.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+		pointer.CursorPointer.Add(gtx.Ops)
+		sz := image.Pt(gtx.Dp(32), gtx.Dp(28))
+		bg := th.PanelHi
+		if c.Hovered() {
+			bg = lighten(bg, 0.08)
+		}
+		fillRRect(gtx.Ops, image.Rectangle{Max: sz}, gtx.Dp(5), bg)
+		cx, cy := float32(sz.X)/2, float32(sz.Y)/2
+		w, h := float32(gtx.Dp(5)), float32(gtx.Dp(6))
+		var p clip.Path
+		p.Begin(gtx.Ops)
+		p.MoveTo(f32.Pt(cx+float32(dir)*w, cy))
+		p.LineTo(f32.Pt(cx-float32(dir)*w, cy-h))
+		p.LineTo(f32.Pt(cx-float32(dir)*w, cy+h))
+		p.Close()
+		paint.FillShape(gtx.Ops, th.Text, clip.Outline{Path: p.End()}.Op())
+		return layout.Dimensions{Size: sz}
 	})
 }

@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/presets"
 	"github.com/tatianno/ampsim/wav"
 )
 
@@ -37,7 +38,7 @@ func run() error {
 		in        = flag.String("in", "", "WAV de entrada (DI da guitarra)")
 		out       = flag.String("out", "", "WAV de saída")
 		ir        = flag.String("ir", "testdata/gabinete_2x12_sm57.wav", "WAV da IR do gabinete (vazio = sem gabinete)")
-		preset    = flag.String("preset", "", "preset JSON para carregar")
+		preset    = flag.String("preset", "", "preset para carregar: arquivo .json ou nome (ex.: Lead)")
 		savePre   = flag.String("salvar-preset", "", "grava o estado final (após -preset/-on/-off/-set) neste JSON")
 		on        = flag.String("on", "", "módulos para ligar, separados por vírgula (ex.: chorus,delay)")
 		off       = flag.String("off", "", "módulos para desligar, separados por vírgula")
@@ -63,7 +64,11 @@ func run() error {
 		}
 	}
 	if *preset != "" {
-		if err := chain.LoadState(*preset); err != nil {
+		st, err := presets.Resolve(*preset)
+		if err != nil {
+			return err
+		}
+		if err := chain.ApplyState(st); err != nil {
 			return err
 		}
 	}

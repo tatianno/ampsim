@@ -17,6 +17,7 @@ const StateVersion = 2
 // State é o estado completo da cadeia: o mesmo JSON serve de preset no app e de state no plugin.
 // Na versão 2, Modules vem na ordem da cadeia; um preset com todos os módulos define a ordem.
 type State struct {
+	Name    string        `json:"name,omitempty"` // nome do preset (opcional)
 	Version int           `json:"version"`
 	Modules []ModuleState `json:"modules"`
 }

@@ -402,20 +402,37 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
 | D4 | **Atraso na partida do JACK** | Pode haver 1 callback atrasado quando o PipeWire troca de ciclo (ex.: 1024 → 64) e a primeira chamada de Go numa thread nova é lenta. Considerar silenciar os primeiros ciclos. | estalo inicial |
 | D5 | **Backend miniaudio** | Continua como alternativa (PulseAudio/ALSA) com ~46 ms; no Linux o padrão é o JACK próprio. Avaliar se vale manter o caminho JACK do miniaudio (hoje removido). | simplicidade |
 | D6 | **Texto da placa aberta no painel Áudio…** | A linha com backend, placas, taxa e buffer é cortada em janelas estreitas; quebrar em duas linhas. | visual |
-| D7 | **CPU com buffer 64** | Até ~45% do ciclo nos piores momentos, só com gate e amp, pelo backend miniaudio; 13% de mediana no JACK. Com muitos pedais pode estourar: otimização na Fase 5 (FFT real, `tanh` mais barata). | estabilidade |
+| D7 | ~~CPU com buffer 64~~ (resolvido em 18/11) | DSP 33% mais rápido; com amp + 8 pedais em buffer 64 no JACK, 0 atrasos. Os picos que restam vêm de agendamento e pausas do Go: se aparecerem estalos, avaliar `GOGC`/`debug.SetGCPercent` no app. | — |
 
 ### Fase 5: Recursos extras do standalone (~1 a 2 semanas)
 - [x] **Pedal de compressor** (pedido em 18/11): Threshold, Ratio, Attack, Release, Level, Mix e medidor de redução de
   ganho no pedal; posição padrão entre o gate e o pré-amp (desligado); presets antigos ganham o compressor na posição
   padrão sem perder a ordem salva (`engine.MergeOrder`); testes de curva estática, nível, attack, mix seco, zero
   alocação, na cadeia e de migração de preset
-- [ ] Presets: salvar, carregar e alguns de fábrica (Clean, Crunch, Lead)
+- [x] **Presets** (18/11): pacote `presets/`
+  - de fábrica gerados em código (Clean, Crunch, Lead, Ambiente), sempre com todos os módulos, sem IR (mantém o
+    gabinete em uso), volumes acertados para ~−17 dBFS RMS com a DI de teste (sem salto ao trocar)
+  - do usuário em `~/.config/ampsim/presets/*.json` (mesmo formato do `-preset`; nome dentro do arquivo; nome de
+    arquivo seguro; nomes de fábrica protegidos; arquivo corrompido é ignorado com aviso)
+  - GUI: linha PRESET com ◄ ►, nome (abre a lista), `*` quando modificado, Salvar, Salvar como… (campo de texto,
+    Enter salva), Excluir com confirmação (2º clique em até 3 s)
+  - console: `presets`, `preset <nome>`, `gravar <nome>`; `-preset` do app e do `ampcli` aceita arquivo ou **nome**
+  - testes do pacote e da GUI (navegar, modificado, digitar o nome + Enter, lista, excluir), sempre em pasta temporária
 - [ ] Gravar a saída em WAV (ao vivo ou arquivo)
 - [ ] Exportar arquivo processado (offline, mesmo engine do `ampcli`)
 - [ ] Tap tempo no Delay
 - [ ] Afinador
 - [ ] Tone stack com modelo Fender/Marshall (estudo; análise de D. Yeh, transformada bilinear)
-- [ ] Otimização: FFT real na convolução e `tanh` aproximada no pré-amp (medir antes e depois)
+- [x] **Otimização de CPU** (18/11), medida com benchmarks por bloco de 64 amostras (`dsp/bench_test.go`):
+  - convolução: multiplica só a metade do espectro (simetria conjugada de sinais reais) e partição 0 com produto
+    escalar de 4 acumuladores: **46,6 → 24,8 µs** (−47%)
+  - pré-amp: oversampling polifásico com fases contíguas, decimação dobrada pela simetria do FIR, `log1p` só quando o
+    drive muda, `tanh(bias)` 1× por amostra base (o profiler mostrou 68% do custo nos filtros, não no `tanh`):
+    **27,5 → 17,3 µs** (−37%)
+  - cadeia inteira com todos os pedais: **98,5 → 66,3 µs por bloco** (~5% do tempo de um bloco de 64)
+  - precisão inalterada (saturação −63,8 dB e gabinete −151 dB contra o Python)
+  - ao vivo (JACK, buffer 64, amp + 8 pedais ligados, ~22 s): **0 atrasos**; pior callback por janela de 200 ms:
+    mediana 27%, p90 37%, máx 54% — os picos vêm de agendamento/pausas do Go, não do DSP
 - [ ] Empacotamento Linux (e depois Windows e macOS)
 - [ ] **Áudio multiplataforma** (decidido em 18/11; o `Host` escolhe o backend por sistema):
   - **Linux:** backend JACK próprio (PipeWire), com miniaudio (PulseAudio/ALSA) como alternativa
