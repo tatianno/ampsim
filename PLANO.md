@@ -635,6 +635,24 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - testes de DSP: boost limpo; harmônicos crescem com o drive; wah com o pico na posição certa e o envelope abrindo
     com a palhetada; octave com 110/55/440 Hz dominando para 220 Hz; rotary acelerando com inércia e pulsando;
     vibe passa-tudo no vibrato e variando no chorus; pitch +12/−12/+7/0 st no lugar certo
+- [x] **Presets de fábrica novos** (18/11): Clean, Crunch, Blues, Rock Clássico, Solo Hard Rock (estilo Slash),
+  Metal, Funk, Country, Surf, Psicodélico, Modulação, Worship, Ambiente e Synth. Cada um escolhe o amp (captura NAM
+  incluída ou o simulado), o gabinete (IR incluída) e os pedais; o estado extra só aponta para capturas/IRs
+  embutidas. Volumes calibrados com a DI (`TestFabricaNoMesmoVolume`): −18 dBFS RMS, sem passar de −1 dBFS de pico;
+  os limpos e dinâmicos (Clean, Funk, Country) ficam ~2 dB abaixo, limitados pelo pico (fator de crista ~20 dB)
+- [x] **Pedaleira de presets** (18/11, `cmd/ampapp/ui/pedalboard.go`): abaixo da cadeia, 6 footswitches por banco
+  (◀ BANCO ▶), LED no preset atual, teclas 1 a 6; o banco acompanha o preset atual. Some em janelas com menos de
+  720 dp de altura (o rodapé tem prioridade; as teclas continuam valendo). A dica da cadeia subiu para a linha do título
+- [ ] **Controle por MIDI** (futuro; pedido em 18/11):
+  - entrada MIDI pelo backend JACK próprio (porta MIDI do cliente `ampsim`) e, nos outros sistemas, pelo backend do
+    miniaudio ou uma biblioteca de MIDI
+  - **Program Change** → preset (os mesmos bancos/slots da pedaleira: PC 0–5 = banco 1, 6–11 = banco 2...)
+  - **Control Change** → ligar/desligar pedais (CC ≥ 64 = liga) e parâmetros contínuos (volume, níveis, mix, drive,
+    posição do wah por pedal de expressão), com **MIDI learn**: clicar com o botão direito num knob ou LED e mexer no
+    controlador; mapeamento salvo em `~/.config/ampsim/midi.json`
+  - **MIDI clock** → andamento do delay, tremolo e synth (como o tap tempo); nota/CC para o TAP
+  - suavização dos CCs (7 bits = 128 passos: usar o Smoother dos parâmetros) e, quando houver, CC de 14 bits / NRPN
+  - feedback para controladores com LED (mandar o estado de volta)
 - [x] **Release v0.7.0** (18/11/2026): arrastar os pontos do EQ
 - [x] **EQ: arrastar os pontos na curva** (18/11): cada banda tem um ponto em (frequência, ganho da banda);
   arrastar muda os dois (limitado à faixa da banda) e os knobs acompanham (leem os mesmos parâmetros); roda do mouse

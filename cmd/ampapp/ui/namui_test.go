@@ -291,3 +291,39 @@ func TestEQArrastarPontos(t *testing.T) {
 		t.Error("clique fora dos pontos não deveria pegar banda")
 	}
 }
+
+func TestPedaleira(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	pb, b := a.Presets(), a.Pedalboard()
+	// footswitch 2 do banco 1 = 2º preset (Crunch)
+	b.sw[1].Click()
+	h.frame(a.Layout)
+	if c, _ := pb.Current(); c.Name != "Crunch" {
+		t.Errorf("footswitch 2: %q, esperava Crunch", c.Name)
+	}
+	// tecla 4 = 4º preset do banco
+	h.r.Queue(key.Event{Name: "4", State: key.Press})
+	h.frame(a.Layout)
+	if c, _ := pb.Current(); c.Name != pb.list[3].Name {
+		t.Errorf("tecla 4: %q, esperava %q", c.Name, pb.list[3].Name)
+	}
+	// próximo banco: footswitch 1 = 7º preset; e o banco acompanha a troca por outro caminho
+	b.next.Click()
+	h.frame(a.Layout)
+	b.sw[0].Click()
+	h.frame(a.Layout)
+	if c, _ := pb.Current(); c.Name != pb.list[BoardSlots].Name {
+		t.Errorf("banco 2, footswitch 1: %q, esperava %q", c.Name, pb.list[BoardSlots].Name)
+	}
+	pb.Load(0)
+	h.frame(a.Layout)
+	if b.Bank() != 0 {
+		t.Errorf("carregar o 1º preset por fora deveria voltar ao banco 1 (está no %d)", b.Bank()+1)
+	}
+	b.SetBank(-1) // dá a volta
+	if b.Bank() != b.banks()-1 {
+		t.Errorf("banco antes do 1º = o último; está no %d", b.Bank()+1)
+	}
+}

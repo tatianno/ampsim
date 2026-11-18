@@ -419,8 +419,8 @@ func TestPresetsNavegarModificarSalvarExcluir(t *testing.T) {
 	if c, ok := pb.Current(); !ok || c.Name != "Clean" || !c.Factory {
 		t.Fatalf("preset atual: %+v", c)
 	}
-	if g := a.Chain.Module(engine.PreID).Param("gain").Get(); g != 2 {
-		t.Errorf("Clean deveria ter ganho 2, tem %v", g)
+	if a.Chain.Pre().Mode() != engine.AmpNAM || !a.Chain.InChain("comp") {
+		t.Errorf("o Clean usa o amp NAM e o compressor (modo %d)", a.Chain.Pre().Mode())
 	}
 	h.now = h.now.Add(time.Second)
 	h.frame(a.Layout)
@@ -469,16 +469,16 @@ func TestPresetsListaAbreECarrega(t *testing.T) {
 	h := newHarness(1280, 800)
 	h.frame(a.Layout)
 	pb := a.Presets()
-	pb.rows[2].Click() // Lead
+	pb.rows[3].Click() // Rock Clássico
 	h.frame(a.Layout)
-	if c, _ := pb.Current(); c.Name != "Lead" {
-		t.Errorf("deveria ter carregado o Lead, atual %q", c.Name)
+	if c, _ := pb.Current(); c.Name != "Rock Clássico" {
+		t.Errorf("deveria ter carregado o Rock Clássico, atual %q", c.Name)
 	}
 	if a.Opened() != "" {
 		t.Error("escolher um preset deveria fechar a lista")
 	}
-	if !a.Chain.Enabled("delay") {
-		t.Error("o Lead liga o delay")
+	if !a.Chain.Enabled("delay") || a.Chain.Cab().IRName() != "4x12 SM7" {
+		t.Errorf("o Rock Clássico liga o delay e usa o 4x12 (IR %q)", a.Chain.Cab().IRName())
 	}
 }
 

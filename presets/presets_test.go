@@ -1,14 +1,21 @@
 package presets
 
 import (
+	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/tatianno/ampsim/capturas"
+	"github.com/tatianno/ampsim/dsp"
 	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/wav"
 )
 
-func TestFabricaCompletaESemIR(t *testing.T) {
+// Os de fábrica: só o amp e os pedais usados (ligados), o modelo NAM e a IR sempre das
+// incluídas (nunca um arquivo do disco), e aplicar e ler de volta dá o mesmo estado.
+func TestFabricaCompletaComCapturasIncluidas(t *testing.T) {
 	for _, p := range Factory() {
 		// só o amp e os pedais usados, todos ligados
 		for _, m := range p.State.Modules {
@@ -17,8 +24,10 @@ func TestFabricaCompletaESemIR(t *testing.T) {
 			}
 		}
 		for _, m := range p.State.Modules {
-			if m.Extra != nil {
-				t.Errorf("%s: módulo %s com estado extra (IR) %v", p.Name, m.ID, m.Extra)
+			for k, v := range m.Extra {
+				if !strings.HasPrefix(v, capturas.Prefix) {
+					t.Errorf("%s: %s.%s = %q não é uma captura/IR incluída", p.Name, m.ID, k, v)
+				}
 			}
 		}
 		c := engine.NewDefaultChain()
@@ -29,8 +38,8 @@ func TestFabricaCompletaESemIR(t *testing.T) {
 			t.Errorf("%s: aplicar e ler de volta deveria dar o mesmo estado", p.Name)
 		}
 	}
-	if p, ok := Find(Factory(), "lead"); !ok || p.State.Modules[0].ID != "gate" {
-		t.Error("deveria achar o Lead sem diferenciar maiúsculas")
+	if p, ok := Find(Factory(), "solo hard rock"); !ok || p.State.Modules[0].ID != "gate" {
+		t.Error("deveria achar o Solo Hard Rock sem diferenciar maiúsculas")
 	}
 }
 
@@ -104,5 +113,35 @@ func TestResolve(t *testing.T) {
 	}
 	if _, err := Resolve("não existe"); err == nil {
 		t.Error("deveria dar erro")
+	}
+}
+
+// Todos os presets de fábrica perto de −18 dBFS RMS com a DI de teste (trocar de preset não
+// dá salto de volume), sem passar de −1 dBFS de pico.
+func TestFabricaNoMesmoVolume(t *testing.T) {
+	fs, x, err := wav.ReadMonoFile(filepath.Join("..", "testdata", "guitarra_di.wav"))
+	if err != nil {
+		t.Skip("sem a DI de teste:", err)
+	}
+	x = dsp.ResampleRate(x, fs, 48000) // a taxa das capturas NAM
+	for _, p := range Factory() {
+		y, err := engine.RenderOffline(p.State, x, 48000, 0, 256, nil)
+		if err != nil {
+			t.Fatalf("%s: %v", p.Name, err)
+		}
+		s, pk := 0.0, 0.0
+		for _, v := range y[4800:] {
+			s += v * v
+			pk = math.Max(pk, math.Abs(v))
+		}
+		rms := 10 * math.Log10(s/float64(len(y)-4800))
+		t.Logf("%-16s rms %6.1f dBFS  pico %5.1f dBFS", p.Name, rms, 20*math.Log10(pk))
+		// −18 dBFS RMS; os limpos e dinâmicos podem ficar até ~3 dB abaixo, limitados pelo pico
+		if rms > -16.5 || rms < -21.5 {
+			t.Errorf("%s: %.1f dBFS RMS, esperava −18 (−21,5 a −16,5)", p.Name, rms)
+		}
+		if db := 20 * math.Log10(pk); db > -0.9 {
+			t.Errorf("%s: pico %.1f dBFS (o limite é −1)", p.Name, db)
+		}
 	}
 }

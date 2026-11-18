@@ -45,29 +45,30 @@ type App struct {
 	// RecordDir é a pasta das gravações (padrão: Música/ampsim).
 	RecordDir string
 
-	th        *Theme
-	transport *Transport
-	head      *Head
-	addPedal  *AddPedal
-	about     *About
-	aboutBtn  widget.Clickable
-	namList   *AssetList
-	irList    *AssetList
-	cab       *CabPanel
-	board     *Board
-	input     *InputPanel
-	audioSet  *AudioPanel
-	presetBar *PresetBar
-	tuner     *TunerPanel
-	prevOpen  string // para saber quando o afinador abre/fecha
-	meters    Meters
-	pedals    map[string]*Pedal
-	bypass    widget.Clickable
-	closeBtn  widget.Clickable
-	recBtn    widget.Clickable
-	diBtn     widget.Clickable
-	recsBtn   widget.Clickable
-	recs      *RecordingsPanel
+	th         *Theme
+	transport  *Transport
+	head       *Head
+	pedalboard *Pedalboard
+	addPedal   *AddPedal
+	about      *About
+	aboutBtn   widget.Clickable
+	namList    *AssetList
+	irList     *AssetList
+	cab        *CabPanel
+	board      *Board
+	input      *InputPanel
+	audioSet   *AudioPanel
+	presetBar  *PresetBar
+	tuner      *TunerPanel
+	prevOpen   string // para saber quando o afinador abre/fecha
+	meters     Meters
+	pedals     map[string]*Pedal
+	bypass     widget.Clickable
+	closeBtn   widget.Clickable
+	recBtn     widget.Clickable
+	diBtn      widget.Clickable
+	recsBtn    widget.Clickable
+	recs       *RecordingsPanel
 	// recDry: o A/B SECO foi ligado pelo app para tocar uma gravação com efeitos (recPath);
 	// desliga sozinho quando a fonte ou o arquivo mudam.
 	recDry    bool
@@ -166,7 +167,11 @@ func NewApp(s *audio.Session) *App {
 // UsePresetDir troca a pasta dos presets do usuário (os testes usam uma pasta temporária).
 func (a *App) UsePresetDir(dir string) {
 	a.presetBar = NewPresetBar(a.Chain, dir, a.setStatus, func(id string) { a.open = id })
+	a.pedalboard = NewPedalboard(a.presetBar)
 }
+
+// Pedalboard devolve a pedaleira de presets.
+func (a *App) Pedalboard() *Pedalboard { return a.pedalboard }
 
 // Presets devolve a barra de presets.
 func (a *App) Presets() *PresetBar { return a.presetBar }
@@ -293,6 +298,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	th := a.th
 	paint.Fill(gtx.Ops, th.Bg)
 
+	tall := gtx.Constraints.Max.Y
 	layout.UniformInset(14).Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 			layout.Rigid(a.topBar),
@@ -332,15 +338,32 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 				return panel(gtx, th.Panel, 10, 12, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return drawText(gtx, th, "CADEIA DE SINAL", textOpts{size: 12, color: th.Dim, bold: true})
+							return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return drawText(gtx, th, "CADEIA DE SINAL", textOpts{size: 12, color: th.Dim, bold: true})
+								}),
+								layout.Rigid(spacer(14, 0)),
+								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+									return drawText(gtx, th, "clique: abrir o pedal  ·  LED: liga/desliga  ·  arraste: muda a ordem (entre o amp e o POWER = loop)  ·  +: adicionar",
+										textOpts{size: 11, color: withAlpha(th.Dim, 200)})
+								}),
+							)
 						}),
-						layout.Rigid(spacer(0, 6)),
+						layout.Rigid(spacer(0, 2)),
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.board.Layout(gtx, th) }),
-						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return drawText(gtx, th, "clique: abrir o pedal  ·  LED: liga/desliga  ·  arraste: muda a ordem (entre o amp e o POWER = loop de efeitos)  ·  +: adicionar pedal",
-								textOpts{size: 11, color: withAlpha(th.Dim, 200)})
-						}),
 					)
+				})
+			}),
+			// pedaleira de presets: só se couber (em janelas baixas o rodapé tem prioridade;
+			// as teclas 1 a 6 continuam valendo)
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				if gtx.Metric.PxToDp(tall) < PedalboardMinHeightDp {
+					return layout.Dimensions{}
+				}
+				return layout.Inset{Top: 10}.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
+					return panel(gtx, th.Panel, 10, 8, func(gtx layout.Context) layout.Dimensions {
+						return a.pedalboard.Layout(gtx, th)
+					})
 				})
 			}),
 			layout.Flexed(1, vfill), // empurra o rodapé para baixo
@@ -387,7 +410,8 @@ func (a *App) Tap(now time.Time) {
 
 func (a *App) keys(gtx layout.Context) {
 	for {
-		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameSpace}, key.Filter{Name: "T"})
+		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameSpace}, key.Filter{Name: "T"},
+			key.Filter{Name: "1"}, key.Filter{Name: "2"}, key.Filter{Name: "3"}, key.Filter{Name: "4"}, key.Filter{Name: "5"}, key.Filter{Name: "6"})
 		if !ok {
 			return
 		}
@@ -406,6 +430,10 @@ func (a *App) keys(gtx layout.Context) {
 		case "T":
 			if a.open != SaveAsID { // digitando o nome de um preset
 				a.Tap(gtx.Now)
+			}
+		case "1", "2", "3", "4", "5", "6": // footswitches da pedaleira
+			if a.open != SaveAsID {
+				a.pedalboard.Press(int(e.Name[0] - '1'))
 			}
 		}
 	}
@@ -444,6 +472,9 @@ func (a *App) topBar(gtx layout.Context) layout.Dimensions {
 		}),
 	)
 }
+
+// PedalboardMinHeightDp é a altura da janela a partir da qual a pedaleira aparece.
+const PedalboardMinHeightDp = 720
 
 // SetVersion define a versão mostrada na área Sobre.
 func (a *App) SetVersion(v string) { a.about.version = v }

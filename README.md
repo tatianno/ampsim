@@ -41,8 +41,11 @@ para Go em streaming, validados contra as saídas do Python.
   que abrem por cima da tela, transporte com loop de trecho, medidores e bypass A/B.
 - **Gravar** a saída e a DI (para reamplificar) em WAV 24 bits, e **exportar** um arquivo processado pelo som atual.
 - **Afinador** (YIN, saída muda enquanto afina) e **tap tempo** no delay e no tremolo (botão TAP ou tecla T, com subdivisões).
-- **Presets**: de fábrica (Clean, Crunch, Lead, Ambiente) e os seus, salvos em `~/.config/ampsim/presets`
-  (JSON, o mesmo formato servirá para o futuro plugin LV2); `-preset Lead` funciona no app e no CLI.
+- **Presets**: 14 de fábrica (Clean, Crunch, Blues, Rock Clássico, Solo Hard Rock, Metal, Funk, Country, Surf,
+  Psicodélico, Modulação, Worship, Ambiente, Synth), cada um com seu amp NAM, gabinete e pedais, todos no mesmo
+  volume; e os seus, salvos em `~/.config/ampsim/presets`
+  (JSON, o mesmo formato servirá para o futuro plugin LV2); `-preset Metal` funciona no app e no CLI.
+- **Pedaleira de presets** abaixo da cadeia: 6 footswitches por banco, como um controlador (teclas 1 a 6).
 - **CLI** para processar arquivos offline.
 
 ## Requisitos
