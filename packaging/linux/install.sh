@@ -17,7 +17,9 @@ if [ -d "$DIR/ampsim.lv2" ]; then
 	mkdir -p "$HOME/.lv2"
 	rm -rf "$HOME/.lv2/ampsim.lv2"
 	cp -r "$DIR/ampsim.lv2" "$HOME/.lv2/"
-	echo "plugin LV2 instalado em $HOME/.lv2/ampsim.lv2"
+	mkdir -p "$HOME/.clap"
+	ln -sfn "$HOME/.lv2/ampsim.lv2/ampsim.so" "$HOME/.clap/ampsim.clap" # o CLAP: o mesmo .so
+	echo "plugins instalados: LV2 em $HOME/.lv2/ampsim.lv2, CLAP em $HOME/.clap/ampsim.clap"
 fi
 echo "AmpSim instalado em $PREFIX (procure \"AmpSim\" no menu de aplicativos)."
 case ":$PATH:" in *":$PREFIX/bin:"*) ;; *) echo "dica: acrescente $PREFIX/bin ao PATH para usar ampsim e ampsim-cli no terminal." ;; esac

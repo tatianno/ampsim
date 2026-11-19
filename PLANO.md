@@ -577,25 +577,38 @@ menu de efeitos. A lista muda com os presets do usuário: o app reescreve os `.t
   Medido com senoide de 187,5 Hz no nível RMS da DI: as vozes Americano/Britânico saturam suave (THD ~5–7% no
   ganho 10; o High Gain ~19%); o Britânico Saturado leva um overdrive de boost (level 12) e chega a ~13%. A
   pedaleira.json que é só o padrão antigo (3 bancos de fábrica) passa a seguir o padrão atual (4 bancos)
+- [x] **Voz Britânico Mod** ("Brit. Mod", 19/11/2026): a cascata do High Gain (`dsp.HighGain`) com valores próprios
+  (`dsp.BritishModDefault`: entrada menos tight, 120 Hz; shelf de brilho +4 dB em 1,5 kHz; passa-baixas de 5–6 kHz;
+  G1 de 0,3 a 20, G2 = 6, G3 = 3) e o TMB britânico: THD (senoide no nível da DI) de ~1% no ganho 0, ~13% no 5 e
+  ~19% no 8, entre o Britânico (~7% no 10) e o High Gain; espectro com a DI também no meio dos dois. Sem captura de
+  referência. O Britânico Saturado passou a usá-la (ganho 8), sem o boost: o banco voltou a ser só amp e gabinete.
+  No seletor, vem antes da High Gain (Moderno, Americano, Britânico, Brit. Mod, High Gain): preset formato v5, a
+  High Gain passa de 3 a 4 (`migrateStackV5` converte os presets até a v4). "Voz" fica na linha dos botões; numa
+  janela estreita o seletor usa uma versão compacta
 - [ ] Testar também no Carla/Ardour (ao vivo; state com a cópia)
 
 #### Fase 6b: Reaper (depois)
 **Meta:** o mesmo plugin no Reaper, tocando ao vivo com monitoração.
 
 **19/11/2026:** o Reaper (Linux) já reconhece e aplica os plugins LV2 da 6a (testado pelo usuário: presets e
-pedais). O CLAP deixa de ser necessário para o Reaper ter o AmpSim; fica pelo que o LV2 não dá: estéreo, a lista
-de presets num plugin só e a troca de preset com o áudio rodando. Atenção: os plugins LV2 são mono (1 entrada,
-1 saída); numa faixa estéreo do Reaper, a saída vai só para o canal 1 e o canal 2 passa seco (ajustar os pinos ou
-usar a faixa da DI em mono). Uma variante estéreo do LV2 resolveria sem esperar o CLAP.
+pedais). Os LV2 eram mono: numa faixa estéreo do Reaper, a saída ia só para o canal 1 (resolvido com a variante
+estéreo). O CLAP traz o que o LV2 não dá: a lista de presets num plugin só e a troca de preset ao vivo.
 
-- [ ] Formato: **CLAP** primeiro (API em C pura, MIT, suportada pelo Reaper; encaixa no `c-shared` do Go). VST3 só
-  se houver demanda (API em C++, mais trabalho na camada)
-- [ ] Um plugin só, **estéreo**, com o parâmetro Preset numa lista dinâmica (o CLAP pede o texto de cada valor ao
-  plugin, então os nomes e a ordem são os da app) e a cópia do preset no state. Reaproveita o núcleo do 6a
-  (Entrada, Saída, Ligado, state); volta a troca de preset com o áudio rodando: uma goroutine da instância aplica
-  o preset na cadeia em uso (`Chain.ApplyState`, com a transição e o spillover da app), e o primeiro bloco monta
-  na hora (render offline certo desde a primeira amostra). A primeira versão do 6a fazia assim (antes do commit)
-- [ ] Testar ao vivo no Reaper com a AudioBox: latência informada, troca de preset por automação sem estalo
+- [x] **Variante estéreo do LV2** (19/11/2026): cada preset e cada pedal também em estéreo (`…-estereo`, nome
+  "… (estéreo)", portas `in_l`/`in_r`/`out_l`/`out_r`): a entrada é misturada em mono e a cadeia abre em dois canais
+  (os pedais estéreo ganham a Largura e o modo estéreo do delay). Resolve a faixa estéreo do Reaper. 82 efeitos LV2
+- [x] **CLAP** (19/11/2026): no mesmo `.so` (exporta `clap_entry` e `lv2_descriptor`); `~/.clap/ampsim.clap` é
+  um link para ele, então os dois formatos abertos no mesmo host carregam o arquivo uma vez só (o glibc reconhece
+  pelo inode: um runtime Go no processo; conferido com dlopen). Cabeçalhos oficiais 1.2.2 (MIT) em
+  `plugin/lv2/clap/`. Um plugin, **AmpSim**, estéreo: parâmetros Preset (lista: os de fábrica e os do usuário,
+  lida ao criar a instância, mais "cópia do projeto"; `CLAP_PARAM_IS_ENUM`, os nomes por `value_to_text`),
+  Entrada, Saída e Bypass (`CLAP_PARAM_IS_BYPASS`). Troca de preset com o áudio rodando: uma goroutine aplica
+  (`plugin.Instance.Apply` → `Chain.ApplyState`, com spillover). Latência fixa: o CLAP só aceita mudar latência com o
+  plugin parado, então `Chain.PadLatency` põe o drive e o synth desligados na cadeia (só atrasam o seco): sempre 96
+  amostras. Estado: JSON com a cópia do preset, o nome e os controles; um projeto com preset apagado mostra
+  "… (cópia do projeto)". `clapcheck.c` (host mínimo): igual ao render da app com a mesma cadeia (≤ 2,4e-7), estado,
+  troca ao vivo. O app mantém o link (`ttl.Sync`); `install.sh`/`uninstall.sh`/`postrm` também
+- [ ] Testar ao vivo no Reaper com a AudioBox: CLAP (troca de preset por automação sem estalo) e LV2 estéreo
 - [ ] (Longo prazo, opcional) GUI própria: janela Gio separada (LV2 external UI no Ardour/Carla); encaixada na
   janela da DAW só com outra biblioteca ou reparentando no X11
 

@@ -90,3 +90,43 @@ func abs(x int) int {
 	}
 	return x
 }
+
+// A voz Britânico Mod vai do crunch ao saturado ao longo do knob de ganho (THD de uma senoide
+// no nível da DI de teste), sem chegar ao High Gain.
+func TestBritanicoModSatura(t *testing.T) {
+	const fs, f0, amp = 48000.0, 187.5, 0.12
+	thd := func(stack int, gain float64) float64 {
+		c := NewDefaultChain()
+		c.Pre().Param("stack").Set(float64(stack))
+		c.Pre().Param("gain").Set(gain)
+		x := make([]float64, int(fs*1.5))
+		for i := range x {
+			x[i] = amp * math.Sin(2*math.Pi*f0*float64(i)/fs)
+		}
+		y, err := RenderOffline(c.State(), x, fs, 0, 256, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		seg := y[int(fs) : int(fs)+int(fs/2)]
+		g := func(f float64) float64 {
+			w := 2 * math.Pi * f / fs
+			k := 2 * math.Cos(w)
+			var s1, s2 float64
+			for _, v := range seg {
+				s1, s2 = v+k*s1-s2, s1
+			}
+			return s1*s1 + s2*s2 - k*s1*s2
+		}
+		var hn float64
+		for k := 2; k <= 15; k++ {
+			hn += g(f0 * float64(k))
+		}
+		return 100 * math.Sqrt(hn/g(f0))
+	}
+	low, mid, high := thd(StackBritishMod, 0), thd(StackBritishMod, 5), thd(StackBritishMod, 8)
+	brit, hg := thd(StackBritish, 10), thd(StackHighGain, 8)
+	t.Logf("Britânico Mod: %.1f%% (0), %.1f%% (5), %.1f%% (8); Britânico 10: %.1f%%; High Gain 8: %.1f%%", low, mid, high, brit, hg)
+	if !(low < 3 && mid > low && high > mid && high > 1.5*brit && high < hg) {
+		t.Error("a Britânico Mod deveria ir do limpo ao saturado, acima do Britânico e abaixo do High Gain")
+	}
+}

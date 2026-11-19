@@ -22,6 +22,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/tatianno/ampsim/dsp"
 	"github.com/tatianno/ampsim/engine"
@@ -122,8 +123,11 @@ type Instance struct {
 	stereo bool
 	chain  *engine.Chain
 
-	mu   sync.Mutex    // snap (SaveState pode rodar junto com Process)
-	snap *engine.State // cópia do preset em uso (nil = sem preset: só o sinal seco)
+	mu    sync.Mutex    // snap (SaveState e Apply podem rodar junto com Process)
+	snap  *engine.State // cópia do preset em uso (nil = sem preset: só o sinal seco)
+	empty atomic.Bool   // sem preset (snap == nil), lido na thread de áudio
+	live  bool          // NewLive: latência fixa (Chain.PadLatency) e troca de preset ao vivo
+	apply sync.Mutex    // um Apply de cada vez
 
 	// pedal (NewPedal): os knobs do módulo, na ordem de Pedal.Params, e o último valor aplicado
 	pedal  bool
@@ -143,6 +147,44 @@ func New(fs float64, stereo bool, st *engine.State) *Instance {
 	in := newInstance(fs, stereo)
 	in.use(st)
 	return in
+}
+
+// NewLive cria uma instância estéreo que troca de preset com o áudio rodando (Apply) e tem
+// sempre a mesma latência (Chain.PadLatency), para hosts em que a latência só muda com o
+// plugin parado (CLAP). Monta a cadeia: não chamar na thread de áudio.
+func NewLive(fs float64, st *engine.State) *Instance {
+	in := newInstance(fs, true)
+	in.live = true
+	in.use(st)
+	return in
+}
+
+// Apply passa a tocar st (nil = só o sinal seco) na cadeia em uso, com a transição da app
+// (spillover das caudas e rampas). Só numa instância NewLive; fora da thread de áudio (lê
+// arquivos e carrega capturas NAM), com o áudio rodando.
+func (in *Instance) Apply(st *engine.State) {
+	in.apply.Lock()
+	defer in.apply.Unlock()
+	if st != nil {
+		c := in.chain
+		if err := c.ApplyState(*st); err != nil {
+			logf("preset %q: %v", st.Name, err)
+		}
+		if err := c.PadLatency(); err != nil {
+			logf("preset %q: %v", st.Name, err)
+		}
+	}
+	in.empty.Store(st == nil)
+	in.mu.Lock()
+	in.snap = st
+	in.mu.Unlock()
+}
+
+// Snapshot devolve a cópia do preset em uso (nil = sem preset). Pode rodar junto com Process.
+func (in *Instance) Snapshot() *engine.State {
+	in.mu.Lock()
+	defer in.mu.Unlock()
+	return in.snap
 }
 
 // newInstance cria a instância sem cadeia.
@@ -169,8 +211,14 @@ func (in *Instance) use(st *engine.State) {
 			logf("preset %q: %v", st.Name, err)
 		}
 	}
+	if in.live {
+		if err := c.PadLatency(); err != nil {
+			logf("%v", err)
+		}
+	}
 	c.Prepare(in.fs, MaxBlock)
 	in.chain = c
+	in.empty.Store(st == nil)
 	in.mu.Lock()
 	in.snap = st
 	in.mu.Unlock()
@@ -199,7 +247,7 @@ func (in *Instance) Process(src, dst [][]float32, n int, s Settings) {
 	in.inG.SetTarget(dbToLin(s.InputDB))
 	in.outG.SetTarget(dbToLin(s.OutputDB))
 	dry := 0.0
-	if !s.Enabled || (!in.pedal && in.snap == nil) {
+	if !s.Enabled || (!in.pedal && in.empty.Load()) {
 		dry = 1
 	}
 	in.dryG.SetTarget(dry)

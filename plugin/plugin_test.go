@@ -211,3 +211,74 @@ func TestProcessSemAlocar(t *testing.T) {
 		t.Errorf("Process aloca %v vezes por bloco", a)
 	}
 }
+
+// Em estéreo, o preset sai igual ao render estéreo da app (L e R).
+func TestEstereoIgualAoOffline(t *testing.T) {
+	x := testSignal(fs)
+	st := factoryState(t, "Modulação")
+	in := New(fs, true, st)
+	got := run(in, x, 700, 2, on)
+	lat := in.Latency()
+	ref := make([]float64, len(x))
+	for i, v := range x {
+		ref[i] = float64(v)
+	}
+	want, err := engine.RenderOfflineChannels(*st, ref, fs, 0, 512, engine.Output{Stereo: true}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var lr float64
+	for ch := range 2 {
+		var maxd float64
+		for i := 0; i+lat < len(x); i++ {
+			maxd = math.Max(maxd, math.Abs(float64(got[ch][i+lat])-want[ch][i]))
+			lr = math.Max(lr, math.Abs(want[0][i]-want[1][i]))
+		}
+		if maxd > 1e-5 {
+			t.Errorf("canal %d: diferença máxima %.2g", ch, maxd)
+		}
+	}
+	if lr < 1e-3 {
+		t.Error("L e R iguais: o preset deveria abrir em estéreo")
+	}
+}
+
+// NewLive: a troca de preset com o áudio rodando chega ao som, a latência não muda e a cópia
+// salva acompanha o preset novo.
+func TestTrocaAoVivo(t *testing.T) {
+	in := NewLive(fs, factoryState(t, "Clean"))
+	lat := in.Latency()
+	x := testSignal(256)
+	out := [][]float32{make([]float32, 256), make([]float32, 256)}
+	in.Process([][]float32{x}, out, 256, on)
+	done := make(chan struct{})
+	go func() { // como o host: o preset novo é aplicado fora da thread de áudio
+		in.Apply(factoryState(t, "Metal"))
+		close(done)
+	}()
+	for running := true; running; {
+		select {
+		case <-done:
+			running = false
+		default:
+			in.Process([][]float32{x}, out, 256, on)
+		}
+	}
+	for range 50 { // a transição termina
+		in.Process([][]float32{x}, out, 256, on)
+	}
+	if in.Latency() != lat {
+		t.Errorf("latência mudou de %d para %d", lat, in.Latency())
+	}
+	if s := in.Snapshot(); s == nil || s.Name != "Metal" {
+		t.Fatalf("cópia salva: %v", s)
+	}
+	got := in.chain.State()
+	if got.Modules[0].ID != "gate" || !in.chain.Enabled("drive") {
+		t.Error("a cadeia não ficou com o preset Metal (drive ligado)")
+	}
+	in.Apply(nil) // sem preset: sinal seco
+	if !in.empty.Load() {
+		t.Error("Apply(nil) deveria deixar só o sinal seco")
+	}
+}

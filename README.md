@@ -13,9 +13,10 @@ para Go em streaming, validados contra as saídas do Python.
 
 ## O que tem
 
-- **Amp em três partes** — pré-amp (ganho, grave, médio, agudo, com a voz Moderno, Americano, Britânico ou
-  **High Gain**; Americano e Britânico são os circuitos TMB do Fender Bassman e do Marshall JTM45 modelados, e o
-  High Gain tem pré próprio, três estágios em cascata ajustados medindo um amp moderno de alto ganho; nos três, a curva
+- **Amp em três partes** — pré-amp (ganho, grave, médio, agudo, com a voz Moderno, Americano, Britânico,
+  **Britânico Mod** ("Brit. Mod") ou **High Gain**; Americano e Britânico são os circuitos TMB do Fender Bassman e do
+  Marshall JTM45 modelados, o High Gain tem pré próprio, três estágios em cascata ajustados medindo um amp moderno de
+  alto ganho, e a Britânico Mod é o britânico com um estágio de ganho a mais, do crunch ao hard rock; em todos, a curva
   do knob de grave sai do próprio circuito, em passos iguais de dB), power amp (presença,
   volume) e gabinete (IR, low cut, high cut). Vêm incluídas três IRs (1x10 SM58, 2x12 SM57, a padrão, e 4x12 SM7),
   e o gabinete também abre qualquer WAV de IR.
@@ -77,7 +78,7 @@ para Go em streaming, validados contra as saídas do Python.
   **Spillover** (ligado por padrão): na troca de preset, as repetições do delay e a cauda do reverb continuam
   soando com os ajustes do preset anterior enquanto o novo já toca; desligado, a cauda some num fade de 30 ms.
 - **CLI** para processar arquivos offline.
-- **Plugin LV2** que aplica um preset numa faixa (veja [Plugin](#plugin-lv2)).
+- **Plugin LV2 e CLAP** que aplica um preset numa faixa, e os pedais sozinhos (veja [Plugin](#plugin-lv2-e-clap)).
 
 ## Requisitos
 
@@ -145,11 +146,12 @@ Ao vivo, ajuste o **Trim** até o nível da guitarra ficar na faixa ideal marcad
 Para saber a latência real, ligue um cabo da saída da placa numa entrada e use **Menu → Áudio… → Medir latência**.
 A IR pode ser qualquer WAV de resposta ao impulso de gabinete (qualquer taxa; é reamostrada).
 
-## Plugin LV2
+## Plugin LV2 e CLAP
 
 O plugin aplica um preset do app numa faixa: no **Audacity** (gravando a DI limpa e aplicando depois, como
-efeito ou como efeito em tempo real) e em hosts que monitoram ao vivo (Ardour, Carla). O som não é editado no
-plugin: os presets são feitos no app.
+efeito ou como efeito em tempo real) e em hosts que monitoram ao vivo (**Reaper**, Ardour, Carla). O som não é
+editado no plugin: os presets são feitos no app. Vem em dois formatos, no mesmo arquivo: **LV2** (um efeito por
+preset e por pedal) e **CLAP** (um efeito só, com a lista de presets; veja abaixo).
 
 **Cada preset é um efeito**, pelo nome: **AmpSim: Clean**, **AmpSim: Americano Limpo**… e os seus (**AmpSim: Meu Som**).
 O app mantém a lista em dia: ao abrir e ao salvar, apagar ou restaurar presets, ele reescreve o plugin em
@@ -167,20 +169,33 @@ Reverb, cada um com **Ligado**. Os seletores viram caixa de marcar quando têm d
 (Rápido)") ou um número com a legenda no nome ("Modo (0 Boost, 1 Overdrive, 2 Distorção, 3 Fuzz, 4 Muff)"): uma
 lista de opções sai embaralhada no Audacity. Amp e gabinete vêm pelos presets.
 
-Os plugins são mono (no Audacity, numa faixa estéreo, cada canal passa pelo efeito; a Largura das modulações e o
-delay ping-pong ficam de fora). Instalação:
+Cada efeito vem **mono** e **estéreo** ("AmpSim: Clean (estéreo)", "AmpSim Pedal: Delay (estéreo)"). O mono é
+para a faixa da DI em mono (no Audacity, numa faixa estéreo, cada canal passa pelo efeito); o estéreo mistura a
+entrada em mono e sai em dois canais, com a Largura das modulações e o delay ping-pong. **No Reaper, use o
+estéreo** (as faixas são estéreo: um efeito mono processa só o canal 1).
 
-- **`.tar.gz`**: o `install.sh` copia o plugin para `~/.lv2/ampsim.lv2`.
+**CLAP** (Reaper, Bitwig…): um efeito só, **AmpSim**, estéreo, com os parâmetros **Preset** (a lista com os de
+fábrica e os seus, pelo nome, lida ao abrir o efeito), Entrada, Saída e **Bypass**. Trocar o Preset (à mão ou
+por automação) muda o som com o áudio rodando, com o spillover do app; a latência é sempre a mesma (96 amostras).
+O projeto guarda uma cópia do preset: se ele for apagado no app, o Preset mostra "… (cópia do projeto)".
+
+Instalação:
+
+- **`.tar.gz`**: o `install.sh` copia o plugin para `~/.lv2/ampsim.lv2` e liga `~/.clap/ampsim.clap` a ele.
 - **`.deb`**: o pacote instala o `.so` em `/usr/lib/ampsim/`; **abra o app uma vez** e ele monta o plugin em
-  `~/.lv2` (cada usuário tem os seus presets). Remover o pacote apaga esse plugin.
+  `~/.lv2` e `~/.clap` (cada usuário tem os seus presets). Remover o pacote apaga esse plugin.
 - **Código**: `plugin/lv2/build.sh --install`.
+
+O LV2 e o CLAP são o mesmo arquivo (`ampsim.clap` é um link para o `ampsim.so`): abertos juntos no mesmo host, o
+sistema carrega uma vez só.
 
 Nos hosts que guardam o estado dos plugins (Ardour, Carla), o projeto leva uma **cópia do preset**: editar o
 preset no app depois não muda o som do projeto. O Audacity 3.4 não guarda o estado: lá o efeito usa o preset
 como ele está no app (o efeito aplicado já fica gravado no áudio). Apagar um preset tira o efeito da lista.
 
-Para conferir o bundle sem DAW (pela lilv, a mesma biblioteca do Audacity): `plugin/lv2/hostcheck/check.sh`
-compara a saída do plugin com o render offline do app e testa salvar e restaurar o estado.
+Para conferir sem DAW: `plugin/lv2/hostcheck/check.sh` carrega o LV2 pela lilv (a mesma biblioteca do Audacity)
+e o CLAP por um host mínimo (`clapcheck.c`), compara a saída com o render offline do app, testa salvar e restaurar
+o estado e, no CLAP, a troca de preset com o áudio rodando.
 
 ## testdata
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Ao remover o pacote, apaga os bundles LV2 que o app montou nas pastas pessoais: os que são
+# Ao remover o pacote, apaga os bundles LV2 (e o link do CLAP) que o app montou nas pastas pessoais: os que são
 # só um link para o .so do pacote (/usr/lib/ampsim/ampsim.so). Um bundle com o .so de verdade
 # (instalado pelo .tar.gz) fica.
 set -e
@@ -10,6 +10,8 @@ remove | purge)
 		[ "$(readlink "$b/ampsim.so")" = /usr/lib/ampsim/ampsim.so ] || continue
 		rm -f "$b/ampsim.so" "$b/manifest.ttl" "$b/ampsim.ttl"
 		rmdir "$b" 2>/dev/null || true
+		c="${b%/.lv2/ampsim.lv2}/.clap/ampsim.clap" # o link do CLAP para esse .so
+		[ -L "$c" ] && [ "$(readlink "$c")" = "$b/ampsim.so" ] && rm -f "$c"
 	done
 	;;
 esac

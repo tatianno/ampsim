@@ -18,7 +18,7 @@ import (
 // fica só com o volume (a captura já inclui o power amp).
 type Head struct {
 	chain      *engine.Chain
-	stackSel   *Selector // voz: Moderno / Americano / Britânico / High Gain
+	stackSel   *Selector // voz: Moderno / Americano / Britânico / Brit. Mod / High Gain
 	ampSel     *Selector // Simulado / NAM
 	sizeSel    *Selector // Lite / Completo
 	preKnobs   []*Knob
@@ -39,6 +39,7 @@ func NewHead(chain *engine.Chain) *Head {
 			switch id := p.Info().ID; {
 			case id == "stack":
 				h.stackSel = NewSelector(p)
+				h.stackSel.Inline = true // "Voz" ao lado dos botões, na linha do título
 			case id == "amp":
 				h.ampSel = NewSelector(p)
 			case id == "nam_size":

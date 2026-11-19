@@ -183,6 +183,27 @@ func (c *Chain) Add(id string) error {
 	return c.SetOrder(insertDefault(ids, id, c.allIDs()))
 }
 
+// PadLatency põe na cadeia, desligados, os módulos com latência que estão fora dela (o drive,
+// o synth): desligados, eles só atrasam o sinal seco, então o som não muda, e a latência da
+// cadeia fica a máxima, a mesma com qualquer preset. Para os hosts em que a latência só pode
+// mudar com o plugin parado (CLAP). Seguro com o áudio rodando (a troca de ordem tem a rampa
+// de sempre); antes do Prepare, a cadeia já começa com eles.
+func (c *Chain) PadLatency() error {
+	ids := c.Order()
+	n := len(ids)
+	for _, s := range c.all {
+		if s.m.Latency() == 0 || slices.Contains(ids, s.m.ID()) {
+			continue
+		}
+		s.enabled.Store(false)
+		ids = insertDefault(ids, s.m.ID(), c.allIDs())
+	}
+	if len(ids) == n {
+		return nil
+	}
+	return c.SetOrder(ids)
+}
+
 // insertDefault insere id em ids logo depois do módulo que o precede em ref e está em ids.
 func insertDefault(ids []string, id string, ref []string) []string {
 	pos := 0

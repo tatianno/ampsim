@@ -782,7 +782,7 @@ func TestPresetV3GraveTMB(t *testing.T) {
 	for _, tc := range []struct {
 		stack float64
 		model dsp.TMBModel
-	}{{StackAmerican, dsp.TMBFender}, {StackBritish, dsp.TMBMarshall}, {StackHighGain, dsp.TMBHighGain}, {StackModern, dsp.TMBModel{}}} {
+	}{{StackAmerican, dsp.TMBFender}, {StackBritish, dsp.TMBMarshall}, {legacyStackHighGain, dsp.TMBHighGain}, {StackModern, dsp.TMBModel{}}} {
 		for _, old := range []float64{0, 3, 5, 10} {
 			params := map[string]float64{"bass": old, "stack": tc.stack}
 			st := State{Version: 3, Modules: []ModuleState{{ID: PreID, Enabled: true, Params: params}}}
@@ -808,6 +808,81 @@ func TestPresetV3GraveTMB(t *testing.T) {
 			if err := d.ApplyState(c.State()); err != nil || d.Module(PreID).Param("bass").Get() != got {
 				t.Errorf("reaplicar o estado mudou o grave: %v", err)
 			}
+		}
+	}
+}
+
+// PadLatency deixa a latência a máxima com qualquer preset, sem mudar o som (só o atraso).
+func TestPadLatency(t *testing.T) {
+	full := NewDefaultChain()
+	for _, id := range full.Order() {
+		full.Add(id)
+	}
+	full.Prepare(48000, 256)
+	want := full.Latency()
+
+	x := make([]float64, 9600)
+	for i := range x {
+		x[i] = 0.3 * math.Sin(2*math.Pi*220*float64(i)/48000) * math.Exp(-float64(i)/9600)
+	}
+	sc := NewDefaultChain()
+	if err := sc.SetOrder(StartOrder); err != nil { // gate e amp: sem drive e sem synth
+		t.Fatal(err)
+	}
+	st := sc.State()
+	a := NewDefaultChain()
+	a.ApplyState(st)
+	a.Prepare(48000, 256)
+	b := NewDefaultChain()
+	b.ApplyState(st)
+	if err := b.PadLatency(); err != nil {
+		t.Fatal(err)
+	}
+	b.Prepare(48000, 256)
+	if b.Latency() != want || a.Latency() >= want {
+		t.Fatalf("latência: %d com PadLatency, %d sem, máxima %d", b.Latency(), a.Latency(), want)
+	}
+	if b.Enabled("drive") || !b.InChain("drive") || b.Enabled("synth") {
+		t.Error("o drive e o synth deveriam estar na cadeia, desligados")
+	}
+	ya := append(slices.Clone(x), make([]float64, want)...)
+	yb := slices.Clone(ya)
+	for off := 0; off < len(ya); off += 256 {
+		a.ProcessMono(ya[off:min(off+256, len(ya))])
+		b.ProcessMono(yb[off:min(off+256, len(yb))])
+	}
+	d := want - a.Latency()
+	for i := 0; i+d < len(ya); i++ {
+		if math.Abs(yb[i+d]-ya[i]) > 1e-12 {
+			t.Fatalf("amostra %d: %g com PadLatency, %g sem (atraso %d)", i, yb[i+d], ya[i], d)
+		}
+	}
+}
+
+// Presets até a versão 4: a voz High Gain era 3 (a Britânico Mod entrou antes dela).
+func TestPresetV4VozHighGain(t *testing.T) {
+	for _, tc := range []struct {
+		version int
+		stack   float64
+		want    int
+	}{
+		{4, legacyStackHighGain, StackHighGain},
+		{4, StackBritish, StackBritish},
+		{3, legacyStackHighGain, StackHighGain},
+		{StateVersion, StackBritishMod, StackBritishMod},
+		{StateVersion, StackHighGain, StackHighGain},
+	} {
+		params := map[string]float64{"stack": tc.stack, "bass": 5}
+		st := State{Version: tc.version, Modules: []ModuleState{{ID: PreID, Enabled: true, Params: params}}}
+		c := NewDefaultChain()
+		if err := c.ApplyState(st); err != nil {
+			t.Fatal(err)
+		}
+		if got := int(c.Pre().Param("stack").Get()); got != tc.want {
+			t.Errorf("versão %d, voz %v: virou %d, esperava %d", tc.version, tc.stack, got, tc.want)
+		}
+		if params["stack"] != tc.stack {
+			t.Fatal("a migração mudou o estado original")
 		}
 	}
 }

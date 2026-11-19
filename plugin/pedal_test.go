@@ -9,7 +9,7 @@ import (
 )
 
 func TestPedals(t *testing.T) {
-	ps := Pedals()
+	ps := Pedals(false)
 	var ids []string
 	for _, p := range ps {
 		ids = append(ids, p.ID)
@@ -22,7 +22,7 @@ func TestPedals(t *testing.T) {
 	if len(ps) != 17 || slices.Contains(ids, engine.PreID) || slices.Contains(ids, engine.CabID) {
 		t.Errorf("pedais: %v", ids)
 	}
-	d, _ := FindPedal("drive")
+	d, _ := FindPedal("drive", false)
 	for _, q := range d.Params {
 		if q.ID == "type" || q.ID == "nam_input" {
 			t.Errorf("drive expõe %q", q.ID)
@@ -32,7 +32,7 @@ func TestPedals(t *testing.T) {
 
 func TestLabels(t *testing.T) {
 	label := func(pedal, param string) string {
-		p, ok := FindPedal(pedal)
+		p, ok := FindPedal(pedal, true)
 		if !ok {
 			t.Fatalf("pedal %s", pedal)
 		}
@@ -52,6 +52,8 @@ func TestLabels(t *testing.T) {
 		{"rotary", "speed", "Velocidade (Rápido)"},
 		{"phaser", "stages", "Estágios (4, 6, 8)"},
 		{"chorus", "rate", "Rate"},
+		{"chorus", "width", "Largura"},
+		{"delay", "stmode", "Estéreo (Ping-pong)"},
 	} {
 		if got := label(c.pedal, c.param); got != c.want {
 			t.Errorf("%s.%s: %q, esperava %q", c.pedal, c.param, got, c.want)
@@ -71,49 +73,63 @@ func knobs(p Pedal) []float64 {
 	return vs
 }
 
-// Cada pedal soa igual ao módulo da app com os mesmos knobs.
+// Cada pedal soa igual ao módulo da app com os mesmos knobs, em mono e em estéreo.
 func TestPedalIgualAoModulo(t *testing.T) {
 	x := testSignal(fs)
-	for _, p := range Pedals() {
-		vs := knobs(p)
-		in, err := NewPedal(fs, p.ID)
-		if err != nil {
-			t.Fatal(err)
+	for _, stereo := range []bool{false, true} {
+		outs := 1
+		if stereo {
+			outs = 2
 		}
-		in.Activate(vs)
-		got := run(in, x, 300, 1, Settings{Enabled: true, Params: vs})[0]
-		lat := in.Latency()
+		for _, p := range Pedals(stereo) {
+			vs := knobs(p)
+			in, err := NewPedal(fs, p.ID, stereo)
+			if err != nil {
+				t.Fatal(err)
+			}
+			in.Activate(vs)
+			got := run(in, x, 300, outs, Settings{Enabled: true, Params: vs})
+			lat := in.Latency()
 
-		m := engine.NewDefaultChain().Module(p.ID)
-		for i, info := range p.Params {
-			m.Param(info.ID).Set(vs[i])
-		}
-		c := engine.NewChain(m)
-		c.Prepare(fs, MaxBlock)
-		ref := make([]float64, len(x)+lat)
-		for i, v := range x {
-			ref[i] = float64(v)
-		}
-		for off := 0; off < len(ref); off += 256 {
-			c.ProcessMono(ref[off:min(off+256, len(ref))])
-		}
-		var maxd, diff float64
-		for i := 0; i+lat < len(got); i++ {
-			maxd = math.Max(maxd, math.Abs(float64(got[i+lat])-ref[i+lat]))
-			diff = math.Max(diff, math.Abs(float64(got[i+lat])-float64(x[i])))
-		}
-		if maxd > 1e-6 {
-			t.Errorf("%s: diferença máxima para o módulo %.2g (latência %d)", p.ID, maxd, lat)
-		}
-		if diff < 1e-3 {
-			t.Errorf("%s: a saída é igual à entrada (o pedal não fez nada)", p.ID)
+			m := engine.NewDefaultChain().Module(p.ID)
+			for i, info := range p.Params {
+				m.Param(info.ID).Set(vs[i])
+			}
+			c := engine.NewChain(m)
+			c.SetStereo(stereo)
+			c.Prepare(fs, MaxBlock)
+			ref := [2][]float64{make([]float64, len(x)+lat), make([]float64, len(x)+lat)}
+			for i, v := range x {
+				ref[0][i] = float64(v)
+			}
+			for off := 0; off < len(ref[0]); off += 256 {
+				e := min(off+256, len(ref[0]))
+				if stereo {
+					c.ProcessStereo(ref[0][off:e], ref[1][off:e])
+				} else {
+					c.ProcessMono(ref[0][off:e])
+				}
+			}
+			for ch := range outs {
+				var maxd, diff float64
+				for i := 0; i+lat < len(x); i++ {
+					maxd = math.Max(maxd, math.Abs(float64(got[ch][i+lat])-ref[ch][i+lat]))
+					diff = math.Max(diff, math.Abs(float64(got[ch][i+lat])-float64(x[i])))
+				}
+				if maxd > 1e-6 {
+					t.Errorf("%s (estéreo %v) canal %d: diferença máxima para o módulo %.2g", p.ID, stereo, ch, maxd)
+				}
+				if diff < 1e-3 {
+					t.Errorf("%s (estéreo %v) canal %d: a saída é igual à entrada", p.ID, stereo, ch)
+				}
+			}
 		}
 	}
 }
 
 func TestPedalSemAlocar(t *testing.T) {
-	p, _ := FindPedal("delay")
-	in, err := NewPedal(fs, p.ID)
+	p, _ := FindPedal("delay", false)
+	in, err := NewPedal(fs, p.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}

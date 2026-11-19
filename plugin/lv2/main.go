@@ -89,9 +89,10 @@ func ampsimNew(rate C.double, curi *C.char) C.uintptr_t {
 		logf("plugin %s não existe mais", uri)
 		return 0
 	}
-	it := &instance{pl: pl, src: make([][]float32, 1), dst: make([][]float32, 1), vals: make([]float64, len(pl.Controls))}
+	n := pl.Channels()
+	it := &instance{pl: pl, src: make([][]float32, n), dst: make([][]float32, n), vals: make([]float64, len(pl.Controls))}
 	if pl.Pedal != "" {
-		in, err := plugin.NewPedal(float64(rate), pl.Pedal)
+		in, err := plugin.NewPedal(float64(rate), pl.Pedal, pl.Stereo)
 		if err != nil {
 			logf("%v", err)
 			return 0
@@ -102,9 +103,9 @@ func ampsimNew(rate C.double, curi *C.char) C.uintptr_t {
 		st, err := pl.Preset.State()
 		if err != nil {
 			logf("preset %q: %v", pl.Preset.Name, err)
-			it.in = plugin.New(float64(rate), false, nil) // sinal seco
+			it.in = plugin.New(float64(rate), pl.Stereo, nil) // sinal seco
 		} else {
-			it.in = plugin.New(float64(rate), false, &st)
+			it.in = plugin.New(float64(rate), pl.Stereo, &st)
 		}
 	}
 	return C.uintptr_t(cgo.NewHandle(it))
@@ -144,13 +145,15 @@ func ampsimRun(h C.uintptr_t, ports **C.float, n C.uint32_t) {
 	it := cgo.Handle(h).Value().(*instance)
 	p := unsafe.Slice(ports, it.pl.NumPorts())
 	it.read(p)
-	in, out := p[it.pl.PortIn()], p[it.pl.PortOut()]
-	if in == nil || out == nil {
-		return
-	}
 	k := int(n)
-	it.src[0] = unsafe.Slice((*float32)(unsafe.Pointer(in)), k)
-	it.dst[0] = unsafe.Slice((*float32)(unsafe.Pointer(out)), k)
+	for ch := range it.pl.Channels() {
+		in, out := p[it.pl.PortIn(ch)], p[it.pl.PortOut(ch)]
+		if in == nil || out == nil {
+			return
+		}
+		it.src[ch] = unsafe.Slice((*float32)(unsafe.Pointer(in)), k)
+		it.dst[ch] = unsafe.Slice((*float32)(unsafe.Pointer(out)), k)
+	}
 	it.in.Process(it.src, it.dst, k, it.s)
 	if lp := p[it.pl.PortLatency()]; lp != nil {
 		*lp = C.float(it.in.Latency())

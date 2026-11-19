@@ -64,12 +64,30 @@ var HighGainDefault = HGParams{
 	Out:  0.25,
 }
 
+// BritishModDefault é a cascata da voz Britânico Mod: um cabeçote britânico com um estágio de
+// ganho a mais (como as modificações dos anos 80). Comparada à do High Gain: entrada menos
+// "tight" (o grave entra mais solto), shelf de brilho maior (o capacitor de brilho do canal),
+// passa-baixas mais abertos (mais agudo e "fizz") e menos ganho nos estágios 2 e 3, para o knob
+// ir do crunch ao saturado. Sem captura de referência: ajustada pela THD (veja o PLANO).
+var BritishModDefault = HGParams{
+	TightHz: 120, Tight2Hz: 0,
+	BrightHz: 1500, BrightDB: 4,
+	HP1Hz: 160, HP2Hz: 20,
+	LP1Hz: 6000, LP2Hz: 5000, LP3Hz: 21200,
+	G1Min: 0.3, G1Max: 20, G2: 6, G3: 3,
+	Bias: 0.2,
+	Out:  0.25,
+}
+
 // NewHighGain cria o pré de alto ganho para a taxa fs (aloca).
-func NewHighGain(fs float64) *HighGain {
+func NewHighGain(fs float64) *HighGain { return NewHighGainWith(fs, HighGainDefault) }
+
+// NewHighGainWith cria a cascata com os parâmetros p (aloca).
+func NewHighGainWith(fs float64, p HGParams) *HighGain {
 	h := &HighGain{fs: fs, os: NewOversampler4x()}
 	h.dc = NewCascade(ButterworthHighpass(2, fs, 30))
 	h.drive = NewSmoother(fs, 20)
-	h.SetParams(HighGainDefault)
+	h.SetParams(p)
 	return h
 }
 

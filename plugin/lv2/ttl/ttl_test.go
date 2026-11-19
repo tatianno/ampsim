@@ -88,6 +88,10 @@ func TestSyncComSoNoBundle(t *testing.T) { // .tar.gz ou build.sh
 	if read(t, filepath.Join(bundle, Binary)) != "so" {
 		t.Error("o .so do bundle mudou")
 	}
+	clap, _ := UserCLAP()
+	if dst, err := os.Readlink(clap); err != nil || dst != filepath.Join(bundle, Binary) {
+		t.Errorf("link do CLAP: %q, %v", dst, err)
+	}
 }
 
 func TestSyncComSoDoSistema(t *testing.T) { // .deb
@@ -114,6 +118,9 @@ func TestSyncComSoDoSistema(t *testing.T) { // .deb
 	if _, err := os.Lstat(bundle); !os.IsNotExist(err) {
 		t.Errorf("o bundle com o link quebrado continua: %v", err)
 	}
+	if clap, _ := UserCLAP(); func() bool { _, err := os.Lstat(clap); return !os.IsNotExist(err) }() {
+		t.Error("o link do CLAP continua sem o bundle")
+	}
 }
 
 // Os plugins têm portas com símbolos válidos (identificadores C, sem repetir) e nenhuma lista
@@ -130,7 +137,7 @@ func TestPlugins(t *testing.T) {
 		if p.Pedal != "" {
 			pedals++
 		}
-		seen := map[string]bool{"latencia": true, "in": true, "out": true}
+		seen := map[string]bool{"latencia": true, "in": true, "out": true, "in_l": true, "in_r": true, "out_l": true, "out_r": true}
 		for _, c := range p.Controls {
 			ok := c.Symbol != "" && !seen[c.Symbol]
 			for i, r := range c.Symbol {
@@ -145,10 +152,32 @@ func TestPlugins(t *testing.T) {
 			t.Errorf("Find(%s) = %v, %v", p.URI(), got.ID, ok)
 		}
 	}
-	if pedals != len(plugin.Pedals()) || len(pl) != pedals+len(presets.Factory()) {
+	if pedals != 2*len(plugin.Pedals(false)) || len(pl) != pedals+2*len(presets.Factory()) {
 		t.Errorf("%d plugins, %d pedais", len(pl), pedals)
 	}
 	if d := Describe(pl); strings.Contains(d, "lv2:enumeration") {
 		t.Error("o .ttl tem lv2:enumeration")
+	}
+}
+
+func TestVarianteEstereo(t *testing.T) {
+	ps := plugin.FromList(presets.Factory())
+	m, ok1 := Find(URIBase+"#pedal-delay", ps)
+	st, ok2 := Find(URIBase+"#pedal-delay-estereo", ps)
+	if !ok1 || !ok2 || m.Stereo || !st.Stereo || st.Name != "AmpSim Pedal: Delay (estéreo)" {
+		t.Fatalf("delay: %+v / %+v", m.ID, st.ID)
+	}
+	if len(st.Controls) != len(m.Controls)+2 { // Largura e Estéreo (ping-pong)
+		t.Errorf("delay estéreo com %d controles, mono %d", len(st.Controls), len(m.Controls))
+	}
+	if st.NumPorts() != len(st.Controls)+5 || st.PortOut(1) != st.NumPorts()-1 || st.PortIn(1) != st.PortIn(0)+1 {
+		t.Errorf("portas do estéreo: %d, in %d %d, out %d %d", st.NumPorts(), st.PortIn(0), st.PortIn(1), st.PortOut(0), st.PortOut(1))
+	}
+	c, ok := Find(URIBase+"#fabrica-clean-estereo", ps)
+	if !ok || !c.Stereo || c.Name != "AmpSim: Clean (estéreo)" || c.Preset.Name != "Clean" {
+		t.Errorf("Clean estéreo: %+v", c.ID)
+	}
+	if !strings.Contains(Describe([]Plugin{c}), `lv2:symbol "out_r"`) {
+		t.Error("sem a porta out_r")
 	}
 }

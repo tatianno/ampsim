@@ -26,7 +26,7 @@ export GOEXPERIMENT="${GOEXPERIMENT:-simd}"
 CGO_ENABLED=1 go build -trimpath -ldflags "$LDFLAGS" -o "$TMP/ampsim" ./cmd/ampapp
 CGO_ENABLED=1 go build -trimpath -ldflags "-s -w" -o "$TMP/ampsim-cli" ./cmd/ampcli
 
-plugin/lv2/build.sh >/dev/null # dist/lv2/ampsim.lv2
+VERSION="$VERSAO" plugin/lv2/build.sh >/dev/null # dist/lv2/ampsim.lv2 (o .so também é o plugin CLAP)
 LV2="$DIST/lv2/ampsim.lv2"
 
 "$TMP/ampsim" -versao | grep -q 'AVX2' || echo "aviso: binário sem os núcleos SIMD (GOEXPERIMENT=$GOEXPERIMENT; CPU sem AVX2/FMA?)"

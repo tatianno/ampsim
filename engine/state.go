@@ -18,7 +18,8 @@ import (
 //	2: amp dividido em pre/power/cab e a lista de módulos na ordem da cadeia (todos).
 //	3: a lista tem só os módulos que estão na cadeia (os outros ficam de fora).
 //	4: curva nova do knob de grave nos tone stacks TMB (Americano, Britânico, High Gain).
-const StateVersion = 4
+//	5: a voz Britânico Mod entra antes da High Gain no seletor (a High Gain passa de 3 a 4).
+const StateVersion = 5
 
 // State é o estado completo da cadeia: o mesmo JSON serve de preset no app e de state no plugin.
 // Na versão 2, Modules vem na ordem da cadeia; um preset com todos os módulos define a ordem.
@@ -69,6 +70,9 @@ func (c *Chain) ApplyState(st State) error {
 	}
 	if st.Version < 4 {
 		st = migrateBassV4(st)
+	}
+	if st.Version < 5 {
+		st = migrateStackV5(st)
 	}
 	c.beginTransition() // antes dos parâmetros: as caudas do som atual saem com os ajustes dele
 	var ids []string
@@ -165,13 +169,29 @@ func migrateBassV4(st State) State {
 			m = dsp.TMBFender
 		case StackBritish:
 			m = dsp.TMBMarshall
-		case StackHighGain:
+		case legacyStackHighGain: // a numeração de antes da versão 5
 			m = dsp.TMBHighGain
 		default: // Moderno (ou sem "stack", que é o padrão): outra curva, não mudou
 			continue
 		}
 		ps := maps.Clone(ms.Params)
 		ps["bass"] = math.Round(m.BassKnob(dsp.LegacyBassTaper(b))*100) / 100
+		out[i].Params = ps
+	}
+	st.Modules = out
+	return st
+}
+
+// migrateStackV5 renumera a voz High Gain (3 → 4: a Britânico Mod entrou antes dela no
+// seletor). Não muda o estado original (os mapas são copiados).
+func migrateStackV5(st State) State {
+	out := slices.Clone(st.Modules)
+	for i, ms := range out {
+		if v, ok := ms.Params["stack"]; ms.ID != PreID || !ok || int(v) != legacyStackHighGain {
+			continue
+		}
+		ps := maps.Clone(ms.Params)
+		ps["stack"] = StackHighGain
 		out[i].Params = ps
 	}
 	st.Modules = out

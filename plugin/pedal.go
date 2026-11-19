@@ -14,19 +14,20 @@ import (
 type Pedal struct {
 	ID     string // id do módulo (engine): "chorus", "delay"…
 	Name   string
+	Stereo bool               // a variante estéreo (com Largura e o modo estéreo do delay)
 	Params []engine.ParamInfo // os parâmetros expostos, na ordem do módulo
 }
 
-// hidden são os parâmetros que o plugin de pedal não expõe, além dos só de estéreo
-// (engine.StereoOnly: o plugin é mono): o drive fica no modo modelado (o tipo NAM depende de
+// hidden são os parâmetros que o plugin de pedal não expõe, além dos só de estéreo na
+// variante mono (engine.StereoOnly): o drive fica no modo modelado (o tipo NAM depende de
 // uma captura, que não tem seletor de arquivo na UI genérica).
 var hidden = map[string][]string{
 	"drive": {"type", "nam_input", "nam_size"},
 }
 
 // Pedals devolve os pedais e modulações, na ordem padrão da cadeia (o amp e o gabinete
-// ficam de fora: são oferecidos pelos presets).
-func Pedals() []Pedal {
+// ficam de fora: são oferecidos pelos presets), na variante mono ou estéreo.
+func Pedals(stereo bool) []Pedal {
 	c := engine.NewDefaultChain()
 	var out []Pedal
 	for _, id := range engine.DefaultOrder {
@@ -34,10 +35,10 @@ func Pedals() []Pedal {
 			continue
 		}
 		m := c.Module(id)
-		p := Pedal{ID: id, Name: m.Name()}
+		p := Pedal{ID: id, Name: m.Name(), Stereo: stereo}
 		for _, q := range m.Params() {
 			info := q.Info()
-			if engine.StereoOnly(info.ID) || slices.Contains(hidden[id], info.ID) {
+			if (!stereo && engine.StereoOnly(info.ID)) || slices.Contains(hidden[id], info.ID) {
 				continue
 			}
 			p.Params = append(p.Params, info)
@@ -47,9 +48,9 @@ func Pedals() []Pedal {
 	return out
 }
 
-// FindPedal devolve o pedal id.
-func FindPedal(id string) (Pedal, bool) {
-	for _, p := range Pedals() {
+// FindPedal devolve o pedal id, na variante mono ou estéreo.
+func FindPedal(id string, stereo bool) (Pedal, bool) {
+	for _, p := range Pedals(stereo) {
 		if p.ID == id {
 			return p, true
 		}
@@ -108,17 +109,19 @@ func isNumber(s string) bool {
 	return s != "" && strings.TrimFunc(s, unicode.IsDigit) == ""
 }
 
-// NewPedal cria uma instância do pedal id à taxa fs (mono): a cadeia tem só esse módulo, e
-// Settings.Params traz os valores dos knobs (na ordem de Pedal.Params) a cada bloco.
-func NewPedal(fs float64, id string) (*Instance, error) {
-	p, ok := FindPedal(id)
+// NewPedal cria uma instância do pedal id à taxa fs: a cadeia tem só esse módulo, e
+// Settings.Params traz os valores dos knobs (na ordem de Pedal.Params) a cada bloco. Em
+// estéreo, a entrada é misturada em mono e o módulo sai em dois canais (como na app).
+func NewPedal(fs float64, id string, stereo bool) (*Instance, error) {
+	p, ok := FindPedal(id, stereo)
 	if !ok {
 		return nil, fmt.Errorf("pedal %q não existe", id)
 	}
 	m := engine.NewDefaultChain().Module(id) // um módulo novo (a cadeia padrão é descartada)
-	in := newInstance(fs, false)
+	in := newInstance(fs, stereo)
 	in.pedal = true
 	c := engine.NewChain(m)
+	c.SetStereo(stereo)
 	c.Prepare(fs, MaxBlock)
 	in.chain = c
 	for _, info := range p.Params {

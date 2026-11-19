@@ -96,7 +96,8 @@ func (m *Gate) Process(buf []float64) {
 // ou o circuito passivo TMB modelado ("Americano": Fender Bassman 5F6-A; "Britânico": Marshall
 // JTM45/1959), em que os controles interagem. A voz "High Gain" troca também o pré: três
 // estágios de saturação em cascata (dsp.HighGain) e um TMB próprio, ajustados medindo uma
-// captura de um amp moderno de alto ganho.
+// captura de um amp moderno de alto ganho. A "Britânico Mod" usa a mesma cascata com outros
+// valores (dsp.BritishModDefault) e o TMB britânico: um britânico com um estágio a mais.
 type Pre struct {
 	base
 	tight dsp.Biquad
@@ -105,6 +106,8 @@ type Pre struct {
 	tmb   [2]*dsp.TMBStack // Americano, Britânico
 	hg    *dsp.HighGain    // pré da voz High Gain
 	hgTMB *dsp.TMBStack    // tone stack da voz High Gain
+	bm    *dsp.HighGain    // pré da voz Britânico Mod
+	bmTMB *dsp.TMBStack    // tone stack da voz Britânico Mod (o britânico)
 
 	kind, prev int     // tone stack atual e o anterior (durante a troca)
 	xf, xstep  float64 // crossfade da troca de tone stack (0 → 1)
@@ -121,8 +124,16 @@ const (
 	StackModern = iota
 	StackAmerican
 	StackBritish
-	StackHighGain // voz High Gain: pré próprio (dsp.HighGain) + TMB próprio
+	StackBritishMod // voz Britânico Mod: cascata (dsp.BritishModDefault) + TMB britânico
+	StackHighGain   // voz High Gain: pré próprio (dsp.HighGain) + TMB próprio
 )
+
+// legacyStackHighGain é o valor da voz High Gain nos presets até a versão 4 (antes da
+// Britânico Mod entrar antes dela no seletor).
+const legacyStackHighGain = 3
+
+// cascade diz se a voz k tem pré próprio (uma cascata de estágios), em vez do pré clássico.
+func cascade(k int) bool { return k == StackHighGain || k == StackBritishMod }
 
 // StackFadeMs é o crossfade ao trocar de tone stack (evita estalo).
 const StackFadeMs = 20.0
@@ -136,8 +147,8 @@ func NewPre() *Pre {
 			ParamInfo{ID: "bass", Name: "Grave", Min: 0, Max: 10, Default: 5},
 			ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
 			ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
-			ParamInfo{ID: "stack", Name: "Voz", Min: 0, Max: 3, Default: StackModern, Step: 1,
-				Choices: []string{"Moderno", "Americano", "Britânico", "High Gain"}},
+			ParamInfo{ID: "stack", Name: "Voz", Min: 0, Max: 4, Default: StackModern, Step: 1,
+				Choices: []string{"Moderno", "Americano", "Britânico", "Brit. Mod", "High Gain"}},
 			ParamInfo{ID: "amp", Name: "Amp", Min: 0, Max: 1, Default: AmpSimulated, Step: 1,
 				Choices: []string{"Simulado", "NAM"}},
 			ParamInfo{ID: "nam_input", Name: "Entrada", Unit: "dB", Min: -24, Max: 24, Default: 0},
@@ -153,6 +164,8 @@ func (m *Pre) Prepare(fs float64, maxBlock int) {
 	m.tmb = [2]*dsp.TMBStack{dsp.NewTMBStack(fs, dsp.TMBFender), dsp.NewTMBStack(fs, dsp.TMBMarshall)}
 	m.hg = dsp.NewHighGain(fs)
 	m.hgTMB = dsp.NewTMBStack(fs, dsp.TMBHighGain)
+	m.bm = dsp.NewHighGainWith(fs, dsp.BritishModDefault)
+	m.bmTMB = dsp.NewTMBStack(fs, dsp.TMBMarshall)
 	m.kind = int(m.get("stack"))
 	m.prev, m.xf = m.kind, 1
 	m.xstep = 1 / (StackFadeMs / 1000 * fs)
@@ -179,6 +192,8 @@ func (m *Pre) resetSim() {
 	}
 	m.hg.Reset()
 	m.hgTMB.Reset()
+	m.bm.Reset()
+	m.bmTMB.Reset()
 }
 
 func (m *Pre) Latency() int { return dsp.PreampLatency }
@@ -231,11 +246,13 @@ func (m *Pre) processSim(buf []float64) {
 	gain, bass, mid, treble := m.get("gain")/10, m.get("bass"), m.get("mid"), m.get("treble")
 	m.pre.SetDrive(gain)
 	m.hg.SetDrive(gain)
+	m.bm.SetDrive(gain)
 	m.tone.Set(bass, mid, treble)
 	for _, t := range m.tmb {
 		t.Set(bass, mid, treble)
 	}
 	m.hgTMB.Set(bass, mid, treble)
+	m.bmTMB.Set(bass, mid, treble)
 
 	if k := int(m.get("stack")); k != m.kind && m.xf >= 1 {
 		m.prev, m.kind, m.xf = m.kind, k, 0
@@ -243,7 +260,10 @@ func (m *Pre) processSim(buf []float64) {
 		case k == StackHighGain:
 			m.hg.Reset()
 			m.hgTMB.Reset()
-		case m.prev == StackHighGain: // o pré clássico volta a rodar
+		case k == StackBritishMod:
+			m.bm.Reset()
+			m.bmTMB.Reset()
+		case cascade(m.prev): // o pré clássico volta a rodar
 			m.tight.Reset()
 			m.pre.Reset()
 			m.resetStack(k)
@@ -257,7 +277,7 @@ func (m *Pre) processSim(buf []float64) {
 	}
 	// troca em andamento: as duas vozes rodam e o resultado é misturado
 	old := m.scratch[:len(buf)]
-	if m.kind != StackHighGain && m.prev != StackHighGain {
+	if !cascade(m.kind) && !cascade(m.prev) {
 		// só o tone stack muda: o pré clássico roda uma vez e os dois stacks em paralelo
 		m.tight.ProcessBlock(buf)
 		m.pre.ProcessBlock(buf)
@@ -277,9 +297,14 @@ func (m *Pre) processSim(buf []float64) {
 
 // voice roda o pré e o tone stack da voz k.
 func (m *Pre) voice(k int, buf []float64) {
-	if k == StackHighGain {
+	switch k {
+	case StackHighGain:
 		m.hg.ProcessBlock(buf)
 		m.hgTMB.ProcessBlock(buf)
+		return
+	case StackBritishMod:
+		m.bm.ProcessBlock(buf)
+		m.bmTMB.ProcessBlock(buf)
 		return
 	}
 	m.tight.ProcessBlock(buf)

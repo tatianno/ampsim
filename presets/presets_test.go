@@ -181,14 +181,14 @@ func TestFabricaEmBancosTematicos(t *testing.T) {
 		f[3*FactoryBankSize].Name != "Americano Limpo" {
 		t.Errorf("início dos bancos: %s, %s, %s, %s", f[0].Name, f[FactoryBankSize].Name, f[2*FactoryBankSize].Name, f[3*FactoryBankSize].Name)
 	}
-	// os amps clássicos: só o amp simulado e o gabinete (e o gate; no Saturado, o boost)
+	// os amps clássicos: só o amp simulado e o gabinete (e o gate)
 	for _, p := range f[3*FactoryBankSize:] {
 		c := engine.NewDefaultChain()
 		if err := c.ApplyState(p.State); err != nil || c.Pre().Mode() != engine.AmpSimulated {
 			t.Errorf("%s: %v, amp %d", p.Name, err, c.Pre().Mode())
 		}
 		for _, m := range p.State.Modules {
-			if !engine.Required(m.ID) && m.ID != "gate" && !(p.Name == "Britânico Saturado" && m.ID == "drive") {
+			if !engine.Required(m.ID) && m.ID != "gate" {
 				t.Errorf("%s: pedal %s no banco de amps", p.Name, m.ID)
 			}
 		}

@@ -48,42 +48,69 @@ type Port struct {
 	Points             []string // nomes dos valores Min, Min+1… (sem lv2:enumeration)
 }
 
-// Plugin é um plugin do .so: um preset ou um pedal.
+// Plugin é um plugin do .so: um preset ou um pedal, em mono ou estéreo.
 type Plugin struct {
 	ID, Name, Comment string
 	Controls          []Port // as entradas de controle, na ordem das portas
 	Pedal             string // id do pedal ("" = preset)
 	Preset            plugin.Preset
+	Stereo            bool // duas entradas (misturadas em mono) e duas saídas
+}
+
+// stereoSuffix fecha o ID (depois do #) da variante estéreo; stereoName, o nome.
+const (
+	stereoSuffix = "-estereo"
+	stereoName   = " (estéreo)"
+)
+
+// Channels devolve o número de canais de áudio de entrada (e de saída).
+func (p Plugin) Channels() int {
+	if p.Stereo {
+		return 2
+	}
+	return 1
 }
 
 // URI devolve a URI do plugin.
 func (p Plugin) URI() string { return URIBase + "#" + p.ID }
 
-// Layout das portas: as entradas de controle, a latência, a entrada e a saída de áudio (mono).
-func (p Plugin) PortLatency() int { return len(p.Controls) }
-func (p Plugin) PortIn() int      { return len(p.Controls) + 1 }
-func (p Plugin) PortOut() int     { return len(p.Controls) + 2 }
-func (p Plugin) NumPorts() int    { return len(p.Controls) + 3 }
+// Layout das portas: as entradas de controle, a latência, as entradas e as saídas de áudio.
+func (p Plugin) PortLatency() int   { return len(p.Controls) }
+func (p Plugin) PortIn(ch int) int  { return len(p.Controls) + 1 + ch }
+func (p Plugin) PortOut(ch int) int { return len(p.Controls) + 1 + p.Channels() + ch }
+func (p Plugin) NumPorts() int      { return len(p.Controls) + 1 + 2*p.Channels() }
 
 // ID devolve o ID de uma URI de plugin (ok = false se não for do AmpSim).
 func ID(uri string) (string, bool) {
 	return strings.CutPrefix(uri, URIBase+"#")
 }
 
-// Plugins devolve todos os plugins: os pedais e os presets ps.
+// Plugins devolve todos os plugins: os pedais e os presets ps, cada um em mono e em estéreo.
 func Plugins(ps []plugin.Preset) []Plugin {
 	var out []Plugin
-	for _, p := range plugin.Pedals() {
-		out = append(out, PedalPlugin(p))
-	}
-	for _, p := range ps {
-		out = append(out, PresetPlugin(p))
+	for _, stereo := range []bool{false, true} {
+		for _, p := range plugin.Pedals(stereo) {
+			out = append(out, PedalPlugin(p))
+		}
+		for _, p := range ps {
+			out = append(out, PresetPlugin(p, stereo))
+		}
 	}
 	return out
 }
 
+// variant põe o sufixo da variante estéreo no ID e no nome.
+func variant(p Plugin) Plugin {
+	if p.Stereo {
+		p.ID += stereoSuffix
+		p.Name += stereoName
+		p.Comment += " Estéreo: a entrada é misturada em mono e a saída abre em dois canais."
+	}
+	return p
+}
+
 // PresetPlugin devolve o plugin do preset p.
-func PresetPlugin(p plugin.Preset) Plugin {
+func PresetPlugin(p plugin.Preset, stereo bool) Plugin {
 	kind := "de fábrica"
 	if !p.Factory {
 		kind = "do usuário"
@@ -99,11 +126,11 @@ func PresetPlugin(p plugin.Preset) Plugin {
 		}
 		ctl = append(ctl, q)
 	}
-	return Plugin{
-		ID: p.ID, Name: "AmpSim: " + p.Name, Preset: p, Controls: ctl,
+	return variant(Plugin{
+		ID: p.ID, Name: "AmpSim: " + p.Name, Preset: p, Controls: ctl, Stereo: stereo,
 		Comment: fmt.Sprintf("Aplica o preset %s %q do AmpSim (amp, gabinete e pedais) à faixa. "+
 			"O preset é editado no app AmpSim.", kind, p.Name),
-	}
+	})
 }
 
 // PedalPlugin devolve o plugin do pedal p: os knobs e o liga/desliga.
@@ -123,10 +150,10 @@ func PedalPlugin(p plugin.Pedal) Plugin {
 		ctl = append(ctl, q)
 	}
 	ctl = append(ctl, Port{Symbol: "ligado", Name: "Ligado", Min: 0, Max: 1, Default: 1, Toggle: true, Enabled: true})
-	return Plugin{
-		ID: pedalPrefix + p.ID, Name: "AmpSim Pedal: " + p.Name, Pedal: p.ID, Controls: ctl,
+	return variant(Plugin{
+		ID: pedalPrefix + p.ID, Name: "AmpSim Pedal: " + p.Name, Pedal: p.ID, Controls: ctl, Stereo: p.Stereo,
 		Comment: fmt.Sprintf("O pedal %s do AmpSim, com os knobs do app.", p.Name),
-	}
+	})
 }
 
 // Find devolve o plugin da URI uri, com a lista de presets atual (ps). ok = false se não existe.
@@ -135,8 +162,9 @@ func Find(uri string, ps []plugin.Preset) (Plugin, bool) {
 	if !ok {
 		return Plugin{}, false
 	}
+	id, stereo := strings.CutSuffix(id, stereoSuffix)
 	if pid, ok := strings.CutPrefix(id, pedalPrefix); ok {
-		p, ok := plugin.FindPedal(pid)
+		p, ok := plugin.FindPedal(pid, stereo)
 		if !ok {
 			return Plugin{}, false
 		}
@@ -144,7 +172,7 @@ func Find(uri string, ps []plugin.Preset) (Plugin, bool) {
 	}
 	for _, p := range ps {
 		if p.ID == id {
-			return PresetPlugin(p), true
+			return PresetPlugin(p, stereo), true
 		}
 	}
 	return Plugin{}, false
@@ -209,8 +237,19 @@ func Describe(pl []Plugin) string {
 		lv2:maximum 16384 ;
 		units:unit units:frame
 	]`, p.PortLatency()),
-			fmt.Sprintf("[\n\t\ta lv2:AudioPort, lv2:InputPort ;\n\t\tlv2:index %d ;\n\t\tlv2:symbol \"in\" ;\n\t\tlv2:name \"Entrada\"\n\t]", p.PortIn()),
-			fmt.Sprintf("[\n\t\ta lv2:AudioPort, lv2:OutputPort ;\n\t\tlv2:index %d ;\n\t\tlv2:symbol \"out\" ;\n\t\tlv2:name \"Saída\"\n\t]", p.PortOut()))
+		)
+		sym, name := []string{""}, []string{""}
+		if p.Stereo {
+			sym, name = []string{"_l", "_r"}, []string{" L", " R"}
+		}
+		for ch := range p.Channels() {
+			ports = append(ports, fmt.Sprintf("[\n\t\ta lv2:AudioPort, lv2:InputPort ;\n\t\tlv2:index %d ;\n\t\tlv2:symbol \"in%s\" ;\n\t\tlv2:name \"Entrada%s\"\n\t]",
+				p.PortIn(ch), sym[ch], name[ch]))
+		}
+		for ch := range p.Channels() {
+			ports = append(ports, fmt.Sprintf("[\n\t\ta lv2:AudioPort, lv2:OutputPort ;\n\t\tlv2:index %d ;\n\t\tlv2:symbol \"out%s\" ;\n\t\tlv2:name \"Saída%s\"\n\t]",
+				p.PortOut(ch), sym[ch], name[ch]))
+		}
 		fmt.Fprintf(&b, "\tlv2:port %s .\n\n", strings.Join(ports, " , "))
 	}
 	return b.String()
@@ -308,6 +347,39 @@ func WriteBundle(dir string, pl []Plugin) error {
 	return nil
 }
 
+// UserCLAP devolve o plugin CLAP do usuário (~/.clap/ampsim.clap): um link para o .so do
+// bundle, o mesmo arquivo do LV2 (o carregador do sistema reconhece o arquivo e carrega uma
+// vez só: um runtime Go no processo, mesmo com os dois formatos abertos no host).
+func UserCLAP() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".clap", "ampsim.clap"), nil
+}
+
+// linkCLAP põe o link do CLAP apontando para so (não mexe num arquivo comum no lugar).
+func linkCLAP(so string) error {
+	link, err := UserCLAP()
+	if err != nil {
+		return err
+	}
+	if dst, err := os.Readlink(link); err == nil {
+		if dst == so {
+			return nil
+		}
+		if err := os.Remove(link); err != nil {
+			return err
+		}
+	} else if _, err := os.Lstat(link); err == nil {
+		return nil // um arquivo comum: instalado à mão, fica
+	}
+	if err := os.MkdirAll(filepath.Dir(link), 0o755); err != nil {
+		return err
+	}
+	return os.Symlink(so, link)
+}
+
 // UserBundle devolve o bundle do usuário (~/.lv2/ampsim.lv2), onde os hosts procuram.
 func UserBundle() (string, error) {
 	home, err := os.UserHomeDir()
@@ -319,7 +391,7 @@ func UserBundle() (string, error) {
 
 var syncMu sync.Mutex
 
-// Sync deixa o bundle do usuário com os pedais e os presets ps. Com o .so instalado no bundle (pelo
+// Sync deixa o bundle do usuário com os pedais e os presets ps (e o link do CLAP). Com o .so instalado no bundle (pelo
 // install.sh do .tar.gz ou pelo build.sh), só reescreve os .ttl. Sem ele, e com o .so do
 // .deb (SystemLibrary), cria o bundle com um link para o .so. Sem nenhum dos dois, não faz
 // nada (o plugin não está instalado). Se o link aponta para um .so que sumiu (o .deb foi
@@ -357,11 +429,19 @@ func Sync(ps []plugin.Preset) error {
 	default:
 		return lerr
 	}
-	return WriteBundle(dir, Plugins(ps))
+	if err := WriteBundle(dir, Plugins(ps)); err != nil {
+		return err
+	}
+	return linkCLAP(so)
 }
 
-// removeBundle apaga o bundle criado por Sync (só os arquivos dele).
+// removeBundle apaga o bundle criado por Sync (só os arquivos dele) e o link do CLAP.
 func removeBundle(dir string) error {
+	if link, err := UserCLAP(); err == nil {
+		if dst, err := os.Readlink(link); err == nil && dst == filepath.Join(dir, Binary) {
+			os.Remove(link)
+		}
+	}
 	for _, f := range []string{Binary, "manifest.ttl", "ampsim.ttl"} {
 		if err := os.Remove(filepath.Join(dir, f)); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

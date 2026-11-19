@@ -192,6 +192,7 @@ type Selector struct {
 	P      *engine.Param
 	values []float64
 	btns   []widget.Clickable
+	Inline bool // o nome sempre na mesma linha dos botões (senão, acima deles com 5 posições ou mais)
 }
 
 // NewSelector cria uma chave com todas as posições do parâmetro.
@@ -217,10 +218,26 @@ func (s *Selector) Layout(gtx layout.Context, th *Theme, ink, accent color.NRGBA
 		return drawText(gtx, th, info.Name, textOpts{size: 12, color: ink, bold: true})
 	}
 	// muitas posições (ex.: os 5 modos do drive): o nome vai numa linha acima dos botões
-	stacked := len(s.values) >= 5
+	stacked := len(s.values) >= 5 && !s.Inline
+	// sem espaço para o tamanho normal (a voz do amp numa janela estreita): versão compacta,
+	// com menos margem nos botões e letra menor
+	size, pad, gap, nameGap := unit.Sp(12), unit.Dp(14), unit.Dp(4), unit.Dp(8)
+	need := func() int {
+		w := 0
+		if !stacked {
+			w += recordText(gtx, th, info.Name, 12, ink) + gtx.Dp(nameGap)
+		}
+		for _, v := range s.values {
+			w += max(gtx.Dp(30), recordText(gtx, th, FormatValue(info, v), size, ink)+gtx.Dp(pad)) + gtx.Dp(gap)
+		}
+		return w
+	}
+	if need() > gtx.Constraints.Max.X {
+		size, pad, gap, nameGap = 11, 8, 2, 5
+	}
 	var children []layout.FlexChild
 	if !stacked {
-		children = append(children, layout.Rigid(name), layout.Rigid(spacer(8, 0)))
+		children = append(children, layout.Rigid(name), layout.Rigid(spacer(nameGap, 0)))
 	}
 	for i := range s.values {
 		i := i
@@ -228,18 +245,18 @@ func (s *Selector) Layout(gtx layout.Context, th *Theme, ink, accent color.NRGBA
 			return s.btns[i].Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 				sel := s.P.Get() == s.values[i]
 				label := FormatValue(info, s.values[i])
-				sz := image.Pt(max(gtx.Dp(30), recordText(gtx, th, label, 12, ink)+gtx.Dp(14)), gtx.Dp(22))
+				sz := image.Pt(max(gtx.Dp(30), recordText(gtx, th, label, size, ink)+gtx.Dp(pad)), gtx.Dp(22))
 				bg := withAlpha(rgb(0x000000), 70)
 				fg := ink
 				if sel {
 					bg, fg = accent, rgb(0x101010)
 				}
 				fillRRect(gtx.Ops, image.Rectangle{Max: sz}, gtx.Dp(4), bg)
-				defer offset(gtx.Ops, 0, (sz.Y-gtx.Sp(16))/2).Pop()
-				drawText(gtx, th, label, textOpts{size: 12, color: fg, align: text.Middle, width: sz.X, bold: sel})
+				defer offset(gtx.Ops, 0, (sz.Y-gtx.Sp(size+4))/2).Pop()
+				drawText(gtx, th, label, textOpts{size: size, color: fg, align: text.Middle, width: sz.X, bold: sel})
 				return layout.Dimensions{Size: sz}
 			})
-		}), layout.Rigid(spacer(4, 0)))
+		}), layout.Rigid(spacer(gap, 0)))
 	}
 	row := func(gtx layout.Context) layout.Dimensions {
 		return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)

@@ -280,7 +280,7 @@ func Factory() []Preset {
 			"delay":        {"time": 375, "feedback": 30, "tone": 50, "mix": 18},
 		}),
 		// ——— Banco 4: amps clássicos ———
-		// só o amp simulado e o gabinete (e o gate nos de ganho alto; no Saturado, um boost): a base para montar o resto
+		// só o amp simulado e o gabinete (e o gate nos de ganho alto): a base para montar o resto
 		// com os pedais (no plugin, os "AmpSim Pedal"). O grave fica no ponto neutro de cada tone
 		// stack (o antigo 5, veja TestFabricaGraveTMBComoAntes); o caráter vem do médio, do agudo,
 		// do ganho e do gabinete.
@@ -300,15 +300,14 @@ func Factory() []Preset {
 			engine.PreID:   {"stack": engine.StackBritish, "gain": 10, "bass": 9.01, "mid": 6.5, "treble": 6},
 			engine.PowerID: {"presence": 6, "volume": -12.0},
 		}),
-		// o britânico dos anos 80, mais quente (hard rock): como se fazia, um overdrive de boost
-		// (pouco drive, muito level) empurrando o cabeçote no máximo. Só com o amp não dá: as vozes
-		// Americano e Britânico saturam suave (THD de ~7% no ganho 10 com uma senoide no nível da
-		// DI; com o boost, ~13%). É o único do banco com um pedal além do gate
-		mk("Britânico Saturado", simulado, "4x12 SM7", []string{"gate", "drive"}, map[string]set{
+		// o britânico dos anos 80, mais quente (hard rock): a voz Britânico Mod (um britânico com
+		// um estágio de ganho a mais, como os cabeçotes modificados). As vozes Americano e
+		// Britânico saturam suave (THD de ~7% no ganho 10 com uma senoide no nível da DI); a Mod
+		// chega a ~19% no ganho 8, perto do Solo Hard Rock
+		mk("Britânico Saturado", simulado, "4x12 SM7", []string{"gate"}, map[string]set{
 			"gate":         {"threshold": -48, "release": 100},
-			"drive":        {"mode": 1, "drive": 1, "tone": 6, "level": 12},
-			engine.PreID:   {"stack": engine.StackBritish, "gain": 10, "bass": 9.01, "mid": 7, "treble": 6.5},
-			engine.PowerID: {"presence": 7, "volume": -14.5},
+			engine.PreID:   {"stack": engine.StackBritishMod, "gain": 8, "bass": 9.01, "mid": 7, "treble": 6.5},
+			engine.PowerID: {"presence": 7, "volume": -10.2},
 		}),
 		// alto ganho moderno, apertado (anos 90 em diante): a voz do Metal, sem o boost e o EQ
 		mk("High Gain Moderno", simulado, "4x12 SM7", []string{"gate"}, map[string]set{
