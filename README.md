@@ -40,7 +40,14 @@ para Go em streaming, validados contra as saídas do Python.
 - **GUI (Gio)**: cabeçote e gabinete com knobs, cadeia em que se arrastam os pedais, pedais
   que abrem por cima da tela, transporte com loop de trecho, medidores e bypass A/B.
 - **Gravar** a saída e a DI (para reamplificar) em WAV 24 bits, e **exportar** um arquivo processado pelo som atual.
-- **Afinador** (YIN, saída muda enquanto afina) e **tap tempo** no delay e no tremolo (botão TAP ou tecla T, com subdivisões).
+- **Afinador** (YIN, saída muda enquanto afina; pelo **Menu** ou tecla A) e **tap tempo** no delay e no tremolo
+  (botão TAP ou tecla T, com subdivisões).
+- **Analisador de espectro** na linha da ENTRADA: espectro da saída e da entrada (a guitarra antes da cadeia,
+  alinhada pela média para comparar o formato), com a curva do EQ e os cortes do gabinete por cima; clique para
+  abrir a versão grande, com leitura sob o ponteiro.
+- **Menu** (canto superior direito): Áudio…, Afinador, **Backup dos presets…** (um `.zip` com os seus presets, a
+  pedaleira e os `.nam`/IRs que eles usam), **Restaurar presets…** (guarda antes o estado atual em
+  `~/.config/ampsim/backups`) e Sobre.
 - **Presets**: 14 de fábrica (Clean, Crunch, Blues, Rock Clássico, Solo Hard Rock, Metal, Funk, Country, Surf,
   Psicodélico, Modulação, Worship, Ambiente, Synth), cada um com seu amp NAM, gabinete e pedais, todos no mesmo
   volume; e os seus, salvos em `~/.config/ampsim/presets`
@@ -107,7 +114,7 @@ go run ./cmd/ampcli -listar          # módulos e parâmetros
 
 Grave a guitarra direto na interface (DI), sem amp nem pedal, com pico entre −12 e −6 dBFS.
 Ao vivo, ajuste o **Trim** até o nível da guitarra ficar na faixa ideal marcada no painel ENTRADA.
-Para saber a latência real, ligue um cabo da saída da placa numa entrada e use **Áudio… → Medir latência**.
+Para saber a latência real, ligue um cabo da saída da placa numa entrada e use **Menu → Áudio… → Medir latência**.
 A IR pode ser qualquer WAV de resposta ao impulso de gabinete (qualquer taxa; é reamostrada).
 
 ## testdata

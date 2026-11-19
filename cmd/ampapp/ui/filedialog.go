@@ -69,3 +69,45 @@ func PickNAM(title string) (string, error) {
 	}
 	return strings.TrimSpace(string(out)), nil
 }
+
+// PickZip abre o seletor de arquivo (zenity) filtrando .zip. Devolve "" sem erro se o usuário
+// cancelar. Bloqueia: chamar numa goroutine.
+func PickZip(title string) (string, error) {
+	if _, err := exec.LookPath("zenity"); err != nil {
+		return "", ErrNoDialog
+	}
+	cmd := exec.Command("zenity", "--file-selection", "--title="+title,
+		"--file-filter=Backup do AmpSim | *.zip *.ZIP", "--file-filter=Todos os arquivos | *")
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+// PickSaveZip abre o diálogo de salvar (zenity) para um .zip, já com um nome sugerido.
+// Devolve "" sem erro se o usuário cancelar. Bloqueia: chamar numa goroutine.
+func PickSaveZip(title, suggested string) (string, error) {
+	if _, err := exec.LookPath("zenity"); err != nil {
+		return "", ErrNoDialog
+	}
+	cmd := exec.Command("zenity", "--file-selection", "--save", "--confirm-overwrite", "--title="+title,
+		"--filename="+suggested, "--file-filter=Backup do AmpSim | *.zip *.ZIP")
+	out, err := cmd.Output()
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) && ee.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	path := strings.TrimSpace(string(out))
+	if path != "" && !strings.HasSuffix(strings.ToLower(path), ".zip") {
+		path += ".zip"
+	}
+	return path, nil
+}

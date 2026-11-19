@@ -587,3 +587,67 @@ func TestListarGravacoes(t *testing.T) {
 		t.Errorf("nome %q", l[1].Name())
 	}
 }
+
+func TestAnalisadorSenoide(t *testing.T) {
+	const fs = 48000
+	chain := engine.NewDefaultChain()
+	s := NewSession(chain, fs)
+	defer s.Close()
+	an := s.Analyzer
+	if an.Update() {
+		t.Fatal("desligado não deveria ter espectro")
+	}
+	an.Start()
+	// entrada: senoide de 1 kHz a −6 dBFS; saída: a mesma a −20 dBFS (alimenta direto o feed)
+	in, out := make([]float64, 256), make([]float64, 256)
+	ph := 0
+	for blk := 0; blk < 2*AnalyzerFFT/256; blk++ {
+		for i := range in {
+			v := math.Sin(2 * math.Pi * 1000 * float64(ph) / fs)
+			in[i], out[i] = 0.5*v, 0.1*v
+			ph++
+		}
+		an.feed(in, out)
+		an.Update()
+	}
+	if !an.Update() {
+		t.Fatal("deveria ter espectro")
+	}
+	freqs := []float64{1000, 200, 5000}
+	gi, go_ := make([]float64, 3), make([]float64, 3)
+	an.Bands(SpecInput, freqs, 1.0/6, gi)
+	an.Bands(SpecOutput, freqs, 1.0/6, go_)
+	if math.Abs(gi[0]-(-6.02)) > 0.5 || math.Abs(go_[0]-(-20)) > 0.5 {
+		t.Errorf("1 kHz: entrada %.2f dB (quer −6), saída %.2f dB (quer −20)", gi[0], go_[0])
+	}
+	if gi[1] > -60 || gi[2] > -60 {
+		t.Errorf("fora da senoide deveria ser baixo: 200 Hz %.1f, 5 kHz %.1f", gi[1], gi[2])
+	}
+	an.Stop()
+	an.feed(in, out) // o render só chama feed ligado; aqui só confere que Stop não quebra nada
+}
+
+func TestAnalisadorRecebeDoRender(t *testing.T) {
+	chain := engine.NewDefaultChain()
+	s := NewSession(chain, 48000)
+	defer s.Close()
+	s.Analyzer.Start()
+	out := make([]float32, 512*2)
+	for i := 0; i < 2*AnalyzerFFT/512; i++ {
+		s.Renderer.Render(out, 2, 512)
+	}
+	if !s.Analyzer.Update() {
+		t.Fatal("o render deveria alimentar o analisador ligado")
+	}
+}
+
+func TestAnalisadorNaoAlocaNoRender(t *testing.T) {
+	s := NewSession(engine.NewDefaultChain(), 48000)
+	defer s.Close()
+	s.Analyzer.Start()
+	out := make([]float32, 256*2)
+	s.Renderer.Render(out, 2, 256)
+	if n := testing.AllocsPerRun(50, func() { s.Renderer.Render(out, 2, 256) }); n != 0 {
+		t.Errorf("render com o analisador ligado alocou %.1f vezes por bloco", n)
+	}
+}

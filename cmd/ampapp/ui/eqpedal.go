@@ -34,6 +34,7 @@ var eqBandTitles = [engine.EQBands]string{"GRAVES", "MÉDIO 1", "MÉDIO 2", "MÉ
 // ponto muda o Q (só nos médios); duplo clique zera o ganho.
 type eqView struct {
 	eq            *engine.EQ
+	chain         *engine.Chain // para marcar os cortes do gabinete (nil = sem marcação)
 	freq, gain    [engine.EQBands]*Knob
 	q             [engine.EQBands]*Knob // nil nos shelves
 	level         *Knob
@@ -142,8 +143,8 @@ func (v *eqView) update(gtx layout.Context) {
 	}
 }
 
-func newEQView(m *engine.EQ) *eqView {
-	v := &eqView{eq: m, freqs: make([]float64, eqPlotSteps), respDB: make([]float64, eqPlotSteps), drag: -1, hover: -1, lastBand: -1}
+func newEQView(m *engine.EQ, chain *engine.Chain) *eqView {
+	v := &eqView{eq: m, chain: chain, freqs: make([]float64, eqPlotSteps), respDB: make([]float64, eqPlotSteps), drag: -1, hover: -1, lastBand: -1}
 	for i := range v.freq {
 		n := i + 1
 		v.freq[i] = NewKnob(m.Param(fmt.Sprintf("f%d", n)))
@@ -205,11 +206,73 @@ func (v *eqView) controls(gtx layout.Context, th *Theme, st PedalStyle, on bool)
 	)
 }
 
+// eqCabCuts devolve o low cut e o high cut do gabinete (Hz), se ele estiver na cadeia e ligado.
+func eqCabCuts(c *engine.Chain) (lo, hi float64, ok bool) {
+	if c == nil || !c.Enabled(engine.CabID) {
+		return 0, 0, false
+	}
+	m := c.Module(engine.CabID)
+	if m == nil {
+		return 0, 0, false
+	}
+	pl, ph := m.Param("lowcut"), m.Param("highcut")
+	if pl == nil || ph == nil {
+		return 0, 0, false
+	}
+	return pl.Get(), ph.Get(), true
+}
+
+// drawCabCuts marca num gráfico de 20 Hz a 20 kHz (eixo de eqX) as regiões que o low cut e o
+// high cut do gabinete já cortam: sombra além de cada corte, linha tracejada e (com labels) o
+// valor. Só informativo; não muda o som.
+func drawCabCuts(gtx layout.Context, th *Theme, chain *engine.Chain, sz image.Point, labels bool) {
+	lo, hi, ok := eqCabCuts(chain)
+	if !ok {
+		return
+	}
+	w, h := float32(sz.X), float32(sz.Y)
+	defer clip.UniformRRect(image.Rectangle{Max: sz}, gtx.Dp(6)).Push(gtx.Ops).Pop()
+	shade, line := withAlpha(rgb(0x8fb3d9), 34), withAlpha(rgb(0x8fb3d9), 150)
+	label := withAlpha(rgb(0x8fb3d9), 200)
+	cab := chain.Module(engine.CabID)
+	for _, c := range []struct {
+		f    float64
+		id   string
+		high bool
+	}{{lo, "lowcut", false}, {hi, "highcut", true}} {
+		xc := eqX(c.f, w)
+		r := image.Rect(0, 0, int(xc), sz.Y)
+		if c.high {
+			r = image.Rect(int(xc), 0, sz.X, sz.Y)
+		}
+		paint.FillShape(gtx.Ops, shade, clip.Rect(r).Op())
+		dash, gap := float32(gtx.Dp(4)), float32(gtx.Dp(3))
+		for y0 := float32(0); y0 < h; y0 += dash + gap {
+			strokeLine(gtx.Ops, f32.Pt(xc, y0), f32.Pt(xc, min(h, y0+dash)), 1, line)
+		}
+		if !labels {
+			continue
+		}
+		s := FormatValue(cab.Param(c.id).Info(), c.f)
+		lw := gtx.Dp(52)
+		x := int(xc) + gtx.Dp(3)
+		align := text.Start
+		if c.high {
+			x, align = int(xc)-gtx.Dp(3)-lw, text.End
+		}
+		func() {
+			defer offset(gtx.Ops, x, gtx.Dp(3)).Pop()
+			drawText(gtx, th, s, textOpts{size: 9, color: label, width: lw, align: align})
+		}()
+	}
+}
+
 // plot desenha a curva de resposta (20 Hz a 20 kHz, ±18 dB) com a grade.
 func (v *eqView) plot(gtx layout.Context, th *Theme, st PedalStyle, on bool) layout.Dimensions {
 	sz := image.Pt(gtx.Constraints.Max.X, gtx.Dp(120))
 	v.plotSize, v.handleR = sz, float32(gtx.Dp(12))
 	fillRRect(gtx.Ops, image.Rectangle{Max: sz}, gtx.Dp(6), rgb(0x15181c))
+	drawCabCuts(gtx, th, v.chain, sz, v.drag < 0 && v.hover < 0) // os valores somem quando a legenda da banda aparece
 	w, h := float32(sz.X), float32(sz.Y)
 	x := func(f float64) float32 { return eqX(f, w) }
 	y := func(db float64) float32 { return eqY(db, h) }
@@ -233,6 +296,10 @@ func (v *eqView) plot(gtx layout.Context, th *Theme, st PedalStyle, on bool) lay
 	func() {
 		defer offset(gtx.Ops, gtx.Dp(4), int(y(12))-gtx.Dp(7)).Pop()
 		drawText(gtx, th, "+12", textOpts{size: 10, color: withAlpha(rgb(0xffffff), 110)})
+	}()
+	func() {
+		defer offset(gtx.Ops, gtx.Dp(4), int(y(0))-gtx.Dp(7)).Pop()
+		drawText(gtx, th, "0", textOpts{size: 10, color: withAlpha(rgb(0xffffff), 110)})
 	}()
 	func() {
 		defer offset(gtx.Ops, gtx.Dp(4), int(y(-12))-gtx.Dp(7)).Pop()

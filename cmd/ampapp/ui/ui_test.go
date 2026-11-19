@@ -811,3 +811,22 @@ func TestGravacaoMudaAvisa(t *testing.T) {
 		t.Error("o rodapé deveria avisar (em destaque) que a gravação ficou muda")
 	}
 }
+
+func TestEQCabCuts(t *testing.T) {
+	if _, _, ok := eqCabCuts(nil); ok {
+		t.Fatal("sem cadeia não deveria marcar cortes")
+	}
+	c := engine.NewDefaultChain()
+	c.Module(engine.CabID).Param("lowcut").Set(100)
+	c.Module(engine.CabID).Param("highcut").Set(5000)
+	lo, hi, ok := eqCabCuts(c)
+	if !ok || lo != 100 || hi != 5000 {
+		t.Fatalf("cortes = %v, %v, %v; quer 100, 5000, true", lo, hi, ok)
+	}
+	if err := c.SetEnabled(engine.CabID, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := eqCabCuts(c); ok {
+		t.Fatal("com o gabinete desligado não deveria marcar cortes")
+	}
+}

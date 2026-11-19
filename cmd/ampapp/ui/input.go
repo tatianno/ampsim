@@ -33,11 +33,9 @@ type InputPanel struct {
 	guitarBtn widget.Clickable
 	chBtns    [MaxInputChannels]widget.Clickable
 	mixBtn    widget.Clickable
-	audioBtn  widget.Clickable
-	tunerBtn  widget.Clickable
 	trim      *Knob
-	OnAudio   func() // abre as configurações de áudio
-	OnTuner   func() // abre o afinador
+	OnAudio   func()        // abre as configurações de áudio (pelo menu)
+	Extra     layout.Widget // ocupa o resto da linha (o analisador de espectro)
 }
 
 // NewInputPanel cria o painel de entrada.
@@ -59,12 +57,6 @@ func (p *InputPanel) update(gtx layout.Context) {
 	}
 	if p.mixBtn.Clicked(gtx) {
 		p.s.Live.SetChannel(source.ChannelMix)
-	}
-	if p.audioBtn.Clicked(gtx) && p.OnAudio != nil {
-		p.OnAudio()
-	}
-	if p.tunerBtn.Clicked(gtx) && p.OnTuner != nil {
-		p.OnTuner()
 	}
 }
 
@@ -128,13 +120,12 @@ func (p *InputPanel) Layout(gtx layout.Context, th *Theme, m *Meters) layout.Dim
 		}),
 		layout.Rigid(spacer(10, 0)),
 		layout.Rigid(ledLabel(th, "CLIP", m.InputClipping(gtx.Now), th.LedOn, th.LedOff)),
-		layout.Flexed(1, hfill),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return smallButton(gtx, th, &p.tunerBtn, "Afinador", 0)
-		}),
-		layout.Rigid(spacer(6, 0)),
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return smallButton(gtx, th, &p.audioBtn, "Áudio…", 0)
+		layout.Rigid(spacer(16, 0)),
+		layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
+			if p.Extra == nil {
+				return hfill(gtx)
+			}
+			return p.Extra(gtx)
 		}),
 	)
 	return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)

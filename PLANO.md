@@ -649,6 +649,36 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   meus e "Vazio"); "Restaurar padrão" (2 cliques) volta à ordem da lista e apaga a configuração. Salva em
   `~/.config/ampsim/pedaleira.json` (nomes dos presets; preset apagado aparece "(apagado)" e não faz nada); mínimo
   de 3 bancos; o banco acompanha o preset atual pelo footswitch que o contém
+- [x] **Teste ao vivo com a guitarra** (você, 19/11): impressão boa; atraso sutil no início (ver abaixo); EQs
+  ajustados nos presets com médios/limpos
+- [x] **EQs dos presets a partir do teste ao vivo** (19/11): o ajuste ao vivo cortava forte acima de 4–5 kHz e
+  reforçava 150–800 Hz, mas com Level em 0 (+5,5 a +7,7 dB de volume; pico acima de 0 dBFS no Worship e no Country)
+  e com bandas sem efeito (graves −15 dB em 40 Hz, abaixo do low cut de 85 Hz do gabinete; agudos em 12 kHz, acima
+  do high cut de 6,2 kHz). Aplicado ~60% do rumo, com o Level compensando: Worship, Country, Solo Hard Rock e Metal
+  no mesmo volume de antes (conferido com a DI)
+- [x] **EQ: cortes do gabinete no gráfico** (19/11): low cut e high cut do gabinete (se ligado) como linhas
+  tracejadas azuis e sombra além delas, com o valor; rótulo "0" na curva
+- [x] **Menu** (19/11, `cmd/ampapp/ui/menu.go`): o botão "Sobre" virou "Menu" com Áudio…, Afinador (tecla A),
+  Backup dos presets…, Restaurar presets… e Sobre; Afinador e Áudio… saíram da linha da ENTRADA
+- [x] **Backup e restauração dos presets** (19/11, `presets/backup.go`): `.zip` com `presets/*.json`,
+  `pedaleira.json` e `arquivos/` (os `.nam`/IRs do usuário usados pelos presets; as incluídas ficam como
+  referência). Restaurar valida o zip inteiro antes de gravar, guarda o estado atual em
+  `~/.config/ampsim/backups/antes-de-restaurar-*.zip`, substitui os presets de mesmo nome e a pedaleira, e põe os
+  arquivos em `~/.config/ampsim/arquivos/` (os presets passam a apontar para lá)
+- [x] **Analisador de espectro** (19/11, `cmd/ampapp/audio/analyzer.go`, `cmd/ampapp/ui/spectrum.go`): a thread de
+  áudio copia entrada (antes da cadeia) e saída para uma fila sem trava (sem alocar; teste); a GUI faz uma FFT de
+  8192 pontos (as duas reais numa complexa), Hann, faixas de 1/6 de oitava (interpoladas nos graves), suavização
+  rápida para subir e lenta para descer. Compacto na linha da ENTRADA (clique abre o grande); grande com Saída,
+  Entrada, EQ e gabinete, Entrada alinhada (pela média de 100 Hz a 5 kHz) e Ligado, escalas e leitura sob o
+  ponteiro. Janela minimizada: a fila enche e o áudio descarta (sem custo)
+- [ ] **Atrasos (callbacks fora do tempo) com a captura Sat7** (19/11, prints do teste ao vivo): CPU 52% e
+  299–436 atrasos no Solo Hard Rock e no Metal, contra 12% e ~60 nos limpos, com buffer 256. Investigar (tamanho do
+  modelo em uso, drive + NAM, picos de CPU); atraso não aumenta a latência, mas pode estalar
+- [ ] **Atraso sutil ao tocar** (19/11): conferir o botão **Mixer** da AudioBox todo em Playback (senão o seco
+  direto soma com o processado ~30–40 ms depois e soa dobrado); o teste foi com buffer 256 (a medição de 31 ms foi
+  com 64); aplicar o D1 (regra do WirePlumber, −9 ms)
+- [ ] **High cut do gabinete nos presets NAM**: testar de ouvido ~5 kHz em vez de 6,2 kHz (as capturas são só do
+  pré e soam brilhantes); se resolver, vira um ajuste só em vez de EQ em todos os presets
 - [ ] **Controle por MIDI** (futuro; pedido em 18/11):
   - entrada MIDI pelo backend JACK próprio (porta MIDI do cliente `ampsim`) e, nos outros sistemas, pelo backend do
     miniaudio ou uma biblioteca de MIDI

@@ -47,7 +47,7 @@ func NewPedal(chain *engine.Chain, mod engine.Module) *Pedal {
 		return p
 	}
 	if m, ok := mod.(*engine.EQ); ok {
-		p.eq = newEQView(m)
+		p.eq = newEQView(m, chain)
 		return p
 	}
 	for _, par := range mod.Params() {

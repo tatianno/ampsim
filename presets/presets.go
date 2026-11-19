@@ -43,6 +43,10 @@ func Dir() (string, error) {
 // foram acertados com a DI de teste para −18 dBFS RMS, sem passar de −1 dBFS de pico: trocar
 // de preset não dá salto de volume. Os limpos e dinâmicos (Clean, Funk, Country) ficam ~2 dB
 // abaixo em RMS, limitados pelo pico (veja TestFabricaNoMesmoVolume).
+//
+// Os EQs (Worship, Country, Solo Hard Rock, Metal) vêm do teste com guitarra ao vivo (19/11):
+// menos agudos acima de ~5 kHz (as capturas são só do pré e soavam brilhantes) e mais corpo
+// entre 150 e 800 Hz, com o level do EQ compensando o volume.
 func Factory() []Preset {
 	type set map[string]float64
 	const (
@@ -124,7 +128,7 @@ func Factory() []Preset {
 		mk("Solo Hard Rock", sat7MD, "4x12 SM7", []string{"gate", "drive", "eq", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -45, "release": 120},
 			"drive":        {"mode": 1, "drive": 2, "tone": 6, "level": 3},
-			"eq":           {"f3": 800, "g3": 3, "q3": 1, "g1": -1},
+			"eq":           {"g1": -1, "f2": 240, "g2": 4.5, "q2": 0.6, "f3": 820, "g3": 5, "q3": 0.5, "f4": 2400, "g4": -2, "q4": 0.5, "f5": 5500, "g5": -10, "level": -2.5},
 			engine.PowerID: {"volume": -6.5},
 			"delay":        {"time": 430, "feedback": 30, "tone": 60, "mix": 22},
 			"reverb":       {"size": 60, "damping": 40, "mix": 15},
@@ -133,7 +137,7 @@ func Factory() []Preset {
 		mk("Metal", sat7MD, "4x12 SM7", []string{"gate", "drive", "eq", "reverb"}, map[string]set{
 			"gate":         {"threshold": -42, "release": 40},
 			"drive":        {"mode": 1, "drive": 0.5, "tone": 7, "level": 6},
-			"eq":           {"f1": 90, "g1": 2, "f3": 700, "g3": -3, "q3": 0.8, "g5": 1},
+			"eq":           {"f1": 90, "g1": 2, "f2": 120, "g2": 1.5, "q2": 0.6, "f3": 680, "g3": -6, "q3": 0.8, "f5": 5500, "g5": -4, "level": 1.4},
 			engine.PowerID: {"volume": -5.4},
 			"reverb":       {"size": 40, "damping": 50, "mix": 10},
 		}),
@@ -147,7 +151,7 @@ func Factory() []Preset {
 		mk("Country", cleanV10, "2x12 SM57", []string{"gate", "comp", "eq", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -60},
 			"comp":         {"threshold": -34, "ratio": 8, "attack": 1, "release": 150, "level": 7},
-			"eq":           {"g1": -2, "f5": 5000, "g5": 1.5},
+			"eq":           {"g1": -2, "f2": 140, "g2": 3, "q2": 0.5, "f3": 570, "g3": 3, "q3": 0.6, "f5": 5500, "g5": -8, "level": -3},
 			engine.PowerID: {"volume": -6.2},
 			"delay":        {"time": 110, "feedback": 0, "tone": 70, "mix": 30}, // slapback
 			"reverb":       {"size": 35, "damping": 40, "mix": 12},
@@ -182,7 +186,7 @@ func Factory() []Preset {
 			"gate":         {"threshold": -60},
 			"comp":         {"threshold": -28, "ratio": 3, "attack": 30, "level": 5},
 			"drive":        {"mode": 1, "drive": 3, "tone": 6, "level": 1},
-			"eq":           {"f1": 100, "g1": -2, "g5": 2},
+			"eq":           {"f1": 100, "g1": -2, "f2": 180, "g2": 5, "q2": 0.6, "f3": 700, "g3": 4, "q3": 0.6, "f5": 4500, "g5": -10, "level": -3.7},
 			"pitch":        {"voice1": 12, "level2": 0, "mix": 12},
 			engine.PowerID: {"volume": -15.8},
 			"delay":        {"time": 375, "feedback": 45, "tone": 55, "mix": 30},

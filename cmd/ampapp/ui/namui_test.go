@@ -131,8 +131,17 @@ func TestSobre(t *testing.T) {
 	a.about.OpenURL = func(u string) error { opened = append(opened, u); return nil }
 	h := newHarness(1280, 800)
 	h.frame(a.Layout)
-	a.aboutBtn.Click()
+	a.menu.btn.Click()
 	h.frame(a.Layout)
+	if !a.menu.open {
+		t.Fatal("o menu deveria abrir")
+	}
+	h.frame(a.Layout) // desenha a lista
+	a.menu.items[MenuAbout].Click()
+	h.frame(a.Layout)
+	if a.menu.open {
+		t.Error("o menu deveria fechar depois de escolher")
+	}
 	if a.Opened() != AboutID {
 		t.Fatalf("aberto %q, esperava o Sobre", a.Opened())
 	}

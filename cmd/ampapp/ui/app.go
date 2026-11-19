@@ -44,6 +44,9 @@ type App struct {
 	PickSave func(title, suggested string) (string, error)
 	// RecordDir é a pasta das gravações (padrão: Música/ampsim).
 	RecordDir string
+	// PickZip e PickSaveZip abrem os diálogos do backup dos presets (os testes trocam).
+	PickZip     func(title string) (string, error)
+	PickSaveZip func(title, suggested string) (string, error)
 
 	th         *Theme
 	transport  *Transport
@@ -51,7 +54,8 @@ type App struct {
 	pedalboard *Pedalboard
 	addPedal   *AddPedal
 	about      *About
-	aboutBtn   widget.Clickable
+	menu       *Menu
+	spectrum   *SpectrumView
 	namList    *AssetList
 	irList     *AssetList
 	cab        *CabPanel
@@ -110,7 +114,10 @@ func NewApp(s *audio.Session) *App {
 		a.open = AudioID
 	}
 	a.tuner = NewTunerPanel(s)
-	a.input.OnTuner = func() { a.open = TunerID }
+	a.spectrum = NewSpectrumView(s.Analyzer, chain, func(id string) { a.open = id })
+	a.input.Extra = func(gtx layout.Context) layout.Dimensions { return a.spectrum.MiniLayout(gtx, a.th) }
+	a.menu = &Menu{}
+	a.PickZip, a.PickSaveZip = PickZip, PickSaveZip
 	dir, err := presets.Dir()
 	if err != nil {
 		dir = "" // sem pasta de configuração: os de fábrica funcionam, salvar avisa o erro
@@ -186,7 +193,7 @@ func (a *App) Open(id string) {
 	switch id {
 	case AudioID:
 		a.input.OnAudio()
-	case PresetListID, TunerID, AboutID, NAMListID, IRListID, AddPedalID:
+	case PresetListID, TunerID, AboutID, NAMListID, IRListID, AddPedalID, AnalyzerID:
 		a.open = id
 	case RecordingsID:
 		a.recs.dir = a.RecordDir
@@ -296,9 +303,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	if a.recsBtn.Clicked(gtx) {
 		a.Open(RecordingsID)
 	}
-	if a.aboutBtn.Clicked(gtx) {
-		a.open = AboutID
-	}
+	a.menuActions(gtx)
 	th := a.th
 	paint.Fill(gtx.Ops, th.Bg)
 
@@ -378,6 +383,9 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	if a.open != "" {
 		a.overlay(gtx)
 	}
+	if a.menu.open {
+		a.menu.Dropdown(gtx, th, gtx.Dp(14), gtx.Dp(14+30))
+	}
 	a.tunerTransitions()
 	gtx.Execute(op.InvalidateCmd{At: gtx.Now.Add(FrameInterval)})
 	return layout.Dimensions{Size: gtx.Constraints.Max}
@@ -414,7 +422,7 @@ func (a *App) Tap(now time.Time) {
 
 func (a *App) keys(gtx layout.Context) {
 	for {
-		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameSpace}, key.Filter{Name: "T"},
+		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameSpace}, key.Filter{Name: "T"}, key.Filter{Name: "A"},
 			key.Filter{Name: "1"}, key.Filter{Name: "2"}, key.Filter{Name: "3"}, key.Filter{Name: "4"}, key.Filter{Name: "5"}, key.Filter{Name: "6"})
 		if !ok {
 			return
@@ -425,7 +433,19 @@ func (a *App) keys(gtx layout.Context) {
 		}
 		switch e.Name {
 		case key.NameEscape:
-			a.open = ""
+			if a.menu.open {
+				a.menu.open = false
+			} else {
+				a.open = ""
+			}
+		case "A": // afinador: abre e fecha
+			if a.open != SaveAsID {
+				if a.open == TunerID {
+					a.open = ""
+				} else {
+					a.open = TunerID
+				}
+			}
 		case key.NameSpace:
 			// play/pause do arquivo: só com a fonte em Arquivo (e não enquanto digita um nome)
 			if a.open != SaveAsID && a.Session.Source() == audio.SourceFile {
@@ -472,7 +492,7 @@ func (a *App) topBar(gtx layout.Context) layout.Dimensions {
 		}),
 		layout.Rigid(spacer(12, 0)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return smallButton(gtx, th, &a.aboutBtn, "Sobre", 0)
+			return a.menu.Button(gtx, th)
 		}),
 	)
 }
@@ -556,6 +576,8 @@ func (a *App) overlay(gtx layout.Context) {
 		content = func(gtx layout.Context) layout.Dimensions { return a.pedalboard.PickLayout(gtx, th, closeOverlay) }
 	} else if a.open == AddPedalID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.addPedal.Layout(gtx, th) }
+	} else if a.open == AnalyzerID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.spectrum.Layout(gtx, th) }
 	} else if a.open == AboutID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.about.Layout(gtx, th) }
 	} else if a.open == IRListID {

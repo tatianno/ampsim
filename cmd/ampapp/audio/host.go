@@ -59,6 +59,7 @@ type Renderer struct {
 	lt   latencyTest
 
 	tuner    atomic.Pointer[Tuner]    // afinador (recebe a entrada quando ligado)
+	analyzer atomic.Pointer[Analyzer] // analisador de espectro (entrada e saída, quando ligado)
 	rec      atomic.Pointer[Recorder] // gravador (recebe DI e saída quando gravando)
 	mute     atomic.Bool              // saída muda (ex.: enquanto afina), com rampa
 	muteGain float64
@@ -153,6 +154,9 @@ func (r *Renderer) render(out []float32, channels, frames int, start time.Time, 
 		r.chain.ProcessMono(buf) // a cadeia sempre roda: caudas continuam e a volta do bypass é suave
 		r.mixAB(buf, dry)
 		r.applyMute(buf)
+		if an := r.analyzer.Load(); an != nil && an.running.Load() {
+			an.feed(dry, buf) // entrada antes da cadeia; saída como vai para a placa
+		}
 		if c := r.rec.Load(); c != nil && c.on.Load() {
 			c.feed(dry, buf) // DI = entrada antes da cadeia; saída = o que vai para a placa
 		}
