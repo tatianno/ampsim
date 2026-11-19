@@ -61,6 +61,8 @@ para Go em streaming, validados contra as saídas do Python.
 - **Pedaleira de presets** abaixo da cadeia: 6 footswitches por banco, como um controlador (teclas 1 a 6), com o
   nome do banco (ex.: LIMPOS) entre as setas. **Editar** abre a matriz de bancos × footswitches: clique numa célula
   para escolher o preset, dê nome aos bancos, acrescente bancos (até 10) ou **Restaurar padrão**.
+  **Spillover** (ligado por padrão): na troca de preset, as repetições do delay e a cauda do reverb continuam
+  soando com os ajustes do preset anterior enquanto o novo já toca; desligado, a cauda some num fade de 30 ms.
 - **CLI** para processar arquivos offline.
 
 ## Requisitos

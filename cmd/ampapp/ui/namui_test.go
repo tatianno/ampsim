@@ -624,3 +624,41 @@ func TestDriveTipoNAM(t *testing.T) {
 		t.Error("não voltou ao modelado")
 	}
 }
+
+// O botão Spillover da pedaleira liga/desliga na cadeia e fica salvo, sem tirar a pedaleira
+// da ordem padrão; "restaurar o padrão" da matriz não volta o spillover.
+func TestPedaleiraSpillover(t *testing.T) {
+	a, _ := novoApp(t)
+	cfg := filepath.Join(t.TempDir(), "pedaleira.json")
+	a.pedalboard = NewPedalboard(a.Presets(), cfg, a.setStatus, func(id string) { a.open = id })
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	b, chain := a.pedalboard, a.Presets().chain
+	if !b.Spillover() || !chain.Spillover() {
+		t.Fatal("o spillover começa ligado")
+	}
+	b.spBtn.Click()
+	h.frame(a.Layout)
+	if b.Spillover() || chain.Spillover() {
+		t.Fatal("o botão deveria desligar o spillover")
+	}
+	if b.Custom() {
+		t.Error("o spillover não pode tirar a pedaleira da ordem padrão")
+	}
+	chain.SetSpillover(true) // a pedaleira nova aplica o que está salvo
+	if c := NewPedalboard(a.Presets(), cfg, a.setStatus, nil); c.Spillover() || chain.Spillover() {
+		t.Error("reaberto: o spillover desligado deveria continuar desligado")
+	}
+	if err := b.Assign(0, "Metal"); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.ResetConfig(); err != nil {
+		t.Fatal(err)
+	}
+	if c := NewPedalboard(a.Presets(), cfg, nil, nil); c.Spillover() || c.Custom() {
+		t.Errorf("depois de restaurar o padrão: spillover %v, custom %v", c.Spillover(), c.Custom())
+	}
+	if a.statusErr {
+		t.Errorf("erro no rodapé: %q", a.status)
+	}
+}

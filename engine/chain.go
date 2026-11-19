@@ -35,6 +35,9 @@ type slot struct {
 	step    float64
 	dry     []float64
 	dryLine *dsp.DelayLine // atrasa o sinal seco pela latência do módulo (crossfade alinhado)
+
+	sp   Spiller // módulo com cauda (spillover), ou nil
+	free []Tail  // instâncias reservas (thread de áudio)
 }
 
 // Chain é a cadeia de módulos em série, com ordem configurável ao vivo. Implementa a
@@ -55,6 +58,16 @@ type Chain struct {
 	maxBlock int
 	mono     []float64
 	prepared bool
+
+	// spillover (spill.go)
+	noSpill                       atomic.Bool   // spillover desligado
+	transReq                      atomic.Uint64 // trocas de preset pedidas (GUI)
+	transSeen                     uint64        // última atendida (thread de áudio)
+	groups                        []tailGroup
+	nTails                        int
+	tbuf                          []float64
+	cutStep, overlapStep, endStep float64
+	maxTail                       int
 }
 
 // NewChain monta uma cadeia com os módulos na ordem dada (todos ligados).
@@ -374,6 +387,7 @@ func (c *Chain) Prepare(fs float64, maxBlock int) {
 	c.active = c.want.Load()
 	c.rgain = 1
 	c.rstep = 1 / (ReorderFadeMs / 1000 * fs)
+	c.prepareTails()
 	c.prepared = true
 }
 
@@ -385,6 +399,7 @@ func (c *Chain) MaxBlock() int { return c.maxBlock }
 
 // Reset limpa o estado de todos os módulos (caudas de delay/reverb etc.).
 func (c *Chain) Reset() {
+	c.releaseTails()
 	for _, s := range c.all {
 		s.m.Reset()
 		if s.dryLine != nil {
@@ -409,8 +424,18 @@ func (c *Chain) ProcessMono(buf []float64) {
 	for len(buf) > 0 {
 		n := min(len(buf), c.maxBlock)
 		b := buf[:n]
+		if r := c.transReq.Load(); r != c.transSeen {
+			c.transSeen = r
+			c.spill()
+		}
 		for _, s := range *c.active {
+			if c.nTails > 0 {
+				c.mixTails(b, s)
+			}
 			s.process(b)
+		}
+		if c.nTails > 0 {
+			c.mixTails(b, nil)
 		}
 		if want := c.want.Load(); want != c.active || c.rgain < 1 {
 			c.reorderRamp(b, want)

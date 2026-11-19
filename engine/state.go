@@ -62,6 +62,7 @@ func (c *Chain) ApplyState(st State) error {
 	if v1 {
 		st = migrateV1(st)
 	}
+	c.beginTransition() // antes dos parâmetros: as caudas do som atual saem com os ajustes dele
 	var ids []string
 	for _, ms := range st.Modules {
 		s := c.byID[ms.ID]

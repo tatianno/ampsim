@@ -168,7 +168,11 @@ type Delay struct {
 	line                 *DelayLine
 	lp                   float64
 	timeSm, fb, damp, mx Smoother
+	quiet                int // amostras seguidas abaixo de TailSilence (entrada, eco e o que foi gravado)
 }
+
+// TailSilence é o nível abaixo do qual uma cauda (delay, reverb) é considerada extinta (−80 dB).
+const TailSilence = 1e-4
 
 // DelayMaxMs é o maior tempo de delay suportado.
 const DelayMaxMs = 2000.0
@@ -176,6 +180,7 @@ const DelayMaxMs = 2000.0
 // NewDelay cria um delay.
 func NewDelay(fs float64) *Delay {
 	d := &Delay{fs: fs, line: NewDelayLine(int(DelayMaxMs/1000*fs) + 1)}
+	d.quiet = len(d.line.buf)
 	d.timeSm.SetTime(fs, 80) // mudar o tempo "estica" a fita, como num delay analógico
 	for _, s := range []*Smoother{&d.fb, &d.damp, &d.mx} {
 		s.SetTime(fs, 20)
@@ -192,8 +197,21 @@ func (d *Delay) Set(timeMs, feedback, damping, mix float64) {
 	d.mx.SetTarget(mix)
 }
 
-// Reset zera o estado.
-func (d *Delay) Reset() { d.line.Reset(); d.lp = 0 }
+// Reset zera o estado. O próximo Set vale na hora (sem rampa), como num pedal recém-ligado.
+func (d *Delay) Reset() {
+	d.line.Reset()
+	d.lp, d.quiet = 0, len(d.line.buf)
+	for _, s := range []*Smoother{&d.timeSm, &d.fb, &d.damp, &d.mx} {
+		s.Unprime()
+	}
+}
+
+// Silent informa se não sobrou nada a repetir: tudo o que entrou na linha no último trecho do
+// tamanho do tempo de delay (o atual e o alvo, se ainda estiver mudando) estava abaixo de
+// TailSilence.
+func (d *Delay) Silent() bool {
+	return float64(d.quiet) > math.Max(d.timeSm.Value(), d.timeSm.target)+2
+}
 
 // ProcessBlock processa in-place.
 func (d *Delay) ProcessBlock(buf []float64) {
@@ -201,7 +219,13 @@ func (d *Delay) ProcessBlock(buf []float64) {
 		wet := d.line.Read(d.timeSm.Next())
 		a := d.damp.Next()
 		d.lp = wet*(1-a) + d.lp*a
-		d.line.Write(x + d.lp*d.fb.Next())
+		w := x + d.lp*d.fb.Next()
+		d.line.Write(w)
+		if math.Abs(w) < TailSilence && math.Abs(wet) < TailSilence {
+			d.quiet++
+		} else {
+			d.quiet = 0
+		}
 		m := d.mx.Next()
 		buf[i] = (1-m)*x + m*wet
 	}
@@ -230,6 +254,7 @@ type Reverb struct {
 	combs           [4]comb
 	aps             [2]allpass
 	size, damp, mix Smoother
+	quiet, span     int // amostras seguidas em silêncio; quantas bastam (o comb e os all-pass mais longos)
 }
 
 // NewReverb cria um reverb.
@@ -244,8 +269,19 @@ func NewReverb(fs float64) *Reverb {
 	for _, s := range []*Smoother{&r.size, &r.damp, &r.mix} {
 		s.SetTime(fs, 20)
 	}
+	for _, c := range r.combs {
+		r.span = max(r.span, len(c.buf))
+	}
+	for _, a := range r.aps {
+		r.span += len(a.buf)
+	}
+	r.quiet = r.span
 	return r
 }
+
+// Silent informa se a cauda acabou: combs e all-pass abaixo de TailSilence por tempo
+// suficiente para todo o conteúdo deles ter passado.
+func (r *Reverb) Silent() bool { return r.quiet >= r.span }
 
 // Set ajusta: tamanho da sala 0..1 (feedback dos combs), amortecimento 0..1, mix 0..1.
 func (r *Reverb) Set(size, damping, mix float64) {
@@ -254,8 +290,12 @@ func (r *Reverb) Set(size, damping, mix float64) {
 	r.mix.SetTarget(mix)
 }
 
-// Reset zera o estado.
+// Reset zera o estado. O próximo Set vale na hora (sem rampa).
 func (r *Reverb) Reset() {
+	r.quiet = r.span
+	for _, s := range []*Smoother{&r.size, &r.damp, &r.mix} {
+		s.Unprime()
+	}
 	for i := range r.combs {
 		clear(r.combs[i].buf)
 		r.combs[i].idx, r.combs[i].store = 0, 0
@@ -270,10 +310,11 @@ func (r *Reverb) Reset() {
 func (r *Reverb) ProcessBlock(buf []float64) {
 	for i, x := range buf {
 		fb, damp := r.size.Next(), r.damp.Next()
-		sum := 0.0
+		sum, peak := 0.0, math.Abs(x)
 		for k := range r.combs {
 			c := &r.combs[k]
 			y := c.buf[c.idx]
+			peak = math.Max(peak, math.Abs(y))
 			c.store = y*(1-damp) + c.store*damp
 			c.buf[c.idx] = x + c.store*fb
 			if c.idx++; c.idx == len(c.buf) {
@@ -285,11 +326,17 @@ func (r *Reverb) ProcessBlock(buf []float64) {
 		for k := range r.aps {
 			a := &r.aps[k]
 			out := a.buf[a.idx]
+			peak = math.Max(peak, math.Abs(out))
 			a.buf[a.idx] = s + out*0.5
 			s = -s + out
 			if a.idx++; a.idx == len(a.buf) {
 				a.idx = 0
 			}
+		}
+		if peak < TailSilence {
+			r.quiet++
+		} else {
+			r.quiet = 0
 		}
 		m := r.mix.Next()
 		buf[i] = (1-m)*x + m*s

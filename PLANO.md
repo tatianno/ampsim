@@ -764,6 +764,21 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - **Metal** passa a usar o amp simulado com a voz High Gain (ganho 8, tone stack em 5, boost modelado e o EQ do
     preset mantidos; volume −7,7 → −18,0 dBFS). Com a DI, fica a −2,3 a +2,5 dB do 5153 em todas as faixas; contra o
     Sat7, +3,6 dB em 60–150 Hz e +8,7 dB em 150–400 Hz
+- [x] **Spillover na troca de preset** (19/11, `engine/spill.go`): antes, delay e reverb que continuavam na
+  cadeia aplicavam os parâmetros novos sobre a cauda antiga (o tempo do delay deslizava 80 ms, desafinando os ecos)
+  e os que saíam eram cortados na rampa da troca de ordem. Agora `ApplyState` avisa a thread de áudio, que passa a
+  instância em uso de cada módulo com cauda (`Spiller`: delay e reverb) para uma cauda alimentada com silêncio, com os
+  parâmetros antigos, e segue com uma reserva limpa (2 por módulo, criadas no `Prepare`; zero alocação). Caudas
+  vizinhas formam um grupo em série (o eco antigo ainda passa pelo reverb antigo) e somam antes da próxima parte do
+  amp (no loop, antes do power, então passam por power e gabinete). Fim: silêncio abaixo de −80 dB (`Silent`), ou
+  fade de 1 s depois de 10 s; uma troca nova faz as caudas anteriores sumirem em 150 ms. Delay e reverb zerados
+  aplicam o próximo ajuste na hora (sem rampa). Botão **Spillover** na pedaleira (salvo em `pedaleira.json`) e comando
+  `spillover on|off` no console; desligado, a cauda some em 30 ms
+- [ ] **Estéreo nas ambiências e modulações** (planejado em 19/11): entrada do pré sempre mono; a cadeia fica
+  estéreo a partir do primeiro pedal estéreo depois do pré (power, gabinete e pedais mono seguintes com estado L/R,
+  compartilhando os `*Param`); chorus/flanger/phaser/vibe com LFO defasado, delay Mono/Estéreo/Ping-pong, reverb
+  com spread no R, tremolo → auto-pan, rotary com dois microfones; switch global Estéreo/Mono (Mono = cadeia de hoje)
+  e knob Largura nos pedais estéreo; saída L/R no malgo/JACK, gravação estéreo, afinador e medidores em (L+R)/2
 - [ ] **Knob de grave dos TMB quase parado acima de 5**: com o médio em 5, o grave em 100 Hz muda ~11 dB de 0 a
   2,5 e menos de 0,5 dB de 5 a 10 (Britânico, Americano e High Gain; vem do `bassTaper` e do circuito). Avaliar a
   curva do pot

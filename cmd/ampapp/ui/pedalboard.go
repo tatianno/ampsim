@@ -39,6 +39,8 @@ const PedalboardEditID = "__pedaleira__"
 type boardFile struct {
 	Slots []string `json:"slots"`           // nome do preset de cada footswitch ("" = vazio), banco a banco
 	Banks []string `json:"banks,omitempty"` // nome de cada banco ("" = sem nome)
+	// Spillover: as caudas de delay e reverb continuam na troca de preset (ausente = ligado)
+	Spillover *bool `json:"spillover,omitempty"`
 }
 
 // Pedalboard é a pedaleira de presets: footswitches de acesso rápido, em bancos de 6, com o
@@ -57,9 +59,10 @@ type Pedalboard struct {
 	open    func(id string)
 	bank    int
 	lastCur int
+	spill   bool // spillover (as caudas continuam na troca de preset)
 
-	sw               [BoardSlots]widget.Clickable
-	prev, next, edit widget.Clickable
+	sw                      [BoardSlots]widget.Clickable
+	prev, next, edit, spBtn widget.Clickable
 
 	// matriz de edição
 	cells        []widget.Clickable
@@ -79,22 +82,43 @@ type Pedalboard struct {
 // NewPedalboard cria a pedaleira sobre a lista da barra de presets; path é o arquivo da
 // configuração ("" = não salva). Lê a configuração salva, se houver.
 func NewPedalboard(pb *PresetBar, path string, status func(string, bool), open func(string)) *Pedalboard {
-	b := &Pedalboard{pb: pb, path: path, status: status, open: open, lastCur: -1, pick: -1}
+	b := &Pedalboard{pb: pb, path: path, status: status, open: open, lastCur: -1, pick: -1, spill: true}
 	if path != "" {
 		if data, err := os.ReadFile(path); err == nil {
 			var f boardFile
-			if json.Unmarshal(data, &f) == nil && len(f.Slots) > 0 {
+			switch {
+			case json.Unmarshal(data, &f) != nil || (len(f.Slots) == 0 && f.Spillover == nil):
+				if status != nil {
+					status("pedaleira.json inválido: usando a ordem padrão", true)
+				}
+			case len(f.Slots) > 0:
 				b.slots = f.Slots
 				b.names = f.Banks
 				if b.names == nil {
 					b.names = []string{} // configuração antiga, sem nomes: bancos sem nome
 				}
-			} else if status != nil {
-				status("pedaleira.json inválido: usando a ordem padrão", true)
+			}
+			if f.Spillover != nil {
+				b.spill = *f.Spillover
 			}
 		}
 	}
+	if pb != nil && pb.chain != nil {
+		pb.chain.SetSpillover(b.spill)
+	}
 	return b
+}
+
+// Spillover informa se as caudas de delay e reverb continuam na troca de preset.
+func (b *Pedalboard) Spillover() bool { return b.spill }
+
+// SetSpillover liga ou desliga o spillover, aplica na cadeia e salva.
+func (b *Pedalboard) SetSpillover(on bool) error {
+	b.spill = on
+	if b.pb != nil && b.pb.chain != nil {
+		b.pb.chain.SetSpillover(on)
+	}
+	return b.save()
 }
 
 // Custom informa se a pedaleira tem uma configuração própria (não a ordem padrão).
@@ -265,11 +289,15 @@ func (b *Pedalboard) RemoveLastBank() error {
 	return b.save()
 }
 
-// ResetConfig volta à ordem e aos nomes padrão e apaga a configuração salva.
+// ResetConfig volta à ordem e aos nomes padrão e apaga a configuração salva (o spillover
+// desligado continua salvo: não faz parte da matriz).
 func (b *Pedalboard) ResetConfig() error {
 	b.slots, b.names = nil, nil
 	if b.path == "" {
 		return nil
+	}
+	if !b.spill {
+		return b.save()
 	}
 	if err := os.Remove(b.path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -281,7 +309,11 @@ func (b *Pedalboard) save() error {
 	if b.path == "" {
 		return nil
 	}
-	data, err := json.MarshalIndent(boardFile{Slots: b.slots, Banks: b.names}, "", "  ")
+	f := boardFile{Slots: b.slots, Banks: b.names}
+	if !b.spill {
+		f.Spillover = &b.spill
+	}
+	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
 	}
@@ -341,6 +373,13 @@ func (b *Pedalboard) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 	if b.edit.Clicked(gtx) {
 		b.OpenEditor()
 	}
+	if b.spBtn.Clicked(gtx) {
+		msg := "spillover ligado: delay e reverb continuam soando na troca de preset"
+		if b.spill {
+			msg = "spillover desligado: a cauda de delay e reverb é cortada na troca de preset"
+		}
+		b.report(b.SetSpillover(!b.spill), msg)
+	}
 	for i := range b.sw {
 		if b.sw[i].Clicked(gtx) {
 			b.Press(i)
@@ -350,7 +389,13 @@ func (b *Pedalboard) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-					return drawText(gtx, th, "PEDALEIRA", textOpts{size: 12, color: th.Dim, bold: true})
+					return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+							return drawText(gtx, th, "PEDALEIRA", textOpts{size: 12, color: th.Dim, bold: true})
+						}),
+						layout.Rigid(spacer(8, 0)),
+						layout.Rigid(func(gtx layout.Context) layout.Dimensions { return toggle(gtx, th, &b.spBtn, b.spill, "Spillover") }),
+					)
 				}),
 				layout.Rigid(spacer(0, 4)),
 				layout.Rigid(func(gtx layout.Context) layout.Dimensions {

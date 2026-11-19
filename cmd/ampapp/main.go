@@ -267,6 +267,7 @@ const ajuda = `comandos:
   saida <n> | entrada <n>|nenhuma | buffer <quadros>   reabre a placa
   presets                        lista os presets (fábrica e seus)
   preset <nome>                  carrega um preset
+  spillover [on|off]             caudas de delay/reverb continuam na troca de preset (padrão: on)
   gravar <nome>                  salva o som atual como preset seu
   salvar <arq.json> | carregar <arq.json|nome>   presets em arquivo
   sair`
@@ -356,6 +357,20 @@ func (a *app) exec(line string) bool {
 			fmt.Println("A/B: seco (bypass)")
 		} else {
 			fmt.Println("A/B: processado")
+		}
+	case "spillover":
+		switch rest {
+		case "on":
+			a.chain.SetSpillover(true)
+		case "off":
+			a.chain.SetSpillover(false)
+		default:
+			a.chain.SetSpillover(!a.chain.Spillover())
+		}
+		if a.chain.Spillover() {
+			fmt.Println("spillover: ligado (delay e reverb continuam na troca de preset)")
+		} else {
+			fmt.Println("spillover: desligado (a cauda é cortada na troca de preset)")
 		}
 	case "fonte":
 		switch rest {

@@ -651,7 +651,8 @@ func (m *Phaser) Process(buf []float64) {
 // Delay é o pedal de delay analógico. Tone 100% = repetições limpas; menos = mais escuras.
 type Delay struct {
 	base
-	d *dsp.Delay
+	d  *dsp.Delay
+	fs float64
 }
 
 // NewDelay cria o módulo de delay.
@@ -664,9 +665,18 @@ func NewDelay() *Delay {
 	)}}
 }
 
-func (m *Delay) Prepare(fs float64, _ int) { m.d = dsp.NewDelay(fs) }
+func (m *Delay) Prepare(fs float64, _ int) { m.d = dsp.NewDelay(fs); m.fs = fs }
 func (m *Delay) Reset()                    { m.d.Reset() }
 func (m *Delay) Latency() int              { return 0 }
+func (m *Delay) NewTail() Tail             { return dsp.NewDelay(m.fs) }
+
+// SwapTail troca a instância em uso (spillover).
+func (m *Delay) SwapTail(fresh Tail) Tail {
+	old := m.d
+	m.d = fresh.(*dsp.Delay)
+	m.d.Reset()
+	return old
+}
 func (m *Delay) Process(buf []float64) {
 	m.d.Set(m.get("time"), m.pct("feedback"), 1-m.pct("tone"), m.pct("mix"))
 	m.d.ProcessBlock(buf)
@@ -677,7 +687,8 @@ func (m *Delay) Process(buf []float64) {
 // Reverb é o pedal de reverb.
 type Reverb struct {
 	base
-	r *dsp.Reverb
+	r  *dsp.Reverb
+	fs float64
 }
 
 // NewReverb cria o módulo de reverb.
@@ -689,9 +700,18 @@ func NewReverb() *Reverb {
 	)}}
 }
 
-func (m *Reverb) Prepare(fs float64, _ int) { m.r = dsp.NewReverb(fs) }
+func (m *Reverb) Prepare(fs float64, _ int) { m.r = dsp.NewReverb(fs); m.fs = fs }
 func (m *Reverb) Reset()                    { m.r.Reset() }
 func (m *Reverb) Latency() int              { return 0 }
+func (m *Reverb) NewTail() Tail             { return dsp.NewReverb(m.fs) }
+
+// SwapTail troca a instância em uso (spillover).
+func (m *Reverb) SwapTail(fresh Tail) Tail {
+	old := m.r
+	m.r = fresh.(*dsp.Reverb)
+	m.r.Reset()
+	return old
+}
 func (m *Reverb) Process(buf []float64) {
 	m.r.Set(m.pct("size"), m.pct("damping"), m.pct("mix"))
 	m.r.ProcessBlock(buf)
