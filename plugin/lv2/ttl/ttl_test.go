@@ -115,3 +115,40 @@ func TestSyncComSoDoSistema(t *testing.T) { // .deb
 		t.Errorf("o bundle com o link quebrado continua: %v", err)
 	}
 }
+
+// Os plugins têm portas com símbolos válidos (identificadores C, sem repetir) e nenhuma lista
+// de opções (a lilv embaralha a ordem; o Audacity mostra a opção errada).
+func TestPlugins(t *testing.T) {
+	pl := Plugins(plugin.FromList(presets.Factory()))
+	pedals := 0
+	uris := map[string]bool{}
+	for _, p := range pl {
+		if uris[p.URI()] {
+			t.Errorf("URI repetida: %s", p.URI())
+		}
+		uris[p.URI()] = true
+		if p.Pedal != "" {
+			pedals++
+		}
+		seen := map[string]bool{"latencia": true, "in": true, "out": true}
+		for _, c := range p.Controls {
+			ok := c.Symbol != "" && !seen[c.Symbol]
+			for i, r := range c.Symbol {
+				ok = ok && (r == '_' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || i > 0 && r >= '0' && r <= '9')
+			}
+			if !ok {
+				t.Errorf("%s: símbolo inválido ou repetido %q", p.ID, c.Symbol)
+			}
+			seen[c.Symbol] = true
+		}
+		if got, ok := Find(p.URI(), plugin.FromList(presets.Factory())); !ok || got.ID != p.ID {
+			t.Errorf("Find(%s) = %v, %v", p.URI(), got.ID, ok)
+		}
+	}
+	if pedals != len(plugin.Pedals()) || len(pl) != pedals+len(presets.Factory()) {
+		t.Errorf("%d plugins, %d pedais", len(pl), pedals)
+	}
+	if d := Describe(pl); strings.Contains(d, "lv2:enumeration") {
+		t.Error("o .ttl tem lv2:enumeration")
+	}
+}

@@ -562,10 +562,31 @@ menu de efeitos. A lista muda com os presets do usuário: o app reescreve os `.t
 - [x] Empacotar: o `.tar.gz` instala o bundle em `~/.lv2/`; o `.deb` instala o `.so` em `/usr/lib/ampsim/` (o app
   monta o bundle ao abrir; o `postrm` apaga os bundles que são só o link)
 - [x] Conferir no Audacity (19/11/2026, pelo usuário): os efeitos aparecem no menu e funcionam
+- [x] **Pedais e modulações sozinhos** (19/11/2026): um plugin por módulo ("AmpSim Pedal: Chorus", URI
+  `…#pedal-<id>`), 17 ao todo (`plugin.Pedals`: a cadeia padrão sem pré, power e gabinete), com os knobs da tabela
+  `ParamInfo` + Ligado. Fora: os parâmetros só de estéreo (`engine.StereoOnly`) e o drive NAM (tipo, entrada e
+  tamanho: sem seletor de arquivo na UI genérica). Seletores sem `lv2:enumeration`: duas posições = `lv2:toggled`
+  ("Velocidade (Rápido)"); mais = `lv2:integer` com a legenda no nome e `lv2:scalePoint` para os hosts que mostram.
+  Nomes repetidos ganham o número da banda (EQ: "Freq 2"). Os knobs são lidos no `activate` e a cadeia é preparada
+  com eles (sem a rampa a partir dos valores padrão). Sem state (o host guarda as portas). Teste: cada pedal com
+  knobs fora do padrão soa igual ao módulo da app; `check.sh` carrega todos pela lilv
+- [ ] Conferir os pedais no Audacity
+- [x] Amps e IRs pelos presets (19/11/2026): banco de fábrica novo **Amps clássicos** (Americano Limpo, Americano
+  Quebrando, Britânico Crunch, Britânico Saturado, High Gain Moderno, Moderno Limpo), só o amp simulado e o
+  gabinete (+ gate nos de ganho alto), nomes sem marcas, grave no ponto neutro de cada TMB, volume a −18 dBFS RMS.
+  Medido com senoide de 187,5 Hz no nível RMS da DI: as vozes Americano/Britânico saturam suave (THD ~5–7% no
+  ganho 10; o High Gain ~19%); o Britânico Saturado leva um overdrive de boost (level 12) e chega a ~13%. A
+  pedaleira.json que é só o padrão antigo (3 bancos de fábrica) passa a seguir o padrão atual (4 bancos)
 - [ ] Testar também no Carla/Ardour (ao vivo; state com a cópia)
 
 #### Fase 6b: Reaper (depois)
 **Meta:** o mesmo plugin no Reaper, tocando ao vivo com monitoração.
+
+**19/11/2026:** o Reaper (Linux) já reconhece e aplica os plugins LV2 da 6a (testado pelo usuário: presets e
+pedais). O CLAP deixa de ser necessário para o Reaper ter o AmpSim; fica pelo que o LV2 não dá: estéreo, a lista
+de presets num plugin só e a troca de preset com o áudio rodando. Atenção: os plugins LV2 são mono (1 entrada,
+1 saída); numa faixa estéreo do Reaper, a saída vai só para o canal 1 e o canal 2 passa seco (ajustar os pinos ou
+usar a faixa da DI em mono). Uma variante estéreo do LV2 resolveria sem esperar o CLAP.
 
 - [ ] Formato: **CLAP** primeiro (API em C pura, MIT, suportada pelo Reaper; encaixa no `c-shared` do Go). VST3 só
   se houver demanda (API em C++, mais trabalho na camada)

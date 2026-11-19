@@ -1,6 +1,6 @@
 // Comando lv2 é o plugin LV2 do AmpSim: compilado com -buildmode=c-shared vira o ampsim.so
-// do bundle (veja build.sh). Cada preset (de fábrica ou do usuário) é um plugin, com a URI
-// de ttl.URI. A camada C (lv2.c) só repassa as chamadas do host para cá.
+// do bundle (veja build.sh). Cada pedal e cada preset (de fábrica ou do usuário) é um plugin
+// (ttl.Plugins). A camada C (lv2.c) só repassa as chamadas do host para cá.
 package main
 
 /*
@@ -17,7 +17,6 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/tatianno/ampsim/engine"
 	"github.com/tatianno/ampsim/plugin"
 	"github.com/tatianno/ampsim/plugin/lv2/ttl"
 	"github.com/tatianno/ampsim/presets"
@@ -48,8 +47,8 @@ var cstrings = sync.OnceValue(func() (s struct {
 	if err != nil {
 		logf("%v", err)
 	}
-	for _, p := range ps {
-		s.uris = append(s.uris, C.CString(ttl.URI(p)))
+	for _, p := range ttl.Plugins(ps) {
+		s.uris = append(s.uris, C.CString(p.URI()))
 	}
 	return s
 })
@@ -63,47 +62,50 @@ func ampsimPluginURI(i C.uint32_t) *C.char { return cstrings().uris[i] }
 //export ampsimStateKey
 func ampsimStateKey() *C.char { return cstrings().key }
 
-// instance é uma instância do plugin com os buffers das portas.
+// instance é uma instância do plugin com o layout das portas e os buffers.
 type instance struct {
 	in       *plugin.Instance
+	pl       ttl.Plugin
 	src, dst [][]float32
+	vals     []float64 // valores das entradas de controle no bloco
+	s        plugin.Settings
 }
 
-// presetFor devolve o estado do preset do plugin uri, lido agora (o do usuário, na versão
-// atual do arquivo); nil se o preset não existe mais.
-func presetFor(uri string) *engine.State {
-	id, ok := ttl.ID(uri)
-	if !ok {
-		return nil
-	}
+// find devolve o plugin da URI, com a lista de presets lida agora (o preset do usuário, na
+// versão atual do arquivo).
+func find(uri string) (ttl.Plugin, bool) {
 	ps, err := plugin.Presets(presetDir())
 	if err != nil {
 		logf("%v", err)
 	}
-	for _, p := range ps {
-		if p.ID != id {
-			continue
-		}
-		st, err := p.State()
-		if err != nil {
-			logf("preset %q: %v", p.Name, err)
-			return nil
-		}
-		return &st
-	}
-	logf("preset %s não existe mais: o plugin deixa passar o sinal seco", id)
-	return nil
+	return ttl.Find(uri, ps)
 }
 
 //export ampsimNew
-func ampsimNew(rate C.double, uri *C.char) C.uintptr_t {
-	if rate <= 0 {
+func ampsimNew(rate C.double, curi *C.char) C.uintptr_t {
+	uri := C.GoString(curi)
+	pl, ok := find(uri)
+	if rate <= 0 || !ok {
+		logf("plugin %s não existe mais", uri)
 		return 0
 	}
-	it := &instance{
-		in:  plugin.New(float64(rate), false, presetFor(C.GoString(uri))),
-		src: make([][]float32, 1),
-		dst: make([][]float32, 1),
+	it := &instance{pl: pl, src: make([][]float32, 1), dst: make([][]float32, 1), vals: make([]float64, len(pl.Controls))}
+	if pl.Pedal != "" {
+		in, err := plugin.NewPedal(float64(rate), pl.Pedal)
+		if err != nil {
+			logf("%v", err)
+			return 0
+		}
+		it.in = in
+		it.s.Params = it.vals[:len(pl.Controls)-1] // o último controle é o Ligado
+	} else {
+		st, err := pl.Preset.State()
+		if err != nil {
+			logf("preset %q: %v", pl.Preset.Name, err)
+			it.in = plugin.New(float64(rate), false, nil) // sinal seco
+		} else {
+			it.in = plugin.New(float64(rate), false, &st)
+		}
 	}
 	return C.uintptr_t(cgo.NewHandle(it))
 }
@@ -111,30 +113,46 @@ func ampsimNew(rate C.double, uri *C.char) C.uintptr_t {
 //export ampsimFree
 func ampsimFree(h C.uintptr_t) { cgo.Handle(h).Delete() }
 
+// read lê as entradas de controle (o padrão do .ttl na porta não conectada) para it.s.
+func (it *instance) read(p []*C.float) {
+	for i, c := range it.pl.Controls {
+		v := c.Default
+		if p[i] != nil {
+			v = float64(*p[i])
+		}
+		it.vals[i] = v
+	}
+	n := len(it.vals)
+	if it.pl.Pedal != "" {
+		it.s.Enabled = it.vals[n-1] > 0.5
+		return
+	}
+	it.s.InputDB = it.vals[plugin.CtlInput]
+	it.s.OutputDB = it.vals[plugin.CtlOutput]
+	it.s.Enabled = it.vals[plugin.CtlEnabled] > 0.5
+}
+
+//export ampsimActivate
+func ampsimActivate(h C.uintptr_t, ports **C.float) {
+	it := cgo.Handle(h).Value().(*instance)
+	it.read(unsafe.Slice(ports, it.pl.NumPorts()))
+	it.in.Activate(it.s.Params)
+}
+
 //export ampsimRun
 func ampsimRun(h C.uintptr_t, ports **C.float, n C.uint32_t) {
 	it := cgo.Handle(h).Value().(*instance)
-	p := unsafe.Slice(ports, ttl.NumPorts)
-	ctl := func(i int) float64 {
-		if p[i] == nil {
-			return plugin.Controls[i].Default
-		}
-		return float64(*p[i])
-	}
-	s := plugin.Settings{
-		InputDB:  ctl(plugin.CtlInput),
-		OutputDB: ctl(plugin.CtlOutput),
-		Enabled:  ctl(plugin.CtlEnabled) > 0.5,
-	}
-	in, out := p[ttl.PortIn], p[ttl.PortOut]
+	p := unsafe.Slice(ports, it.pl.NumPorts())
+	it.read(p)
+	in, out := p[it.pl.PortIn()], p[it.pl.PortOut()]
 	if in == nil || out == nil {
 		return
 	}
 	k := int(n)
 	it.src[0] = unsafe.Slice((*float32)(unsafe.Pointer(in)), k)
 	it.dst[0] = unsafe.Slice((*float32)(unsafe.Pointer(out)), k)
-	it.in.Process(it.src, it.dst, k, s)
-	if lp := p[ttl.PortLatency]; lp != nil {
+	it.in.Process(it.src, it.dst, k, it.s)
+	if lp := p[it.pl.PortLatency()]; lp != nil {
 		*lp = C.float(it.in.Latency())
 	}
 }
@@ -143,7 +161,7 @@ func ampsimRun(h C.uintptr_t, ports **C.float, n C.uint32_t) {
 func ampsimSave(h C.uintptr_t, size *C.size_t) *C.char {
 	it := cgo.Handle(h).Value().(*instance)
 	data, err := it.in.SaveState()
-	if err != nil {
+	if err != nil || data == nil {
 		return nil
 	}
 	*size = C.size_t(len(data) + 1)

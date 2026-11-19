@@ -87,6 +87,9 @@ func NewPedalboard(pb *PresetBar, path string, status func(string, bool), open f
 				if status != nil {
 					status("pedaleira.json inválido: usando a ordem padrão", true)
 				}
+			case oldFactoryBoard(f):
+				// só o padrão de uma versão anterior (salvo ao mexer no spillover, por exemplo): segue
+				// o padrão atual, com os bancos de fábrica novos
 			case len(f.Slots) > 0:
 				b.slots = f.Slots
 				b.names = f.Banks
@@ -103,6 +106,31 @@ func NewPedalboard(pb *PresetBar, path string, status func(string, bool), open f
 		pb.chain.SetSpillover(b.spill)
 	}
 	return b
+}
+
+// oldFactoryBoard diz se a configuração salva é só a pedaleira padrão de uma versão anterior:
+// os presets de fábrica na ordem, sem buracos, com os nomes de fábrica dos bancos (um
+// pedaço do começo do padrão atual, com menos bancos).
+func oldFactoryBoard(f boardFile) bool {
+	if len(f.Slots) == 0 || len(f.Slots)%BoardSlots != 0 || BoardSlots != presets.FactoryBankSize {
+		return false
+	}
+	factory := presets.Factory()
+	nb := len(f.Slots) / BoardSlots
+	if len(f.Slots) >= len(factory) || nb > len(presets.FactoryBanks) || len(f.Banks) != nb {
+		return false
+	}
+	for i, name := range f.Slots {
+		if name != factory[i].Name {
+			return false
+		}
+	}
+	for i, name := range f.Banks {
+		if name != presets.FactoryBanks[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // Spillover informa se as caudas de delay e reverb continuam na troca de preset.
@@ -679,7 +707,7 @@ func (b *Pedalboard) pickLayout(gtx layout.Context, th *Theme) layout.Dimensions
 			user = append(user, i)
 		}
 	}
-	const cols = 3
+	cols := max(3, len(presets.FactoryBanks)) // uma coluna por banco de fábrica
 	w := min(gtx.Dp(720), gtx.Constraints.Max.X-gtx.Dp(40))
 	gtx.Constraints = layout.Constraints{Min: image.Pt(w, 0), Max: image.Pt(w, gtx.Constraints.Max.Y)}
 	item := func(i int) layout.FlexChild {

@@ -42,7 +42,7 @@ func Dir() (string, error) {
 const FactoryBankSize = 6
 
 // FactoryBanks são os temas dos bancos de fábrica, na ordem de Factory.
-var FactoryBanks = []string{"Limpos", "Drive e rock", "Efeitos e texturas"}
+var FactoryBanks = []string{"Limpos", "Drive e rock", "Efeitos e texturas", "Amps clássicos"}
 
 // Factory devolve os presets de fábrica. Cada um escolhe o amp (uma captura NAM incluída
 // ou o amp simulado), o gabinete (uma IR incluída) e os pedais. Os volumes (power.volume)
@@ -278,6 +278,48 @@ func Factory() []Preset {
 			"synth":        {"mode": 2, "type": 0, "cutoff": 250, "res": 70, "depth": 3, "rate": 8, "glide": 20},
 			engine.PowerID: {"volume": -14.4},
 			"delay":        {"time": 375, "feedback": 30, "tone": 50, "mix": 18},
+		}),
+		// ——— Banco 4: amps clássicos ———
+		// só o amp simulado e o gabinete (e o gate nos de ganho alto; no Saturado, um boost): a base para montar o resto
+		// com os pedais (no plugin, os "AmpSim Pedal"). O grave fica no ponto neutro de cada tone
+		// stack (o antigo 5, veja TestFabricaGraveTMBComoAntes); o caráter vem do médio, do agudo,
+		// do ganho e do gabinete.
+		//
+		// o limpo cristalino dos combos americanos dos anos 60 (blackface): médios cavados
+		mk("Americano Limpo", simulado, "2x12 SM57", nil, map[string]set{
+			engine.PreID:   {"stack": engine.StackAmerican, "gain": 2.5, "bass": 8.72, "mid": 3, "treble": 7},
+			engine.PowerID: {"presence": 6, "volume": -5.1},
+		}),
+		// combo pequeno no talo (tweed): satura quando a palheta pesa, limpa no volume da guitarra
+		mk("Americano Quebrando", simulado, "1x10 SM58", nil, map[string]set{
+			engine.PreID:   {"stack": engine.StackAmerican, "gain": 10, "bass": 8.72, "mid": 6, "treble": 6},
+			engine.PowerID: {"presence": 5, "volume": -11.2},
+		}),
+		// o crunch dos cabeçotes britânicos dos anos 60 e 70 (plexi): médios na frente
+		mk("Britânico Crunch", simulado, "4x12 SM7", nil, map[string]set{
+			engine.PreID:   {"stack": engine.StackBritish, "gain": 10, "bass": 9.01, "mid": 6.5, "treble": 6},
+			engine.PowerID: {"presence": 6, "volume": -12.0},
+		}),
+		// o britânico dos anos 80, mais quente (hard rock): como se fazia, um overdrive de boost
+		// (pouco drive, muito level) empurrando o cabeçote no máximo. Só com o amp não dá: as vozes
+		// Americano e Britânico saturam suave (THD de ~7% no ganho 10 com uma senoide no nível da
+		// DI; com o boost, ~13%). É o único do banco com um pedal além do gate
+		mk("Britânico Saturado", simulado, "4x12 SM7", []string{"gate", "drive"}, map[string]set{
+			"gate":         {"threshold": -48, "release": 100},
+			"drive":        {"mode": 1, "drive": 1, "tone": 6, "level": 12},
+			engine.PreID:   {"stack": engine.StackBritish, "gain": 10, "bass": 9.01, "mid": 7, "treble": 6.5},
+			engine.PowerID: {"presence": 7, "volume": -14.5},
+		}),
+		// alto ganho moderno, apertado (anos 90 em diante): a voz do Metal, sem o boost e o EQ
+		mk("High Gain Moderno", simulado, "4x12 SM7", []string{"gate"}, map[string]set{
+			"gate":         {"threshold": -42, "release": 40},
+			engine.PreID:   {"stack": engine.StackHighGain, "gain": 7.5, "bass": 9.3, "mid": 4.5, "treble": 5.5},
+			engine.PowerID: {"presence": 6, "volume": -9.6},
+		}),
+		// limpo neutro e encorpado (o tone stack Moderno, de três bandas independentes): jazz
+		mk("Moderno Limpo", simulado, "2x12 SM57", nil, map[string]set{
+			engine.PreID:   {"stack": engine.StackModern, "gain": 2, "bass": 5.5, "mid": 5, "treble": 4.5},
+			engine.PowerID: {"presence": 4, "volume": -8.7},
 		}),
 	}
 }

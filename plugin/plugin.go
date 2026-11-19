@@ -125,6 +125,11 @@ type Instance struct {
 	mu   sync.Mutex    // snap (SaveState pode rodar junto com Process)
 	snap *engine.State // cópia do preset em uso (nil = sem preset: só o sinal seco)
 
+	// pedal (NewPedal): os knobs do módulo, na ordem de Pedal.Params, e o último valor aplicado
+	pedal  bool
+	params []*engine.Param
+	last   []float64
+
 	// thread de áudio
 	inG, outG  dsp.Smoother
 	dryG       dsp.Smoother // 1 = só o sinal seco (desligado)
@@ -135,6 +140,13 @@ type Instance struct {
 // New cria uma instância à taxa fs com o preset st (nil = sem preset: só o sinal seco);
 // stereo = saída em dois canais (senão, mono). Monta a cadeia: não chamar na thread de áudio.
 func New(fs float64, stereo bool, st *engine.State) *Instance {
+	in := newInstance(fs, stereo)
+	in.use(st)
+	return in
+}
+
+// newInstance cria a instância sem cadeia.
+func newInstance(fs float64, stereo bool) *Instance {
 	in := &Instance{
 		fs: fs, stereo: stereo,
 		inG:  dsp.NewSmoother(fs, gainFadeMs),
@@ -145,7 +157,6 @@ func New(fs float64, stereo bool, st *engine.State) *Instance {
 	for i := range in.dry {
 		in.dry[i] = dsp.NewDelayLine(maxLatency + 1)
 	}
-	in.use(st)
 	return in
 }
 
@@ -173,15 +184,22 @@ type Settings struct {
 	InputDB  float64
 	OutputDB float64
 	Enabled  bool
+	Params   []float64 // pedal: os knobs, na ordem de Pedal.Params (valores fora da faixa são limitados)
 }
 
 // Process processa n amostras: src tem 1 ou mais canais (misturados em mono na entrada da
 // cadeia); dst tem 1 canal (mono) ou 2 (estéreo). Thread de áudio: não aloca nem bloqueia.
 func (in *Instance) Process(src, dst [][]float32, n int, s Settings) {
+	for i, v := range s.Params[:min(len(s.Params), len(in.params))] {
+		if v != in.last[i] {
+			in.params[i].Set(v)
+			in.last[i] = v
+		}
+	}
 	in.inG.SetTarget(dbToLin(s.InputDB))
 	in.outG.SetTarget(dbToLin(s.OutputDB))
 	dry := 0.0
-	if !s.Enabled || in.snap == nil {
+	if !s.Enabled || (!in.pedal && in.snap == nil) {
 		dry = 1
 	}
 	in.dryG.SetTarget(dry)
@@ -235,9 +253,13 @@ type savedState struct {
 
 const savedVersion = 1
 
-// SaveState devolve o estado da instância (JSON com a cópia do preset). Pode ser chamado de
-// qualquer thread, com o áudio rodando.
+// SaveState devolve o estado da instância (JSON com a cópia do preset; nil num pedal, que
+// não tem estado além dos knobs, salvos pelo host). Pode ser chamado de qualquer thread, com
+// o áudio rodando.
 func (in *Instance) SaveState() ([]byte, error) {
+	if in.pedal {
+		return nil, nil
+	}
 	in.mu.Lock()
 	defer in.mu.Unlock()
 	return json.Marshal(savedState{Version: savedVersion, Preset: in.snap})
@@ -246,6 +268,9 @@ func (in *Instance) SaveState() ([]byte, error) {
 // RestoreState volta ao estado salvo por SaveState, com a cópia do preset. Monta a cadeia:
 // não pode rodar junto com Process (no LV2, o host garante isso).
 func (in *Instance) RestoreState(data []byte) error {
+	if in.pedal {
+		return nil
+	}
 	var s savedState
 	if err := json.Unmarshal(data, &s); err != nil {
 		return fmt.Errorf("estado do plugin: %w", err)

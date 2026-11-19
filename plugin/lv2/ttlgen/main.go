@@ -1,5 +1,5 @@
 // Comando ttlgen grava os .ttl do bundle LV2 (manifest.ttl e ampsim.ttl) na pasta -out, com
-// os presets de fábrica (o pacote); o app acrescenta os do usuário no bundle da pasta pessoal.
+// os pedais e os presets de fábrica (o pacote); o app acrescenta os do usuário no bundle da pasta pessoal.
 // Com -usuario, inclui também os presets do usuário (o build.sh --install usa).
 package main
 
@@ -24,7 +24,7 @@ func main() {
 	if err != nil {
 		log.Print(err)
 	}
-	if err := ttl.WriteBundle(*out, ps); err != nil {
+	if err := ttl.WriteBundle(*out, ttl.Plugins(ps)); err != nil {
 		log.Fatal(err)
 	}
 }

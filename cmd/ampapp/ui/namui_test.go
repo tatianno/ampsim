@@ -1,6 +1,8 @@
 package ui
 
 import (
+	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -456,7 +458,8 @@ func TestPedaleiraNomesEBancos(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.SetBank(1)
-	if got := b.bankLabel(); got != "BANCO 2/3" {
+	n0 := b.banks() // os bancos de fábrica
+	if got := b.bankLabel(); got != fmt.Sprintf("BANCO 2/%d", n0) {
 		t.Errorf("banco sem nome: %q", got)
 	}
 	// nome comprido é cortado
@@ -468,25 +471,25 @@ func TestPedaleiraNomesEBancos(t *testing.T) {
 	}
 	// + Banco e − Último banco
 	if b.CanRemoveBank() {
-		t.Error("com 3 bancos não dá para remover")
+		t.Error("o último banco de fábrica tem presets: não dá para remover")
 	}
 	b.addBank.Click()
 	h.frame(a.Layout)
-	if b.banks() != 4 || !b.CanRemoveBank() {
+	if b.banks() != n0+1 || !b.CanRemoveBank() {
 		t.Fatalf("depois de + Banco: %d bancos", b.banks())
 	}
-	if err := b.Assign(3*BoardSlots, "Clean"); err != nil {
+	if err := b.Assign(n0*BoardSlots, "Clean"); err != nil {
 		t.Fatal(err)
 	}
 	if b.CanRemoveBank() {
 		t.Error("banco com preset não pode ser removido")
 	}
-	if err := b.Assign(3*BoardSlots, ""); err != nil {
+	if err := b.Assign(n0*BoardSlots, ""); err != nil {
 		t.Fatal(err)
 	}
 	b.delBank.Click()
 	h.frame(a.Layout)
-	if b.banks() != 3 {
+	if b.banks() != n0 {
 		t.Errorf("depois de − Último banco: %d bancos", b.banks())
 	}
 	// configuração antiga (sem nomes): bancos sem nome
@@ -660,5 +663,36 @@ func TestPedaleiraSpillover(t *testing.T) {
 	}
 	if a.statusErr {
 		t.Errorf("erro no rodapé: %q", a.status)
+	}
+}
+
+// Uma pedaleira.json que é só o padrão de uma versão anterior (os 3 bancos de fábrica de
+// antes) segue o padrão atual, com o banco novo; uma personalizada fica como está.
+func TestPedaleiraPadraoAntigo(t *testing.T) {
+	a, _ := novoApp(t)
+	f := presets.Factory()
+	old := boardFile{Banks: presets.FactoryBanks[:3]}
+	for _, p := range f[:3*BoardSlots] {
+		old.Slots = append(old.Slots, p.Name)
+	}
+	custom := old
+	custom.Slots = append([]string(nil), old.Slots...)
+	custom.Slots[0], custom.Slots[1] = custom.Slots[1], custom.Slots[0]
+	for _, c := range []struct {
+		f      boardFile
+		custom bool
+	}{{old, false}, {custom, true}} {
+		cfg := filepath.Join(t.TempDir(), "pedaleira.json")
+		data, _ := json.Marshal(c.f)
+		if err := os.WriteFile(cfg, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		b := NewPedalboard(a.Presets(), cfg, a.setStatus, func(string) {})
+		if b.Custom() != c.custom {
+			t.Errorf("personalizada = %v, esperava %v", b.Custom(), c.custom)
+		}
+		if !c.custom && (b.banks() != len(presets.FactoryBanks) || b.BankName(3) != presets.FactoryBanks[3]) {
+			t.Errorf("padrão antigo: %d bancos, banco 4 %q", b.banks(), b.BankName(3))
+		}
 	}
 }

@@ -94,7 +94,7 @@ static const void *retrieve(LV2_State_Handle h, uint32_t key, size_t *size, uint
 	return saved.value;
 }
 
-#define MAXP 16
+#define MAXP 64
 
 typedef struct {
 	LilvInstance *inst;
@@ -241,9 +241,14 @@ int main(int argc, char **argv) {
 	// estado: salvar, restaurar numa instância nova e comparar
 	const LV2_State_Interface *st = a->inst->lv2_descriptor->extension_data(LV2_STATE__interface);
 	if (!st || st->save(a->inst->lv2_handle, store, NULL, LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE,
-	                    features) != LV2_STATE_SUCCESS || !saved.value) {
+	                    features) != LV2_STATE_SUCCESS) {
 		fprintf(stderr, "state: save falhou\n");
 		return 1;
+	}
+	if (!saved.value) { // pedal: só os knobs, que o host guarda
+		printf("estado: nenhum (só os valores das portas)\n");
+		a->inst->lv2_descriptor->cleanup(a->inst->lv2_handle);
+		return 0;
 	}
 	printf("estado: %zu bytes, começa com %.60s…\n", saved.size, (char *)saved.value);
 	Host *b = open_host(features);

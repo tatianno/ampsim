@@ -29,4 +29,13 @@ n = min(len(y), len(r)); d = np.abs(y[:n] - r[:n]).max()
 print("plugin x render offline da app: diferença máxima %.3g (pico %.3g)" % (d, np.abs(r).max()))
 sys.exit(int(d > 1e-5))' "$tmp/plug.f32" "$tmp/ref.f32" || fail=1
 done
+# pedais: todos carregam, processam a DI e devolvem um sinal válido (os knobs no padrão)
+for uri in $(grep -o 'https://github.com/tatianno/ampsim#pedal-[a-z0-9]*' dist/lv2/ampsim.lv2/manifest.ttl); do
+	out=$("$tmp/hostcheck" "$uri" "$rate" "$tmp/di.f32" "$tmp/plug.f32" 2>&1) || { echo "$out"; fail=1; continue; }
+	venv/bin/python -I -c 'import sys, numpy as np
+y = np.fromfile(sys.argv[1], dtype=np.float32)
+ok = np.isfinite(y).all() and np.abs(y).max() > 1e-3
+print("%-45s %s (pico %.2f)" % (sys.argv[2].split("#")[1], "ok" if ok else "FALHOU", np.abs(y).max()))
+sys.exit(int(not ok))' "$tmp/plug.f32" "$uri" || fail=1
+done
 exit $fail

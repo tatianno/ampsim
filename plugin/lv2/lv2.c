@@ -7,7 +7,7 @@
 #include "_cgo_export.h"
 #include "lv2min.h"
 
-#define MAX_PORTS 16
+#define MAX_PORTS 64 // o pedal com mais knobs (synth) tem 20 + 4
 
 typedef struct {
 	uintptr_t go;
@@ -43,6 +43,11 @@ static void connect_port(LV2_Handle h, uint32_t port, void *data) {
 	if (port < MAX_PORTS) {
 		p->ports[port] = data;
 	}
+}
+
+static void activate(LV2_Handle h) {
+	Plugin *p = h;
+	ampsimActivate(p->go, p->ports);
 }
 
 static void run(LV2_Handle h, uint32_t n) {
@@ -125,6 +130,7 @@ __attribute__((visibility("default"))) const LV2_Descriptor *lv2_descriptor(uint
 		d->URI = ampsimPluginURI(index); // alocada uma vez, fica até o fim do processo
 		d->instantiate = instantiate;
 		d->connect_port = connect_port;
+		d->activate = activate;
 		d->run = run;
 		d->cleanup = cleanup;
 		d->extension_data = extension_data;

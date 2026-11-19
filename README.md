@@ -64,10 +64,12 @@ para Go em streaming, validados contra as saídas do Python.
 - **Menu** (canto superior direito): Áudio…, Afinador, **Backup dos presets…** (um `.zip` com os seus presets, a
   pedaleira e os `.nam`/IRs que eles usam), **Restaurar presets…** (guarda antes o estado atual em
   `~/.config/ampsim/backups`), **Atalhos** (teclado e mouse) e Sobre.
-- **Presets**: 18 de fábrica em 3 bancos temáticos da pedaleira: **Limpos** (Clean, Country, Funk, Surf, New
-  Wave, Pop Anos 80), **Drive e rock** (Blues, Crunch, Rock Clássico, Treble Booster, Solo Hard Rock, Metal) e
-  **Efeitos e texturas** (Psicodélico, Fuzz Oitavado, Modulação, Worship, Ambiente, Synth), cada um com seu amp NAM, gabinete e pedais, todos no mesmo
-  volume; e os seus, salvos em `~/.config/ampsim/presets`
+- **Presets**: 24 de fábrica em 4 bancos temáticos da pedaleira: **Limpos** (Clean, Country, Funk, Surf, New
+  Wave, Pop Anos 80), **Drive e rock** (Blues, Crunch, Rock Clássico, Treble Booster, Solo Hard Rock, Metal),
+  **Efeitos e texturas** (Psicodélico, Fuzz Oitavado, Modulação, Worship, Ambiente, Synth), cada um com seu amp,
+  gabinete e pedais, e **Amps clássicos** (Americano Limpo, Americano Quebrando, Britânico Crunch, Britânico
+  Saturado, High Gain Moderno, Moderno Limpo), só o amp simulado e o gabinete, a base para montar com os pedais
+  (no plugin, os "AmpSim Pedal"); todos no mesmo volume; e os seus, salvos em `~/.config/ampsim/presets`
   (JSON, o mesmo formato do estado do plugin); `-preset Metal` funciona no app e no CLI.
 - **Pedaleira de presets** abaixo da cadeia: 6 footswitches por banco, como um controlador (teclas 1 a 6), com o
   nome do banco (ex.: LIMPOS) entre as setas. **Editar** abre a matriz de bancos × footswitches: clique numa célula
@@ -149,7 +151,7 @@ O plugin aplica um preset do app numa faixa: no **Audacity** (gravando a DI limp
 efeito ou como efeito em tempo real) e em hosts que monitoram ao vivo (Ardour, Carla). O som não é editado no
 plugin: os presets são feitos no app.
 
-**Cada preset é um efeito**, pelo nome: **AmpSim: Clean**, **AmpSim: Metal**… e os seus (**AmpSim: Meu Som**).
+**Cada preset é um efeito**, pelo nome: **AmpSim: Clean**, **AmpSim: Americano Limpo**… e os seus (**AmpSim: Meu Som**).
 O app mantém a lista em dia: ao abrir e ao salvar, apagar ou restaurar presets, ele reescreve o plugin em
 `~/.lv2/ampsim.lv2`; o host mostra a lista nova quando é reaberto. Os controles de cada efeito:
 
@@ -159,7 +161,14 @@ O app mantém a lista em dia: ao abrir e ao salvar, apagar ou restaurar presets,
 | Saída | volume em dB |
 | Ligado | liga e desliga (desligado, sai o sinal seco, alinhado com a latência) |
 
-O plugin é mono (no Audacity, numa faixa estéreo, cada canal passa pelo efeito). Instalação:
+Os **pedais e modulações** também vêm sozinhos, com os knobs do app: **AmpSim Pedal: Gate**, Compressor, Wah,
+Octave, Synth, Drive (o modelado), EQ, Chorus, Flanger, Phaser, Vibe, Vibrato, Tremolo, Rotary, Pitch, Delay e
+Reverb, cada um com **Ligado**. Os seletores viram caixa de marcar quando têm duas posições ("Velocidade
+(Rápido)") ou um número com a legenda no nome ("Modo (0 Boost, 1 Overdrive, 2 Distorção, 3 Fuzz, 4 Muff)"): uma
+lista de opções sai embaralhada no Audacity. Amp e gabinete vêm pelos presets.
+
+Os plugins são mono (no Audacity, numa faixa estéreo, cada canal passa pelo efeito; a Largura das modulações e o
+delay ping-pong ficam de fora). Instalação:
 
 - **`.tar.gz`**: o `install.sh` copia o plugin para `~/.lv2/ampsim.lv2`.
 - **`.deb`**: o pacote instala o `.so` em `/usr/lib/ampsim/`; **abra o app uma vez** e ele monta o plugin em
