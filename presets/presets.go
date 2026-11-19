@@ -181,7 +181,7 @@ func Factory() []Preset {
 		// empurrando um AC30 2x12; médios "cantados" da Red Special, delay e sala
 		mk("Treble Booster", sat3MD, "2x12 SM57", []string{"gate", "drive", "eq", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -48, "release": 120},
-			"drive":        {"mode": 0, "drive": 6, "tone": 8, "level": 6},
+			"drive":        {"mode": 0, "drive": 9, "tone": 8}, // Boost: +18 dB
 			"eq":           {"f1": 150, "g1": -4, "f3": 1200, "g3": 3, "q3": 0.8, "f5": 5500, "g5": -6},
 			engine.PowerID: {"volume": -14.1},
 			"delay":        {"time": 350, "feedback": 25, "tone": 55, "mix": 18},
@@ -207,9 +207,9 @@ func Factory() []Preset {
 		// ——— Banco 3: efeitos e texturas ———
 		mk("Psicodélico", cleanV10G, "4x12 SM7", []string{"gate", "drive", "vibe", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -55},
-			"drive":        {"mode": 3, "drive": 7, "tone": 5, "level": 0},
+			"drive":        {"mode": 3, "drive": 7, "level": 0}, // Fuzz Face
 			"vibe":         {"rate": 1.2, "intensity": 85, "mode": 0},
-			engine.PowerID: {"volume": -10.2},
+			engine.PowerID: {"volume": -12.5},
 			"delay":        {"time": 400, "feedback": 35, "tone": 45, "mix": 22},
 			"reverb":       {"size": 60, "damping": 40, "mix": 20},
 		}),
@@ -218,8 +218,8 @@ func Factory() []Preset {
 		mk("Fuzz Oitavado", sat3MD, "4x12 SM7", []string{"gate", "octave", "drive", "reverb"}, map[string]set{
 			"gate":         {"threshold": -50, "release": 100},
 			"octave":       {"sub1": 0, "sub2": 0, "up": 60, "dry": 100},
-			"drive":        {"mode": 3, "drive": 7, "tone": 6, "level": 0},
-			engine.PowerID: {"volume": -11.8},
+			"drive":        {"mode": 3, "drive": 7, "level": 0}, // Fuzz Face
+			engine.PowerID: {"volume": -11.4},
 			"reverb":       {"size": 35, "damping": 45, "mix": 12},
 		}),
 		mk("Modulação", cleanV10, "2x12 SM57", []string{"gate", "comp", "chorus", "tremolo", "delay", "reverb"}, map[string]set{

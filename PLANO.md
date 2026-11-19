@@ -680,6 +680,14 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   banco (até 18 letras; atalhos desligados enquanto digita), 6 células (clique → escolha do preset, com os de fábrica
   em colunas por tema e "Voltar"), "+ Banco" (até 10), "− Último banco" (vazio, acima de 3) e "Restaurar padrão" (2
   cliques). Configuração antiga sem `banks` = bancos sem nome. Testes de nomes, digitação, bancos e restaurar
+- [x] **Drive: knobs de cada modo como no pedal de referência** (19/11): `engine.ParamViewer` diz quais knobs
+  valem no modo e com que nome; a GUI mostra só esses, e os escondidos não atuam no som (teste). Boost = Boost e Tone
+  (Level neutro); Overdrive = Drive, Tone, Level; Distorção = Distortion, Tone, Level; **Fuzz** agora é Fuzz Face
+  (ceifamento assimétrico, graves cheios, sem o vale nos médios, Tone plano) = Fuzz e Volume; modo novo **Muff**
+  (Big Muff: dois estágios simétricos `tanh(2·tanh)`, vale em 900 Hz) = Sustain, Tone, Volume. Normalização das vozes
+  novas medida como as outras (Drive 5 = nível da entrada). Presets: Treble Booster com Boost 9 (+18 dB, mesmo
+  volume de antes), Psicodélico e Fuzz Oitavado no Fuzz Face, volumes recalibrados (−18,0 dBFS). Seletor com 5 ou
+  mais posições põe o nome numa linha acima
 - [x] **Atalhos no Menu** (19/11, `cmd/ampapp/ui/shortcuts.go`): lista do teclado (T, A, 1 a 6, Espaço, Esc) e do
   mouse (Shift, duplo clique, roda, arrastar); teste confere que as teclas de `App.keys` estão na lista
 - [x] **Backup e restauração dos presets** (19/11, `presets/backup.go`): `.zip` com `presets/*.json`,

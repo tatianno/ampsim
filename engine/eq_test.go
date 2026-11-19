@@ -2,7 +2,10 @@ package engine
 
 import (
 	"math"
+	"slices"
 	"testing"
+
+	"github.com/tatianno/ampsim/dsp"
 )
 
 // A resposta calculada bate com a medida (seno puro pelo EQ) e cada banda faz o que promete.
@@ -137,5 +140,64 @@ func TestDriveTrocaDeModo(t *testing.T) {
 	}
 	if maxJump > 3*base+0.05 {
 		t.Errorf("salto de %.3f nas trocas de modo (sem troca: %.3f)", maxJump, base)
+	}
+}
+
+// Os knobs do drive seguem o modo, e o que fica escondido não muda o som.
+func TestDriveKnobsPorModo(t *testing.T) {
+	m := NewDrive()
+	names := func() (out []string) {
+		for _, s := range m.ParamView() {
+			out = append(out, s.Name)
+		}
+		return
+	}
+	want := map[int][]string{
+		dsp.DriveBoost:      {"Boost", "Tone"},
+		dsp.DriveOverdrive:  {"Drive", "Tone", "Level"},
+		dsp.DriveDistortion: {"Distortion", "Tone", "Level"},
+		dsp.DriveFuzz:       {"Fuzz", "Volume"},
+		dsp.DriveMuff:       {"Sustain", "Tone", "Volume"},
+	}
+	for mode, w := range want {
+		m.Param("mode").Set(float64(mode))
+		if got := names(); !slices.Equal(got, w) {
+			t.Errorf("modo %d: knobs %v, esperava %v", mode, got, w)
+		}
+	}
+	render := func(mode int, set map[string]float64) []float64 {
+		d := NewDrive()
+		d.Param("mode").Set(float64(mode))
+		for k, v := range set {
+			d.Param(k).Set(v)
+		}
+		d.Prepare(48000, 256)
+		out := make([]float64, 0, 48000)
+		buf := make([]float64, 256)
+		for b := 0; b < 100; b++ {
+			for i := range buf {
+				buf[i] = 0.2 * math.Sin(float64(b*256+i)*2*math.Pi*220/48000)
+			}
+			d.Process(buf)
+			out = append(out, buf...)
+		}
+		return out
+	}
+	same := func(a, b []float64) bool {
+		for i := range a {
+			if math.Abs(a[i]-b[i]) > 1e-12 {
+				return false
+			}
+		}
+		return true
+	}
+	if !same(render(dsp.DriveBoost, map[string]float64{"level": 0}), render(dsp.DriveBoost, map[string]float64{"level": 9})) {
+		t.Error("no Boost, o Level (escondido) não deveria mudar o som")
+	}
+	if !same(render(dsp.DriveFuzz, map[string]float64{"tone": 0}), render(dsp.DriveFuzz, map[string]float64{"tone": 10})) {
+		t.Error("no Fuzz, o Tone (escondido) não deveria mudar o som")
+	}
+	if same(render(dsp.DriveMuff, map[string]float64{"tone": 0}), render(dsp.DriveMuff, map[string]float64{"tone": 10})) {
+		t.Error("no Muff, o Tone deveria mudar o som")
 	}
 }

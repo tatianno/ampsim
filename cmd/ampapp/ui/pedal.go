@@ -61,6 +61,25 @@ func NewPedal(chain *engine.Chain, mod engine.Module) *Pedal {
 	return p
 }
 
+// visibleKnobs devolve os knobs a mostrar: todos, ou só os do modo atual (com o nome do modo)
+// nos módulos que mudam de controles com o modo (engine.ParamViewer).
+func (p *Pedal) visibleKnobs() []*Knob {
+	pv, ok := p.mod.(engine.ParamViewer)
+	if !ok {
+		return p.knobs
+	}
+	var out []*Knob
+	for _, s := range pv.ParamView() {
+		for _, k := range p.knobs {
+			if k.P.Info().ID == s.ID {
+				k.Label = s.Name
+				out = append(out, k)
+			}
+		}
+	}
+	return out
+}
+
 // PedalWidthDp é a largura do pedal aberto.
 const PedalWidthDp = 330
 
@@ -96,12 +115,13 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 				return p.synth.controls(gtx, th, st)
 			}), layout.Rigid(spacer(0, 10)))
 		}
+		knobs := p.visibleKnobs()
 		perRow := 3
-		if len(p.knobs) == 4 {
+		if len(knobs) == 4 {
 			perRow = 2 // 2 + 2 fica melhor que 3 + 1
 		}
-		for i := 0; i < len(p.knobs); i += perRow {
-			row := p.knobs[i:min(i+perRow, len(p.knobs))]
+		for i := 0; i < len(knobs); i += perRow {
+			row := knobs[i:min(i+perRow, len(knobs))]
 			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				var ch []layout.FlexChild
 				for _, k := range row {

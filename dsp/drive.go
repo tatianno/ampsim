@@ -7,7 +7,8 @@ const (
 	DriveBoost = iota
 	DriveOverdrive
 	DriveDistortion
-	DriveFuzz
+	DriveFuzz // Fuzz Face: assimétrico, sem controle de tom
+	DriveMuff // Big Muff: dois estágios simétricos e o vale nos médios
 )
 
 // driveVoice são as escolhas de cada modo.
@@ -21,16 +22,18 @@ type driveVoice struct {
 	midScoop bool    // vale nos médios (Big Muff)
 }
 
-var driveVoices = [4]driveVoice{
+var driveVoices = [5]driveVoice{
 	DriveBoost:      {preHP: 25, gainMin: 1, gainMax: 10, postLP: 18000, norm: 1},
 	DriveOverdrive:  {preHP: 720, gainMin: 2, gainMax: 120, clean: 1, postLP: 5500, norm: 0.254},
 	DriveDistortion: {preHP: 80, gainMin: 4, gainMax: 600, postLP: 6000, norm: 0.184},
-	DriveFuzz:       {preHP: 60, gainMin: 2, gainMax: 1000, postLP: 4500, norm: 0.232, midScoop: true},
+	DriveFuzz:       {preHP: 40, gainMin: 3, gainMax: 400, postLP: 5000, norm: 0.199},
+	DriveMuff:       {preHP: 60, gainMin: 2, gainMax: 1000, postLP: 4500, norm: 0.222, midScoop: true},
 }
 
 // Drive é o pedal de drive: boost limpo, overdrive (Tube Screamer: passa-alta antes do
-// ceifamento suave e o limpo somado), distorção (RAT: muito ganho, ceifamento duro) e fuzz
-// (ceifamento assimétrico pesado e vale nos médios). O ceifamento roda a 4x.
+// ceifamento suave e o limpo somado), distorção (RAT: muito ganho, ceifamento duro), fuzz
+// (Fuzz Face: ceifamento assimétrico pesado, graves cheios) e muff (Big Muff: dois estágios
+// simétricos e vale nos médios). O ceifamento roda a 4x.
 //
 // Tone é um "tilt" em volta de 1 kHz (0 = escuro, 5 = plano, 10 = brilhante).
 type Drive struct {
@@ -65,7 +68,7 @@ const DriveLatency = osLatency
 
 // SetMode troca o modo (o chamador cuida do crossfade).
 func (d *Drive) SetMode(mode int) {
-	if mode < DriveBoost || mode > DriveFuzz {
+	if mode < DriveBoost || mode > DriveMuff {
 		mode = DriveOverdrive
 	}
 	d.mode = mode
@@ -107,6 +110,9 @@ func (d *Drive) clip(u float64) float64 {
 		return math.Tanh(u)
 	case DriveDistortion: // diodos para o terra: joelho mais duro
 		return u / math.Pow(1+math.Pow(math.Abs(u), 2.5), 1/2.5)
+	}
+	if d.mode == DriveMuff { // dois estágios de diodos em cascata: simétrico e muito comprimido
+		return math.Tanh(2 * math.Tanh(u))
 	}
 	// fuzz: assimétrico (transistor polarizado), quase quadrado
 	if u > 0 {

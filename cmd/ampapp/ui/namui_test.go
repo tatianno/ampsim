@@ -512,3 +512,25 @@ func TestPedaleiraEdicaoVisual(t *testing.T) {
 		t.Error("Voltar deveria retornar à matriz")
 	}
 }
+
+func TestPedalDriveKnobsDoModo(t *testing.T) {
+	a, _ := novoApp(t)
+	p := a.pedals["drive"]
+	labels := func() (out []string) {
+		for _, k := range p.visibleKnobs() {
+			out = append(out, k.Label)
+		}
+		return
+	}
+	a.Chain.Module("drive").Param("mode").Set(3) // Fuzz
+	if got := labels(); !slices.Equal(got, []string{"Fuzz", "Volume"}) {
+		t.Errorf("Fuzz: %v", got)
+	}
+	a.Chain.Module("drive").Param("mode").Set(0) // Boost
+	if got := labels(); !slices.Equal(got, []string{"Boost", "Tone"}) {
+		t.Errorf("Boost: %v", got)
+	}
+	a.Open("drive")
+	h := newHarness(1280, 800)
+	h.frame(a.Layout) // desenha sem quebrar
+}

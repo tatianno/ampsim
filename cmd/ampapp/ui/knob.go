@@ -36,6 +36,8 @@ const (
 // Knob é um botão giratório ligado a um engine.Param.
 type Knob struct {
 	P *engine.Param
+	// Label troca o nome mostrado (vazio = o nome do parâmetro); ex.: o Drive vira "Fuzz".
+	Label string
 
 	dragging  bool
 	acc       float64 // valor normalizado acumulado durante o arrasto (aceita parâmetros discretos)
@@ -121,7 +123,11 @@ func (k *Knob) Layout(gtx layout.Context, th *Theme, size unit.Dp, cap, ink, acc
 
 	return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return drawText(gtx, th, info.Name, textOpts{size: 12, color: ink, align: text.Middle, width: w, bold: true})
+			name := info.Name
+			if k.Label != "" {
+				name = k.Label
+			}
+			return drawText(gtx, th, name, textOpts{size: 12, color: ink, align: text.Middle, width: w, bold: true})
 		}),
 		layout.Rigid(spacer(0, 2)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
@@ -207,11 +213,14 @@ func (s *Selector) Layout(gtx layout.Context, th *Theme, ink, accent color.NRGBA
 		}
 	}
 	info := s.P.Info()
-	children := []layout.FlexChild{
-		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-			return drawText(gtx, th, info.Name, textOpts{size: 12, color: ink, bold: true})
-		}),
-		layout.Rigid(spacer(8, 0)),
+	name := func(gtx layout.Context) layout.Dimensions {
+		return drawText(gtx, th, info.Name, textOpts{size: 12, color: ink, bold: true})
+	}
+	// muitas posições (ex.: os 5 modos do drive): o nome vai numa linha acima dos botões
+	stacked := len(s.values) >= 5
+	var children []layout.FlexChild
+	if !stacked {
+		children = append(children, layout.Rigid(name), layout.Rigid(spacer(8, 0)))
 	}
 	for i := range s.values {
 		i := i
@@ -232,5 +241,12 @@ func (s *Selector) Layout(gtx layout.Context, th *Theme, ink, accent color.NRGBA
 			})
 		}), layout.Rigid(spacer(4, 0)))
 	}
-	return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
+	row := func(gtx layout.Context) layout.Dimensions {
+		return layout.Flex{Alignment: layout.Middle}.Layout(gtx, children...)
+	}
+	if !stacked {
+		return row(gtx)
+	}
+	return layout.Flex{Axis: layout.Vertical, Alignment: layout.Middle}.Layout(gtx,
+		layout.Rigid(name), layout.Rigid(spacer(0, 4)), layout.Rigid(row))
 }

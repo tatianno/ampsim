@@ -53,7 +53,7 @@ func TestDrive(t *testing.T) {
 		t.Errorf("boost limpo não deveria criar harmônicos: %.2g", h)
 	}
 	// nos modos que saturam: mais drive = mais harmônicos; nível perto do da entrada
-	for _, mode := range []int{DriveOverdrive, DriveDistortion, DriveFuzz} {
+	for _, mode := range []int{DriveOverdrive, DriveDistortion, DriveFuzz, DriveMuff} {
 		harm := func(drive float64) (h3, level float64) {
 			d := NewDrive(fs)
 			d.SetMode(mode)

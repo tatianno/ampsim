@@ -10,8 +10,13 @@ import (
 
 // ---------------------------------------------------------------- Drive
 
-// Drive é o pedal de drive: Boost, Overdrive, Distorção ou Fuzz. A troca de modo faz um
+// Drive é o pedal de drive: Boost, Overdrive, Distorção, Fuzz ou Muff. A troca de modo faz um
 // crossfade de 20 ms (os dois modos rodam juntos durante a troca).
+//
+// Os knobs seguem os pedais de cada modo (ParamView): Boost = Boost e Tone (o Level não atua);
+// Overdrive = Drive, Tone, Level (Tube Screamer); Distorção = Distortion, Tone, Level (RAT/DS-1);
+// Fuzz = Fuzz e Volume (Fuzz Face, sem tom: o Tone fica plano); Muff = Sustain, Tone, Volume
+// (Big Muff).
 type Drive struct {
 	base
 	cur, old  *dsp.Drive
@@ -26,9 +31,40 @@ func NewDrive() *Drive {
 		ParamInfo{ID: "drive", Name: "Drive", Min: 0, Max: 10, Default: 5},
 		ParamInfo{ID: "tone", Name: "Tone", Min: 0, Max: 10, Default: 5},
 		ParamInfo{ID: "level", Name: "Level", Unit: "dB", Min: -24, Max: 12, Default: 0},
-		ParamInfo{ID: "mode", Name: "Modo", Min: 0, Max: 3, Default: dsp.DriveOverdrive, Step: 1,
-			Choices: []string{"Boost", "Overdrive", "Distorção", "Fuzz"}},
+		ParamInfo{ID: "mode", Name: "Modo", Min: 0, Max: 4, Default: dsp.DriveOverdrive, Step: 1,
+			Choices: []string{"Boost", "Overdrive", "Distorção", "Fuzz", "Muff"}},
 	)}}
+}
+
+// driveViews são os knobs de cada modo (veja ParamView).
+var driveViews = [...][]ParamShow{
+	dsp.DriveBoost:      {{"drive", "Boost"}, {"tone", "Tone"}},
+	dsp.DriveOverdrive:  {{"drive", "Drive"}, {"tone", "Tone"}, {"level", "Level"}},
+	dsp.DriveDistortion: {{"drive", "Distortion"}, {"tone", "Tone"}, {"level", "Level"}},
+	dsp.DriveFuzz:       {{"drive", "Fuzz"}, {"level", "Volume"}},
+	dsp.DriveMuff:       {{"drive", "Sustain"}, {"tone", "Tone"}, {"level", "Volume"}},
+}
+
+// ParamView devolve os knobs do modo atual.
+func (m *Drive) ParamView() []ParamShow {
+	mode := int(m.get("mode"))
+	if mode < 0 || mode >= len(driveViews) {
+		mode = dsp.DriveOverdrive
+	}
+	return driveViews[mode]
+}
+
+// effective devolve drive, tone e level como o modo atual os usa: o que não é knob do modo
+// fica neutro (Boost sem Level; Fuzz com o Tone plano).
+func (m *Drive) effective() (drive, tone, lvl float64) {
+	drive, tone, lvl = m.get("drive"), m.get("tone"), m.get("level")
+	switch int(m.get("mode")) {
+	case dsp.DriveBoost:
+		lvl = 0
+	case dsp.DriveFuzz:
+		tone = 5
+	}
+	return
 }
 
 func (m *Drive) Prepare(fs float64, maxBlock int) {
@@ -49,7 +85,7 @@ func (m *Drive) Process(buf []float64) {
 		m.cur.Reset()
 		m.mode, m.xf = mode, 0
 	}
-	drive, tone, lvl := m.get("drive"), m.get("tone"), m.get("level")
+	drive, tone, lvl := m.effective()
 	m.cur.Set(drive, tone, lvl)
 	if m.xf >= 1 {
 		m.cur.ProcessBlock(buf)

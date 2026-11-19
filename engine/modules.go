@@ -653,6 +653,16 @@ func (m *Reverb) Process(buf []float64) {
 
 // ---------------------------------------------------------------- Compressor
 
+// ParamShow é um controle visível agora, com o nome a mostrar.
+type ParamShow struct{ ID, Name string }
+
+// ParamViewer é implementado pelos módulos cujos controles mudam com o modo (ex.: o drive):
+// devolve os parâmetros contínuos que valem no modo atual, na ordem, com o nome de cada um.
+// Os que ficam de fora não afetam o som nesse modo. Os seletores (o próprio modo) sempre aparecem.
+type ParamViewer interface {
+	ParamView() []ParamShow
+}
+
 // GainReducer é implementado por módulos que reduzem ganho (para o medidor de GR na GUI).
 type GainReducer interface {
 	GainReductionDB() float64
