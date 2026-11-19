@@ -1,0 +1,16 @@
+#!/bin/sh
+# Ao remover o pacote, apaga os bundles LV2 que o app montou nas pastas pessoais: os que são
+# só um link para o .so do pacote (/usr/lib/ampsim/ampsim.so). Um bundle com o .so de verdade
+# (instalado pelo .tar.gz) fica.
+set -e
+case "$1" in
+remove | purge)
+	for b in /root/.lv2/ampsim.lv2 /home/*/.lv2/ampsim.lv2; do
+		[ -L "$b/ampsim.so" ] || continue
+		[ "$(readlink "$b/ampsim.so")" = /usr/lib/ampsim/ampsim.so ] || continue
+		rm -f "$b/ampsim.so" "$b/manifest.ttl" "$b/ampsim.ttl"
+		rmdir "$b" 2>/dev/null || true
+	done
+	;;
+esac
+exit 0

@@ -35,13 +35,9 @@ const (
 // PedalboardEditID é a sobreposição que edita a pedaleira (a matriz de bancos e footswitches).
 const PedalboardEditID = "__pedaleira__"
 
-// boardFile é o arquivo da configuração da pedaleira (na pasta de configuração do app).
-type boardFile struct {
-	Slots []string `json:"slots"`           // nome do preset de cada footswitch ("" = vazio), banco a banco
-	Banks []string `json:"banks,omitempty"` // nome de cada banco ("" = sem nome)
-	// Spillover: as caudas de delay e reverb continuam na troca de preset (ausente = ligado)
-	Spillover *bool `json:"spillover,omitempty"`
-}
+// boardFile é o arquivo da configuração da pedaleira (na pasta de configuração do app); o
+// plugin lê o mesmo arquivo.
+type boardFile = presets.BoardFile
 
 // Pedalboard é a pedaleira de presets: footswitches de acesso rápido, em bancos de 6, com o
 // LED aceso no preset atual. As teclas 1 a 6 acionam os footswitches.

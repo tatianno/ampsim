@@ -149,12 +149,7 @@ func (a *App) menuActions(gtx layout.Context) {
 }
 
 // pedaleiraPath é o pedaleira.json ao lado da pasta de presets ("" sem pasta).
-func pedaleiraPath(dir string) string {
-	if dir == "" {
-		return ""
-	}
-	return filepath.Join(filepath.Dir(dir), "pedaleira.json")
-}
+func pedaleiraPath(dir string) string { return presets.BoardPath(dir) }
 
 // backupAsync pergunta onde salvar e grava o backup dos presets do usuário.
 func (a *App) backupAsync() {

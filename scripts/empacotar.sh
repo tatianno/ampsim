@@ -2,6 +2,9 @@
 # Gera os pacotes do AmpSim para Linux em dist/:
 #   ampsim_VERSAO_amd64.deb          (sudo apt install ./ampsim_VERSAO_amd64.deb)
 #   ampsim-VERSAO-linux-amd64.tar.gz (./install.sh, sem sudo)
+# Os dois levam o plugin LV2 (Audacity, Ardour, Carla...): o .tar.gz instala o bundle em ~/.lv2; o
+# .deb instala o .so em /usr/lib/ampsim e o app monta o bundle em ~/.lv2 ao abrir (um plugin por
+# preset, com os do usuário).
 #
 # Uso: scripts/empacotar.sh 0.3.0
 set -e
@@ -23,6 +26,9 @@ export GOEXPERIMENT="${GOEXPERIMENT:-simd}"
 CGO_ENABLED=1 go build -trimpath -ldflags "$LDFLAGS" -o "$TMP/ampsim" ./cmd/ampapp
 CGO_ENABLED=1 go build -trimpath -ldflags "-s -w" -o "$TMP/ampsim-cli" ./cmd/ampcli
 
+plugin/lv2/build.sh >/dev/null # dist/lv2/ampsim.lv2
+LV2="$DIST/lv2/ampsim.lv2"
+
 "$TMP/ampsim" -versao | grep -q 'AVX2' || echo "aviso: binário sem os núcleos SIMD (GOEXPERIMENT=$GOEXPERIMENT; CPU sem AVX2/FMA?)"
 
 echo "== tar.gz"
@@ -30,13 +36,15 @@ T="$TMP/ampsim-$VERSAO-linux-$ARCH"
 mkdir -p "$T"
 cp "$TMP/ampsim" "$TMP/ampsim-cli" packaging/linux/ampsim.desktop \
    packaging/linux/install.sh packaging/linux/uninstall.sh LICENSE README.md "$T/"
-cp -r packaging/linux/icons "$T/"
+cp -r packaging/linux/icons "$LV2" "$T/"
 chmod 755 "$T/install.sh" "$T/uninstall.sh"
 tar -C "$TMP" -czf "$DIST/ampsim-$VERSAO-linux-$ARCH.tar.gz" "ampsim-$VERSAO-linux-$ARCH"
 
 echo "== deb"
 D="$TMP/deb"
-mkdir -p "$D/DEBIAN" "$D/usr/bin" "$D/usr/share/applications" "$D/usr/share/doc/ampsim"
+mkdir -p "$D/DEBIAN" "$D/usr/bin" "$D/usr/share/applications" "$D/usr/share/doc/ampsim" "$D/usr/lib/ampsim"
+install -m 644 "$LV2/ampsim.so" "$D/usr/lib/ampsim/"
+install -m 755 packaging/linux/postrm "$D/DEBIAN/"
 install -m 755 "$TMP/ampsim" "$TMP/ampsim-cli" "$D/usr/bin/"
 install -m 644 packaging/linux/ampsim.desktop "$D/usr/share/applications/"
 for n in 48 64 128 256 512; do
@@ -61,7 +69,8 @@ Description: AmpSim, simulador de amplificador de guitarra e pedais
  Amp simulado ou modelos NAM (Neural Amp Modeler), gabinete por IR, pedais
  (gate, compressor, EQ paramétrico, chorus, flanger, phaser, delay, reverb) com
  loop de efeitos, afinador, tap tempo, presets e gravação, tocando ao vivo com
- baixa latência (JACK via PipeWire).
+ baixa latência (JACK via PipeWire). Inclui o plugin LV2 que aplica os presets
+ numa faixa (Audacity, Ardour, Carla): abra o app uma vez para ele aparecer.
 CONTROL
 dpkg-deb --root-owner-group --build "$D" "$DIST/ampsim_${VERSAO}_${ARCH}.deb" >/dev/null
 

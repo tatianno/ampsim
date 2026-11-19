@@ -68,13 +68,14 @@ para Go em streaming, validados contra as saídas do Python.
   Wave, Pop Anos 80), **Drive e rock** (Blues, Crunch, Rock Clássico, Treble Booster, Solo Hard Rock, Metal) e
   **Efeitos e texturas** (Psicodélico, Fuzz Oitavado, Modulação, Worship, Ambiente, Synth), cada um com seu amp NAM, gabinete e pedais, todos no mesmo
   volume; e os seus, salvos em `~/.config/ampsim/presets`
-  (JSON, o mesmo formato servirá para o futuro plugin LV2); `-preset Metal` funciona no app e no CLI.
+  (JSON, o mesmo formato do estado do plugin); `-preset Metal` funciona no app e no CLI.
 - **Pedaleira de presets** abaixo da cadeia: 6 footswitches por banco, como um controlador (teclas 1 a 6), com o
   nome do banco (ex.: LIMPOS) entre as setas. **Editar** abre a matriz de bancos × footswitches: clique numa célula
   para escolher o preset, dê nome aos bancos, acrescente bancos (até 10) ou **Restaurar padrão**.
   **Spillover** (ligado por padrão): na troca de preset, as repetições do delay e a cauda do reverb continuam
   soando com os ajustes do preset anterior enquanto o novo já toca; desligado, a cauda some num fade de 30 ms.
 - **CLI** para processar arquivos offline.
+- **Plugin LV2** que aplica um preset numa faixa (veja [Plugin](#plugin-lv2)).
 
 ## Requisitos
 
@@ -142,6 +143,36 @@ Ao vivo, ajuste o **Trim** até o nível da guitarra ficar na faixa ideal marcad
 Para saber a latência real, ligue um cabo da saída da placa numa entrada e use **Menu → Áudio… → Medir latência**.
 A IR pode ser qualquer WAV de resposta ao impulso de gabinete (qualquer taxa; é reamostrada).
 
+## Plugin LV2
+
+O plugin aplica um preset do app numa faixa: no **Audacity** (gravando a DI limpa e aplicando depois, como
+efeito ou como efeito em tempo real) e em hosts que monitoram ao vivo (Ardour, Carla). O som não é editado no
+plugin: os presets são feitos no app.
+
+**Cada preset é um efeito**, pelo nome: **AmpSim: Clean**, **AmpSim: Metal**… e os seus (**AmpSim: Meu Som**).
+O app mantém a lista em dia: ao abrir e ao salvar, apagar ou restaurar presets, ele reescreve o plugin em
+`~/.lv2/ampsim.lv2`; o host mostra a lista nova quando é reaberto. Os controles de cada efeito:
+
+| Controle | O que faz |
+|---|---|
+| Entrada | trim em dB: o nível da DI muda o quanto o amp e o drive saturam |
+| Saída | volume em dB |
+| Ligado | liga e desliga (desligado, sai o sinal seco, alinhado com a latência) |
+
+O plugin é mono (no Audacity, numa faixa estéreo, cada canal passa pelo efeito). Instalação:
+
+- **`.tar.gz`**: o `install.sh` copia o plugin para `~/.lv2/ampsim.lv2`.
+- **`.deb`**: o pacote instala o `.so` em `/usr/lib/ampsim/`; **abra o app uma vez** e ele monta o plugin em
+  `~/.lv2` (cada usuário tem os seus presets). Remover o pacote apaga esse plugin.
+- **Código**: `plugin/lv2/build.sh --install`.
+
+Nos hosts que guardam o estado dos plugins (Ardour, Carla), o projeto leva uma **cópia do preset**: editar o
+preset no app depois não muda o som do projeto. O Audacity 3.4 não guarda o estado: lá o efeito usa o preset
+como ele está no app (o efeito aplicado já fica gravado no áudio). Apagar um preset tira o efeito da lista.
+
+Para conferir o bundle sem DAW (pela lilv, a mesma biblioteca do Audacity): `plugin/lv2/hostcheck/check.sh`
+compara a saída do plugin com o render offline do app e testa salvar e restaurar o estado.
+
 ## testdata
 
 Os arquivos de áudio de teste **não estão no repositório**. Para rodar os testes completos e
@@ -177,6 +208,7 @@ dsp/                filtros, saturação, oversampling, convolução, efeitos (G
 engine/             cadeia, parâmetros, presets
 cmd/ampcli/         processamento offline
 cmd/ampapp/         app em tempo real: audio/ (malgo), source/ (player), ui/ (Gio)
+plugin/             núcleo do plugin (presets, trim, estado); plugin/lv2/ = camada LV2 (C + cgo) e ttl/
 referencia_python/  protótipos originais e gerador de referências
 ```
 

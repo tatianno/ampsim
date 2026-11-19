@@ -21,7 +21,7 @@ Portar para Go os estudos de modulação e simulação de amplificador feitos em
 | Áudio I/O | `gen2brain/malgo` (miniaudio) | Full-duplex, multiplataforma, C embutido |
 | GUI | Gio (`gioui.org`) | Go puro, bom para desenhar knobs e medidores |
 | Pedais na GUI | Sobreposição (overlay) dentro do app | Simples e portátil; janelas do SO podem vir depois |
-| Plugin | Aplicador de presets (Preset, Entrada, Saída, Bypass) com UI genérica do host; LV2 (Audacity) e depois CLAP (Reaper) | Edição fica na app; a GUI Gio não encaixa em janela de host (19/11/2026) |
+| Plugin | Aplicador de presets com UI genérica do host (Entrada, Saída, Ligado); LV2 com um plugin por preset (Audacity), depois CLAP com lista dinâmica (Reaper) | Edição fica na app; a GUI Gio não encaixa em janela de host; a lista de opções do LV2 sai embaralhada no Audacity (19/11/2026) |
 | Plugin: estado | Cópia do JSON do preset no projeto da DAW | O projeto soa igual mesmo se o preset mudar na app |
 | Plugin: binário | Um único `.so` com todos os efeitos | Só um runtime Go por processo |
 | Tone stack | Começa com biquads (RBJ); depois modelo Fender/Marshall | Funciona rápido; o modelo analógico é um ótimo estudo |
@@ -518,30 +518,18 @@ tocada ao vivo). A edição continua na standalone. Com isso a cadeia variável,
 ser problema: a cadeia inteira vem do preset e a **UI genérica do host** basta. A GUI Gio não entra no plugin (nenhum
 formato deixa o plugin ser dono da janela e do laço de eventos, que é como o Gio funciona).
 
-**Parâmetros (os únicos expostos ao host):**
+**Controles:** Entrada (dB, trim: o nível da DI muda o quanto o NAM/drive saturam), Saída (dB) e Ligado (liga/desliga
+com rampa; no LV2 é `lv2:enabled`, o host pode usar o próprio bypass).
 
-| Parâmetro | Tipo | Observação |
-|---|---|---|
-| Preset | lista (enumeração) | 18 de fábrica pelo nome + posições da pedaleira ("Pedaleira 1·1" … "10·6", lidas de `pedaleira.json` ao abrir; posição vazia = sem efeito) |
-| Entrada (dB) | knob | Trim: o nível da DI muda conforme a placa e a gravação, e o NAM/drive saturam conforme o nível |
-| Saída (dB) | knob | Volume na mixagem |
-| Bypass | chave | Liga/desliga, com rampa |
-
-A lista é fixa no `.ttl`/descritor (o host automatiza por índice); por isso as posições da pedaleira têm rótulos
-genéricos e o conteúdo é resolvido em tempo de execução.
-
-**Estado salvo no projeto da DAW: cópia do preset.** O state guarda o **JSON completo** do preset escolhido (mais
-entrada/saída). Ao reabrir o projeto, o plugin usa a cópia, não o preset atual da app: a faixa soa como no dia da
-mixagem mesmo que o preset seja editado, renomeado ou apagado depois. Escolher outro preset na lista substitui a cópia.
-Capturas NAM e IRs de fábrica estão embutidas; as do usuário são referenciadas pelo caminho do preset (se o arquivo
-sumir, avisar no log e seguir sem o bloco).
+**Estado salvo no projeto: cópia do preset.** O state guarda o **JSON completo** do preset. Ao reabrir o projeto, o
+plugin usa a cópia, não o preset atual da app: a faixa soa como no dia da mixagem mesmo que o preset seja editado
+depois. Capturas NAM e IRs de fábrica estão embutidas; as do usuário são referenciadas pelo caminho do preset.
 
 **Uso ao vivo:** funciona em hosts que monitoram a entrada pelo efeito (Reaper, Ardour, Carla). O Audacity só aplica
 na reprodução ou processando a faixa: nele o fluxo é gravar a DI limpa e aplicar o preset depois.
 
 **Regras de implementação (valem para os dois formatos):**
-- Trocar de preset monta a cadeia nova **fora da thread de áudio** (LV2 worker; no CLAP, thread própria) e troca
-  pronta, com crossfade/spillover como na app. Nada de alocar ou ler arquivo em `run`/`process`.
+- Nada de alocar ou ler arquivo em `run`/`process`; a cadeia é montada ao criar ou restaurar a instância.
 - O host escolhe o tamanho do bloco e ele pode variar: blocos maiores que `Chain.MaxBlock()` são fatiados.
 - Informar a latência ao host (porta de latência no LV2; `latency` no CLAP) para alinhar a faixa.
 - Taxa do host: a cadeia é preparada na taxa que o host informar; o NAM já reamostra (`dsp.RateBridge`).
@@ -550,22 +538,42 @@ na reprodução ou processando a faixa: nele o fluxo é gravar a DI limpa e apli
 #### Fase 6a: LV2 no Audacity (primeiro)
 **Meta:** aplicar um preset a uma faixa DI no Audacity, como efeito e como efeito em tempo real.
 
-- [ ] `plugin/lv2`: build `-buildmode=c-shared` + camada C fina com `//export` (instantiate, connect_port, run,
-  state, worker)
-- [ ] Gerar o `.ttl` (manifest + plugin, com a enumeração de presets) por um `cmd/` a partir de `presets.Factory`
-- [ ] Carregar presets de fábrica e da pedaleira (`~/.config/ampsim/`), trim de entrada, saída e bypass
-- [ ] State LV2 com a cópia do JSON do preset; worker para trocar de preset
-- [ ] Conferir no Audacity: enumeração na UI genérica, efeito em tempo real, se ele salva o state LV2 no projeto
-  (se não salvar, documentar: no Audacity o projeto guarda só o índice; o efeito aplicado já fica gravado no áudio)
-- [ ] Empacotar: instalar em `~/.lv2/ampsim.lv2/` pelo `.tar.gz` e em `/usr/lib/lv2/` pelo `.deb`
-- [ ] Testar também no Carla/Ardour (ao vivo)
+**Um plugin por preset (decidido em 19/11/2026, depois do primeiro teste no Audacity).** O primeiro desenho tinha
+um plugin com a lista de presets (enumeração) e posições genéricas da pedaleira ("Pedaleira 1·1" … "10·6"). No
+Audacity 3.4.2 isso não serve: (1) a lilv devolve os pontos de uma enumeração em ordem de endereço de memória
+(`lilv_ptr_cmp`), então a lista sai embaralhada, e o Audacity supõe ordem crescente para mostrar a opção atual
+(`LV2ControlPort::Discretize`), mostrando o nome errado ao reabrir; (2) o Audacity não usa o state do plugin
+(`mStateInterface` nunca é chamado; projetos e presets guardam só os valores das portas; o estado dos presets LV2
+é ignorado, `// Ignore mpState`), então presets LV2 com o JSON não funcionariam. Agora cada preset é um plugin
+("AmpSim: Clean", URI `…#fabrica-clean`; os do usuário `…#usuario-<arquivo>`), e o Audacity lista pelo nome no
+menu de efeitos. A lista muda com os presets do usuário: o app reescreve os `.ttl` em `~/.lv2/ampsim.lv2`.
+
+- [x] `plugin/` (núcleo, Go puro, testado sem C) + `plugin/lv2`: build `-buildmode=c-shared` + camada C fina
+  (`lv2.c`, com as definições mínimas da API em `lv2min.h`, sem depender do lv2-dev). Ligado com `-z nodelete`
+  (o runtime do Go não pode ser descarregado no `dlclose`). Um descritor por preset, mono
+- [x] `.ttl` gerados por `plugin/lv2/ttl` (única fonte das URIs e do layout das portas); `ttlgen` para o pacote
+- [x] App mantém o bundle do usuário (`ttl.Sync`, chamado por `App.OnPresetsChanged` a cada mudança da lista):
+  reescreve só o que mudou, por troca atômica; com o `.so` do `.deb` cria um link; link quebrado apaga o bundle
+- [x] Entrada, saída e liga/desliga (sinal seco atrasado pela latência da cadeia)
+- [x] State LV2 com a cópia do JSON do preset (`atom:String`, chave `…#estado`), para os hosts que usam state
+- [x] Teste sem DAW: `plugin/lv2/hostcheck/check.sh` (host em C pela lilv do sistema): saída igual ao render
+  offline da app (diferença ≤ 2,4e-7 com a DI a 44,1 kHz, NAM reamostrado), latência informada (32/64
+  amostras), estado salvo e restaurado com o mesmo som; preset do usuário carregado pela URI
+- [x] Empacotar: o `.tar.gz` instala o bundle em `~/.lv2/`; o `.deb` instala o `.so` em `/usr/lib/ampsim/` (o app
+  monta o bundle ao abrir; o `postrm` apaga os bundles que são só o link)
+- [x] Conferir no Audacity (19/11/2026, pelo usuário): os efeitos aparecem no menu e funcionam
+- [ ] Testar também no Carla/Ardour (ao vivo; state com a cópia)
 
 #### Fase 6b: Reaper (depois)
 **Meta:** o mesmo plugin no Reaper, tocando ao vivo com monitoração.
 
 - [ ] Formato: **CLAP** primeiro (API em C pura, MIT, suportada pelo Reaper; encaixa no `c-shared` do Go). VST3 só
   se houver demanda (API em C++, mais trabalho na camada)
-- [ ] Reaproveitar o núcleo do 6a (parâmetros, state, troca de preset); só a camada do formato muda
+- [ ] Um plugin só, **estéreo**, com o parâmetro Preset numa lista dinâmica (o CLAP pede o texto de cada valor ao
+  plugin, então os nomes e a ordem são os da app) e a cópia do preset no state. Reaproveita o núcleo do 6a
+  (Entrada, Saída, Ligado, state); volta a troca de preset com o áudio rodando: uma goroutine da instância aplica
+  o preset na cadeia em uso (`Chain.ApplyState`, com a transição e o spillover da app), e o primeiro bloco monta
+  na hora (render offline certo desde a primeira amostra). A primeira versão do 6a fazia assim (antes do commit)
 - [ ] Testar ao vivo no Reaper com a AudioBox: latência informada, troca de preset por automação sem estalo
 - [ ] (Longo prazo, opcional) GUI própria: janela Gio separada (LV2 external UI no Ardour/Carla); encaixada na
   janela da DAW só com outra biblioteca ou reparentando no X11

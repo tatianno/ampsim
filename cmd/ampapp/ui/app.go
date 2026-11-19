@@ -64,6 +64,7 @@ type App struct {
 	input      *InputPanel
 	audioSet   *AudioPanel
 	presetBar  *PresetBar
+	presetHook func([]presets.Preset) // veja OnPresetsChanged
 	tuner      *TunerPanel
 	prevOpen   string // para saber quando o afinador abre/fecha
 	meters     Meters
@@ -197,10 +198,8 @@ func NewApp(s *audio.Session) *App {
 // UsePresetDir troca a pasta dos presets do usuário (os testes usam uma pasta temporária).
 func (a *App) UsePresetDir(dir string) {
 	a.presetBar = NewPresetBar(a.Chain, dir, a.setStatus, func(id string) { a.open = id })
-	cfg := "" // pedaleira.json fica ao lado da pasta de presets (~/.config/ampsim/)
-	if dir != "" {
-		cfg = filepath.Join(filepath.Dir(dir), "pedaleira.json")
-	}
+	a.presetBar.onChange = a.presetHook
+	cfg := presets.BoardPath(dir) // pedaleira.json fica ao lado da pasta de presets (~/.config/ampsim/)
 	a.pedalboard = NewPedalboard(a.presetBar, cfg, a.setStatus, func(id string) { a.open = id })
 	a.settings = presets.SettingsPath(dir)
 	st, err := presets.LoadSettings(a.settings)
@@ -243,6 +242,17 @@ func (a *App) Pedalboard() *Pedalboard { return a.pedalboard }
 
 // Presets devolve a barra de presets.
 func (a *App) Presets() *PresetBar { return a.presetBar }
+
+// OnPresetsChanged chama f com a lista de presets (os de fábrica e os do usuário) agora e a
+// cada mudança: salvar, apagar, restaurar um backup. Roda na goroutine da GUI: f não deve
+// demorar. O main usa para manter o plugin LV2 em dia (os testes não ligam).
+func (a *App) OnPresetsChanged(f func([]presets.Preset)) {
+	a.presetHook = f
+	a.presetBar.onChange = f
+	if f != nil {
+		f(a.presetBar.list)
+	}
+}
 
 // Open abre na sobreposição o pedal id, as configurações de áudio (AudioID), a lista de
 // presets (PresetListID) ou o "salvar preset" (SaveAsID).

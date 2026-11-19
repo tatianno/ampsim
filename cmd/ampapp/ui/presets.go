@@ -27,6 +27,8 @@ type PresetBar struct {
 	dir    string
 	status func(msg string, isErr bool)
 	open   func(id string)
+	// onChange recebe a lista nova a cada Reload (nil = ninguém escuta; veja App.OnPresetsChanged)
+	onChange func([]presets.Preset)
 
 	list    []presets.Preset
 	cur     int          // índice em list (-1 = nenhum)
@@ -65,6 +67,9 @@ func (p *PresetBar) Reload() {
 		p.status("presets: "+err.Error(), true)
 	}
 	p.list = list
+	if p.onChange != nil {
+		p.onChange(list)
+	}
 	p.rows = make([]widget.Clickable, len(list))
 	p.cur = -1
 	for i, q := range list {

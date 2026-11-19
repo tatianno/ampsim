@@ -6,5 +6,6 @@ rm -f "$PREFIX/bin/ampsim" "$PREFIX/bin/ampsim-cli" "$PREFIX/share/applications/
 for n in 48 64 128 256 512; do
 	rm -f "$PREFIX/share/icons/hicolor/${n}x${n}/apps/ampsim.png"
 done
+rm -rf "$HOME/.lv2/ampsim.lv2"
 command -v update-desktop-database >/dev/null && update-desktop-database "$PREFIX/share/applications" 2>/dev/null || true
 echo "ampsim removido de $PREFIX (presets em ~/.config/ampsim e gravações em Música/ampsim foram mantidos)."

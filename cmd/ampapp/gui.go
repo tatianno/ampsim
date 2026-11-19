@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	gioapp "gioui.org/app"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/tatianno/ampsim/cmd/ampapp/audio"
 	"github.com/tatianno/ampsim/cmd/ampapp/ui"
+	"github.com/tatianno/ampsim/plugin"
+	"github.com/tatianno/ampsim/plugin/lv2/ttl"
+	"github.com/tatianno/ampsim/presets"
 )
 
 // runGUI abre a janela. Não retorna: gioapp.Main assume a goroutine principal e o
@@ -21,6 +25,14 @@ func runGUI(s *audio.Session, cleanup func(), version, aviso string) error {
 	if aviso != "" {
 		a.SetStatus(aviso, true)
 	}
+	// plugin LV2: um plugin por preset; a lista no ~/.lv2/ampsim.lv2 acompanha os presets
+	a.OnPresetsChanged(func(list []presets.Preset) {
+		go func() {
+			if err := ttl.Sync(plugin.FromList(list)); err != nil {
+				fmt.Fprintln(os.Stderr, "plugin LV2:", err)
+			}
+		}()
+	})
 	// AMPSIM_ABRIR=<pedal> abre um pedal ao iniciar (útil para conferir o visual / capturas de tela).
 	if id := os.Getenv("AMPSIM_ABRIR"); id != "" {
 		a.Open(id)
