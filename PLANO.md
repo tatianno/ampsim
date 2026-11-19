@@ -644,6 +644,9 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 - [x] **Pedaleira de presets** (18/11, `cmd/ampapp/ui/pedalboard.go`): abaixo da cadeia, 6 footswitches por banco
   (◀ BANCO ▶), LED no preset atual, teclas 1 a 6; o banco acompanha o preset atual. Some em janelas com menos de
   720 dp de altura (o rodapé tem prioridade; as teclas continuam valendo). A dica da cadeia subiu para a linha do título
+- [x] **Release v0.10.0** (19/11/2026): menu (áudio, afinador, backup/restauração, atalhos, sobre), analisador
+  de espectro, cortes do gabinete no EQ, EQs do teste ao vivo, 4 presets novos em 3 bancos temáticos, pedaleira com
+  nomes de banco e edição em matriz, knobs por modo no Drive (Fuzz Face e Muff) e no Wah
 - [x] **Release v0.9.0** (18/11/2026): pedaleira configurável
 - [x] **Pedaleira configurável** (18/11): botão "Editar" → clicar num footswitch abre a lista de presets (fábrica,
   meus e "Vazio"); "Restaurar padrão" (2 cliques) volta à ordem da lista e apaga a configuração. Salva em
