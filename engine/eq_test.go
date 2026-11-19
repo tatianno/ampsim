@@ -201,3 +201,62 @@ func TestDriveKnobsPorModo(t *testing.T) {
 		t.Error("no Muff, o Tone deveria mudar o som")
 	}
 }
+
+// Os knobs do wah seguem o modo, e os escondidos não mudam o som.
+func TestWahKnobsPorModo(t *testing.T) {
+	m := NewWah()
+	want := map[int][]string{
+		dsp.WahEnvelope: {"sens", "response", "range", "q", "mix"},
+		dsp.WahLFO:      {"rate", "range", "q", "mix"},
+		dsp.WahFixed:    {"position", "range", "q", "mix"},
+	}
+	for mode, w := range want {
+		m.Param("mode").Set(float64(mode))
+		var got []string
+		for _, s := range m.ParamView() {
+			got = append(got, s.ID)
+			if m.Param(s.ID) == nil {
+				t.Errorf("modo %d: parâmetro %q não existe", mode, s.ID)
+			}
+		}
+		if !slices.Equal(got, w) {
+			t.Errorf("modo %d: knobs %v, esperava %v", mode, got, w)
+		}
+	}
+	render := func(mode int, set map[string]float64) []float64 {
+		w := NewWah()
+		w.Param("mode").Set(float64(mode))
+		for k, v := range set {
+			w.Param(k).Set(v)
+		}
+		w.Prepare(48000, 256)
+		out := make([]float64, 0, 25600)
+		buf := make([]float64, 256)
+		for b := 0; b < 100; b++ {
+			for i := range buf {
+				buf[i] = 0.2 * math.Sin(float64(b*256+i)*2*math.Pi*220/48000)
+			}
+			w.Process(buf)
+			out = append(out, buf...)
+		}
+		return out
+	}
+	differs := func(mode int, id string, a, b float64) bool {
+		x, y := render(mode, map[string]float64{id: a}), render(mode, map[string]float64{id: b})
+		for i := range x {
+			if math.Abs(x[i]-y[i]) > 1e-12 {
+				return true
+			}
+		}
+		return false
+	}
+	for mode, ids := range want {
+		for _, id := range []string{"sens", "response", "rate", "position"} {
+			info := m.Param(id).Info()
+			shown := slices.Contains(ids, id)
+			if d := differs(mode, id, info.Min, info.Max); d != shown {
+				t.Errorf("modo %d, %s: muda o som = %v, aparece = %v", mode, id, d, shown)
+			}
+		}
+	}
+}

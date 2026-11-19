@@ -126,6 +126,23 @@ func NewWah() *Wah {
 	)}}
 }
 
+// wahViews são os knobs de cada modo: Sensib. e Resposta só seguem a palhetada (Envelope), Rate
+// só no LFO, Posição só no Fixo (o DSP ignora os outros).
+var wahViews = [...][]ParamShow{
+	dsp.WahEnvelope: {{"sens", "Sensib."}, {"response", "Resposta"}, {"range", "Faixa"}, {"q", "Q"}, {"mix", "Mix"}},
+	dsp.WahLFO:      {{"rate", "Rate"}, {"range", "Faixa"}, {"q", "Q"}, {"mix", "Mix"}},
+	dsp.WahFixed:    {{"position", "Posição"}, {"range", "Faixa"}, {"q", "Q"}, {"mix", "Mix"}},
+}
+
+// ParamView devolve os knobs do modo atual.
+func (m *Wah) ParamView() []ParamShow {
+	mode := int(m.get("mode"))
+	if mode < 0 || mode >= len(wahViews) {
+		mode = dsp.WahEnvelope
+	}
+	return wahViews[mode]
+}
+
 func (m *Wah) Prepare(fs float64, _ int) { m.w = dsp.NewWah(fs) }
 func (m *Wah) Reset()                    { m.w.Reset() }
 func (m *Wah) Latency() int              { return 0 }

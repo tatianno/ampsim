@@ -688,6 +688,8 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   novas medida como as outras (Drive 5 = nível da entrada). Presets: Treble Booster com Boost 9 (+18 dB, mesmo
   volume de antes), Psicodélico e Fuzz Oitavado no Fuzz Face, volumes recalibrados (−18,0 dBFS). Seletor com 5 ou
   mais posições põe o nome numa linha acima
+- [x] **Wah: knobs do modo** (19/11, `engine.ParamViewer`): Envelope = Sensib., Resposta, Faixa, Q, Mix; LFO =
+  Rate, Faixa, Q, Mix; Fixo = Posição, Faixa, Q, Mix. Teste: cada knob visível muda o som e os escondidos não
 - [x] **Atalhos no Menu** (19/11, `cmd/ampapp/ui/shortcuts.go`): lista do teclado (T, A, 1 a 6, Espaço, Esc) e do
   mouse (Shift, duplo clique, roda, arrastar); teste confere que as teclas de `App.keys` estão na lista
 - [x] **Backup e restauração dos presets** (19/11, `presets/backup.go`): `.zip` com `presets/*.json`,
