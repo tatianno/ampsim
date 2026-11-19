@@ -70,6 +70,7 @@ type App struct {
 	pedals     map[string]*Pedal
 	bypass     widget.Clickable
 	stereoBtn  widget.Clickable
+	limBtn     widget.Clickable
 	settings   string // ajustes.json ("" = não salva)
 	closeBtn   widget.Clickable
 	recBtn     widget.Clickable
@@ -202,6 +203,7 @@ func (a *App) UsePresetDir(dir string) {
 		a.setStatus("ajustes.json inválido: usando os padrões", true)
 	}
 	a.Chain.SetStereo(st.StereoOn())
+	a.Chain.SetLimiter(st.LimiterOn())
 }
 
 // SetStereo liga ou desliga a saída estéreo e salva em ajustes.json.
@@ -209,6 +211,14 @@ func (a *App) SetStereo(on bool) error {
 	a.Chain.SetStereo(on)
 	st, _ := presets.LoadSettings(a.settings)
 	st.Stereo = &on
+	return st.Save(a.settings)
+}
+
+// SetLimiter liga ou desliga o limitador de saída e salva em ajustes.json.
+func (a *App) SetLimiter(on bool) error {
+	a.Chain.SetLimiter(on)
+	st, _ := presets.LoadSettings(a.settings)
+	st.Limiter = &on
 	return st.Save(a.settings)
 }
 
@@ -331,6 +341,18 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 			a.setStatus(msg, false)
 		}
 	}
+	if a.limBtn.Clicked(gtx) {
+		on := !a.Chain.Limiter()
+		msg := "limitador ligado: segura os picos em −0,3 dBFS (LED LIMIT)"
+		if !on {
+			msg = "limitador desligado: acima de 0 dBFS corta (LED CLIP)"
+		}
+		if err := a.SetLimiter(on); err != nil {
+			a.setStatus("ajustes: "+err.Error(), true)
+		} else {
+			a.setStatus(msg, false)
+		}
+	}
 	if a.recDry {
 		if c := a.Player.Clip(); a.Session.Source() != audio.SourceFile || c == nil || c.Path != a.recPath {
 			a.Renderer.SetBypass(false)
@@ -397,6 +419,10 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 								layout.Rigid(spacer(8, 0)),
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return toggle(gtx, th, &a.stereoBtn, a.Chain.Stereo(), "Estéreo")
+								}),
+								layout.Rigid(spacer(4, 0)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return toggle(gtx, th, &a.limBtn, a.Chain.Limiter(), "Limitador")
 								}),
 								layout.Rigid(spacer(14, 0)),
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -588,7 +614,10 @@ func (a *App) footer(gtx layout.Context) layout.Dimensions {
 				return coloredButton(gtx, th, &a.bypass, label, gtx.Dp(120), bg, th.Text)
 			}),
 			layout.Rigid(spacer(10, 0)),
-			layout.Rigid(func(gtx layout.Context) layout.Dimensions { return a.meters.Layout(gtx, th) }),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				a.meters.limiter = a.Chain.Limiter()
+				return a.meters.Layout(gtx, th)
+			}),
 			layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
 				if a.exporting {
 					return drawText(gtx, th, fmt.Sprintf("exportando… %.0f%%", 100*a.exportPct),
@@ -727,14 +756,14 @@ func (a *App) exportAsync() {
 		return
 	}
 	st := a.Chain.State() // o som de agora; mexer nos knobs durante a exportação não afeta
-	stereo := a.Chain.Stereo()
+	output := engine.Output{Stereo: a.Chain.Stereo(), Limiter: a.Chain.Limiter()}
 	suggested := strings.TrimSuffix(clip.Name, filepath.Ext(clip.Name)) + "-ampsim.wav"
 	a.exporting, a.exportPct = true, 0
 	go func() {
 		path, err := a.PickSave("Exportar áudio processado", suggested)
 		if err == nil && path != "" {
 			var out [][]float64
-			out, err = engine.RenderOfflineChannels(st, clip.Samples, float64(clip.FS), 2, 512, stereo, func(f float64) {
+			out, err = engine.RenderOfflineChannels(st, clip.Samples, float64(clip.FS), 2, 512, output, func(f float64) {
 				a.Post(func() { a.exportPct = f })
 			})
 			if err == nil {

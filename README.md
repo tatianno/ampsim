@@ -15,7 +15,8 @@ para Go em streaming, validados contra as saídas do Python.
 
 - **Amp em três partes** — pré-amp (ganho, grave, médio, agudo, com a voz Moderno, Americano, Britânico ou
   **High Gain**; Americano e Britânico são os circuitos TMB do Fender Bassman e do Marshall JTM45 modelados, e o
-  High Gain tem pré próprio, três estágios em cascata ajustados medindo um amp moderno de alto ganho), power amp (presença,
+  High Gain tem pré próprio, três estágios em cascata ajustados medindo um amp moderno de alto ganho; nos três, a curva
+  do knob de grave sai do próprio circuito, em passos iguais de dB), power amp (presença,
   volume) e gabinete (IR, low cut, high cut). Vêm incluídas três IRs (1x10 SM58, 2x12 SM57, a padrão, e 4x12 SM7),
   e o gabinete também abre qualquer WAV de IR.
 - **Amp NAM** — o seletor **Amp: Simulado | NAM** troca o pré-amp por um modelo
@@ -46,6 +47,10 @@ para Go em streaming, validados contra as saídas do Python.
   delay tem os modos **Duplo** (o R um pouco mais atrasado) e **Ping-pong**, todos com o knob **Largura** (0 = mono).
   Power amp e gabinete processam os dois canais. Desligado, tudo soa como em mono, com L e R iguais. Gravar e
   exportar saem em estéreo quando ele está ligado.
+- **Limitador de segurança** na saída (botão ao lado de Estéreo; ligado por padrão, salvo no mesmo `ajustes.json`):
+  segura os picos em −0,3 dBFS sem latência e sem mexer no som abaixo disso; o LED do rodapé vira **LIMIT** e
+  acende em âmbar quando ele atua. Desligado, o que passa de 0 dBFS é cortado (LED **CLIP**). Vale também para
+  gravar e exportar; no `ampcli`, use `-limitador`.
 - **Tempo real**: convolução particionada de latência zero, oversampling 4x com latência de
   32 amostras, nenhuma alocação na thread de áudio, saída idêntica com qualquer tamanho de bloco.
 - **GUI (Gio)**: cabeçote e gabinete com knobs, cadeia em que se arrastam os pedais, pedais

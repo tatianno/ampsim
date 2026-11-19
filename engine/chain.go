@@ -71,6 +71,9 @@ type Chain struct {
 	stereoWant atomic.Bool // saída estéreo pedida (GUI)
 	stereo     bool        // modo em uso (thread de áudio)
 
+	limWant atomic.Bool        // limitador de saída pedido (SetLimiter)
+	lim     *dsp.SafetyLimiter // no fim da cadeia (criado em Prepare)
+
 	// spillover (spill.go)
 	noSpill                       atomic.Bool   // spillover desligado
 	transReq                      atomic.Uint64 // trocas de preset pedidas (GUI)
@@ -409,6 +412,8 @@ func (c *Chain) Prepare(fs float64, maxBlock int) {
 	c.active = c.want.Load()
 	c.rgain = 1
 	c.rstep = 1 / (ReorderFadeMs / 1000 * fs)
+	c.lim = dsp.NewSafetyLimiter(fs)
+	c.lim.SetOn(c.limWant.Load())
 	c.stereo = c.stereoWant.Load()
 	c.prepareTails()
 	c.prepared = true
@@ -437,6 +442,23 @@ func (c *Chain) Latency() int {
 		total += s.m.Latency()
 	}
 	return total
+}
+
+// SetLimiter liga ou desliga o limitador de segurança no fim da cadeia (dsp.SafetyLimiter:
+// teto de −0,3 dBFS, sem latência, L e R juntos). Começa desligado: o app liga (ajuste do
+// usuário); as medições offline e o ampcli medem o som sem ele. Seguro com o áudio rodando.
+func (c *Chain) SetLimiter(on bool) { c.limWant.Store(on) }
+
+// Limiter informa se o limitador de saída está ligado.
+func (c *Chain) Limiter() bool { return c.limWant.Load() }
+
+// LimiterReduction devolve a maior redução do limitador (dB, ≥ 0) desde a chamada anterior.
+// Só na thread de áudio (entre os blocos).
+func (c *Chain) LimiterReduction() float64 {
+	if c.lim == nil {
+		return 0
+	}
+	return c.lim.Reduction()
 }
 
 // ProcessMono processa um bloco mono in-place, de qualquer tamanho. A cadeia toda roda em
@@ -505,6 +527,10 @@ func (c *Chain) run(l, r []float64) {
 		}
 		if want := c.want.Load(); want != c.active || c.rgain < 1 || c.stereoWant.Load() != c.stereo {
 			c.reorderRamp(b, br, want)
+		}
+		if c.lim != nil {
+			c.lim.SetOn(c.limWant.Load())
+			c.lim.Process(b, br)
 		}
 		l = l[n:]
 		if r != nil {

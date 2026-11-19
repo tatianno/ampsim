@@ -799,9 +799,15 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   ligado); em mono a GUI esconde Largura e o modo estéreo do delay (`engine.StereoOnly`)
 - [ ] **Estéreo: ouvir ao vivo** e decidir se algum preset de fábrica ganha ping-pong ou outra largura (hoje todos
   usam os padrões; os picos em estéreo seguem abaixo de −1 dBFS com a DI)
-- [ ] **Knob de grave dos TMB quase parado acima de 5**: com o médio em 5, o grave em 100 Hz muda ~11 dB de 0 a
-  2,5 e menos de 0,5 dB de 5 a 10 (Britânico, Americano e High Gain; vem do `bassTaper` e do circuito). Avaliar a
-  curva do pot
+- [x] **Knob de grave dos TMB quase parado acima de 5** (19/11, `dsp/tmb.go`): o circuito satura acima de ~20% do
+  pot, e a curva log antiga (Yeh e Smith) fazia ~80% do efeito de 0 a 5 (Americano: 5,5 dB em 100 Hz de 0 a 5 e 1,3
+  de 5 a 10). Agora a curva sai do circuito de cada modelo (tabela de 41 pontos por bisseção, cache por modelo):
+  passos iguais de dB em 100 Hz com médio e agudo em 5, do pot a 1% até o máximo (faixa de 10,3 dB no Americano,
+  9,1 no Britânico, 8,3 no High Gain). O 5 novo é mais magro; o antigo 5 é ~8,7 (Americano), 9,0 (Britânico) e 9,3
+  (High Gain). Formato do preset v4: presets v1–v3 têm o grave dos TMB convertido ao carregar (mesma posição do
+  pot, mesmo som; o Moderno não muda); Surf, Ambiente e Metal remapeados; compensação de nível igual à de antes;
+  `hgfit` ajusta com o pot na posição antiga. Testes: passos lineares (±0,05 dB), inverso, migração, presets
+  de fábrica na posição antiga do pot
 - [ ] **Drive NAM: ouvir ao vivo** com a guitarra (TS9/HOT na frente das capturas Dist e Clean do amp) e decidir:
   aviso na GUI quando drive e amp estão os dois no Completo; Blues e Worship mais escuros com o TS7 (compensar no EQ
   ou não); o pico de saída com o
@@ -865,10 +871,19 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   sobre o ponto muda o Q (só nos médios); duplo clique zera o ganho; o ponto ativo cresce e mostra "banda: freq ·
   ganho · Q"; cursor de mão. Teste com arrastar, limite da faixa, Q, duplo clique e clique fora
 - [x] **Release v0.6.0** (18/11/2026): o pedal Synth
-- [ ] **Ganho na saída com NAM limpo**: com a DI de teste, a captura Clean V10 no volume padrão (−12 dB) tem pico de
+- [x] **Ganho na saída com NAM limpo**: com a DI de teste, a captura Clean V10 no volume padrão (−12 dB) tem pico de
   +1,8 dBFS (captura limpa tem fator de crista alto; a normalização por loudness a deixa ~1,5 dB acima do simulado);
   o Octave (seco 100% + −1 oit. 70%) soma +2 dB de pico. Avaliar: limitador de segurança na saída, alvo de loudness
   por tipo de captura, ou volume padrão mais baixo no modo NAM
+  - **Feito (19/11): limitador de segurança** (`dsp.SafetyLimiter`, no fim da `Chain`): teto −0,3 dBFS, sem
+    lookahead (latência zero), L e R com o mesmo ganho, ataque instantâneo, hold de 10 ms (o ganho não segue cada
+    meio ciclo de uma nota grave) e volta de 50 ms; abaixo do teto a saída é bit a bit a entrada. A `Chain` começa
+    com ele desligado (medições offline e `ampcli` sem ele; `ampcli -limitador`); o app liga pelo ajuste
+    `limitador` de `ajustes.json` (padrão: ligado), botão **Limitador** ao lado de Estéreo, comando `limitador` no
+    console; gravar e exportar passam por ele (`engine.Output`). O LED CLIP do rodapé vira **LIMIT** com ele ligado
+    (âmbar quando reduz ≥ 0,1 dB; vermelho se ainda cortar). Com a DI e a Clean V10 no volume padrão (+1,8 dBFS de
+    pico), reduz > 0,1 dB em ~11% do tempo e > 1 dB em ~4%: segura, mas o nível dessa captura continua alto
+    (alvo de loudness por tipo de captura fica em aberto, se incomodar ao vivo)
 - [x] **Synth (filtro de sintetizador)** (18/11, `dsp/synthfilter.go`): ladder de 4 polos não linear (Huovilainen,
   tanh racional em cada estágio e na realimentação com compensação de graves), a 4x; saídas LP, BP e HP; ressonância
   até a auto-oscilação. Corte = Cutoff · 2^(Profund.·mod), mod por Envelope, LFO ou Sequência de 8 passos (s1..s8,

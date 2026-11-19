@@ -113,6 +113,7 @@ func run() error {
 	if dir, err := presets.Dir(); err == nil { // saída estéreo ou mono (ajustes.json; padrão: estéreo)
 		st, _ := presets.LoadSettings(presets.SettingsPath(dir))
 		chain.SetStereo(st.StereoOn())
+		chain.SetLimiter(st.LimiterOn())
 	}
 
 	s := audio.NewSession(chain, float64(*taxa))
@@ -280,6 +281,7 @@ const ajuda = `comandos:
   preset <nome>                  carrega um preset
   spillover [on|off]             caudas de delay/reverb continuam na troca de preset (padrão: on)
   estereo [on|off]               saída estéreo (padrão: on, salvo pela janela em ajustes.json)
+  limitador [on|off]             limitador de segurança na saída, teto −0,3 dBFS (padrão: on)
   gravar <nome>                  salva o som atual como preset seu
   salvar <arq.json> | carregar <arq.json|nome>   presets em arquivo
   sair`
@@ -384,6 +386,20 @@ func (a *app) exec(line string) bool {
 		} else {
 			fmt.Println("saída: mono (L = R)")
 		}
+	case "limitador":
+		switch rest {
+		case "on":
+			a.chain.SetLimiter(true)
+		case "off":
+			a.chain.SetLimiter(false)
+		default:
+			a.chain.SetLimiter(!a.chain.Limiter())
+		}
+		if a.chain.Limiter() {
+			fmt.Println("limitador: ligado (teto −0,3 dBFS)")
+		} else {
+			fmt.Println("limitador: desligado (acima de 0 dBFS corta)")
+		}
 	case "spillover":
 		switch rest {
 		case "on":
@@ -472,7 +488,8 @@ func (a *app) exec(line string) bool {
 			err = fmt.Errorf("use: exportar <arquivo.wav>")
 		default:
 			var out [][]float64
-			if out, err = engine.RenderOfflineChannels(a.chain.State(), clip.Samples, float64(clip.FS), 2, 512, a.chain.Stereo(), nil); err == nil {
+			if out, err = engine.RenderOfflineChannels(a.chain.State(), clip.Samples, float64(clip.FS), 2, 512,
+				engine.Output{Stereo: a.chain.Stereo(), Limiter: a.chain.Limiter()}, nil); err == nil {
 				if err = wav.WriteFile(rest, clip.FS, out, wav.PCM24); err == nil {
 					fmt.Println("exportado:", rest)
 				}

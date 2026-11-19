@@ -249,7 +249,7 @@ type fitParams struct {
 	HG     dsp.HGParams
 	G1     float64 // ganho do 1º estágio (o knob do ajuste)
 	TMB    dsp.TMBModel
-	Bass   float64
+	Bass   float64 // posição do pot de grave (0..1); o knob sai da curva do modelo
 	Mid    float64
 	Treble float64
 }
@@ -262,7 +262,7 @@ func runOurs(p fitParams) func([]float64) []float64 {
 		h.SetParams(hp)
 		h.SetDrive(1)
 		st := dsp.NewTMBStack(fs, p.TMB)
-		st.Set(p.Bass, p.Mid, p.Treble)
+		st.Set(p.TMB.BassKnob(p.Bass), p.Mid, p.Treble)
 		pr := dsp.NewPresence(fs)
 		pr.Set(5)
 		y := append([]float64(nil), x...)
@@ -339,7 +339,7 @@ func main() {
 	s := makeSignals(dsp.ResampleRate(di, sr, fs))
 	ref := measure(s, runNAM(model))
 
-	p := fitParams{HG: dsp.HighGainDefault, G1: 20, TMB: dsp.TMBMarshall, Bass: 5, Mid: 5, Treble: 5}
+	p := fitParams{HG: dsp.HighGainDefault, G1: 20, TMB: dsp.TMBMarshall, Bass: dsp.LegacyBassPot, Mid: 5, Treble: 5}
 	p.TMB.Name = "HighGain"
 	if *start != "" {
 		b, err := os.ReadFile(*start)

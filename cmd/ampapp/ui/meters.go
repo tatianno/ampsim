@@ -27,6 +27,8 @@ type Meters struct {
 	load      float32
 	clips     uint64
 	clipUntil time.Time
+	limUntil  time.Time // LED do limitador aceso até
+	limiter   bool      // limitador ligado (o LED de clip vira LIMIT); a App atualiza
 	inClips   uint64
 	inUntil   time.Time
 	overruns  uint64
@@ -51,6 +53,9 @@ func (m *Meters) Update(l audio.Levels, now time.Time) {
 		m.clipUntil = now.Add(time.Second)
 	}
 	m.clips = l.Clips
+	if l.LimitDB >= LimitLedDB {
+		m.limUntil = now.Add(300 * time.Millisecond)
+	}
 	if l.InClips > m.inClips {
 		m.inUntil = now.Add(time.Second)
 	}
@@ -62,6 +67,12 @@ func (m *Meters) Update(l audio.Levels, now time.Time) {
 
 // InputClipping informa se o LED de clip da placa (conversor de entrada) está aceso.
 func (m *Meters) InputClipping(now time.Time) bool { return now.Before(m.inUntil) }
+
+// LimitLedDB é a menor redução do limitador que acende o LED LIMIT.
+const LimitLedDB = 0.1
+
+// Limiting informa se o LED do limitador está aceso.
+func (m *Meters) Limiting(now time.Time) bool { return now.Before(m.limUntil) }
 
 // Clipping informa se o LED de clip está aceso.
 func (m *Meters) Clipping(now time.Time) bool { return now.Before(m.clipUntil) }
@@ -75,7 +86,7 @@ func (m *Meters) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 		layout.Rigid(spacer(10, 0)),
 		layout.Rigid(m.bar(th, "OUT", m.out)),
 		layout.Rigid(spacer(10, 0)),
-		layout.Rigid(ledLabel(th, "CLIP", m.Clipping(gtx.Now), th.LedOn, th.LedOff)),
+		layout.Rigid(m.clipLed(th)),
 		layout.Rigid(spacer(10, 0)),
 		layout.Rigid(ledLabel(th, "GATE", m.gate, th.Good, darken(th.Good, 0.7))),
 		layout.Rigid(spacer(10, 0)),
@@ -90,6 +101,21 @@ func (m *Meters) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 			return drawText(gtx, th, fmt.Sprintf("atrasos %d", m.overruns), textOpts{size: 11, color: th.Warn})
 		}),
 	)
+}
+
+// clipLed é o LED da saída: com o limitador ligado se chama LIMIT e acende em âmbar quando
+// ele atua (em vermelho se ainda assim cortar); desligado, é o CLIP de sempre.
+func (m *Meters) clipLed(th *Theme) layout.Widget {
+	return func(gtx layout.Context) layout.Dimensions {
+		label, on, c := "CLIP", m.Clipping(gtx.Now), th.LedOn
+		if m.limiter {
+			label = "LIMIT"
+			if !on && m.Limiting(gtx.Now) {
+				on, c = true, th.Warn
+			}
+		}
+		return ledLabel(th, label, on, c, th.LedOff)(gtx)
+	}
 }
 
 func ledLabel(th *Theme, label string, on bool, onC, offC color.NRGBA) layout.Widget {

@@ -4,8 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
+	"math"
 	"os"
 	"slices"
+
+	"github.com/tatianno/ampsim/dsp"
 )
 
 // StateVersion é a versão do formato de preset.
@@ -13,7 +17,8 @@ import (
 //	1: um módulo "amp" único (Fase 1).
 //	2: amp dividido em pre/power/cab e a lista de módulos na ordem da cadeia (todos).
 //	3: a lista tem só os módulos que estão na cadeia (os outros ficam de fora).
-const StateVersion = 3
+//	4: curva nova do knob de grave nos tone stacks TMB (Americano, Britânico, High Gain).
+const StateVersion = 4
 
 // State é o estado completo da cadeia: o mesmo JSON serve de preset no app e de state no plugin.
 // Na versão 2, Modules vem na ordem da cadeia; um preset com todos os módulos define a ordem.
@@ -61,6 +66,9 @@ func (c *Chain) ApplyState(st State) error {
 	v1 := st.Version < 2
 	if v1 {
 		st = migrateV1(st)
+	}
+	if st.Version < 4 {
+		st = migrateBassV4(st)
 	}
 	c.beginTransition() // antes dos parâmetros: as caudas do som atual saem com os ajustes dele
 	var ids []string
@@ -135,6 +143,38 @@ func migrateV1(st State) State {
 	}
 	st.Modules = out
 	st.Version = 2
+	return st
+}
+
+// migrateBassV4 converte o grave dos tone stacks TMB para a curva nova do knob
+// (dsp.TMBModel.BassKnob): o pot fica na mesma posição, e o som, igual. Não muda o estado
+// original (os mapas são copiados). A versão de st não muda: a 2 e a 3 ainda diferem na ordem.
+func migrateBassV4(st State) State {
+	out := slices.Clone(st.Modules)
+	for i, ms := range out {
+		if ms.ID != PreID {
+			continue
+		}
+		b, ok := ms.Params["bass"]
+		if !ok {
+			continue
+		}
+		var m dsp.TMBModel
+		switch int(ms.Params["stack"]) {
+		case StackAmerican:
+			m = dsp.TMBFender
+		case StackBritish:
+			m = dsp.TMBMarshall
+		case StackHighGain:
+			m = dsp.TMBHighGain
+		default: // Moderno (ou sem "stack", que é o padrão): outra curva, não mudou
+			continue
+		}
+		ps := maps.Clone(ms.Params)
+		ps["bass"] = math.Round(m.BassKnob(dsp.LegacyBassTaper(b))*100) / 100
+		out[i].Params = ps
+	}
+	st.Modules = out
 	return st
 }
 

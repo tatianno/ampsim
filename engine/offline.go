@@ -7,16 +7,23 @@ import "fmt"
 // de silêncio no fim (caudas de delay e reverb) e compensa a latência da cadeia, para a
 // saída ficar alinhada com a entrada. progress (opcional) recebe a fração concluída.
 func RenderOffline(st State, x []float64, fs, tailS float64, block int, progress func(float64)) ([]float64, error) {
-	ch, err := RenderOfflineChannels(st, x, fs, tailS, block, false, progress)
+	ch, err := RenderOfflineChannels(st, x, fs, tailS, block, Output{}, progress)
 	if err != nil {
 		return nil, err
 	}
 	return ch[0], nil
 }
 
-// RenderOfflineChannels é o RenderOffline com a saída em estéreo (stereo = true: devolve L e
-// R) ou mono (devolve um canal).
-func RenderOfflineChannels(st State, x []float64, fs, tailS float64, block int, stereo bool, progress func(float64)) ([][]float64, error) {
+// Output são os ajustes da saída que não fazem parte do preset (no app, ficam em ajustes.json).
+type Output struct {
+	Stereo  bool // saída estéreo (senão, mono)
+	Limiter bool // limitador de segurança no fim da cadeia
+}
+
+// RenderOfflineChannels é o RenderOffline com os ajustes de saída: em estéreo devolve L e R;
+// em mono, um canal.
+func RenderOfflineChannels(st State, x []float64, fs, tailS float64, block int, out Output, progress func(float64)) ([][]float64, error) {
+	stereo := out.Stereo
 	c := NewDefaultChain()
 	if err := c.ApplyState(st); err != nil {
 		return nil, fmt.Errorf("aplicando o som atual: %w", err)
@@ -25,6 +32,7 @@ func RenderOfflineChannels(st State, x []float64, fs, tailS float64, block int, 
 		block = 512
 	}
 	c.SetStereo(stereo)
+	c.SetLimiter(out.Limiter)
 	c.Prepare(fs, block)
 	lat := c.Latency()
 	n := len(x) + int(tailS*fs)

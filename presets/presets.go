@@ -147,7 +147,7 @@ func Factory() []Preset {
 		}),
 		mk("Surf", simulado, "2x12 SM57", []string{"gate", "tremolo", "reverb"}, map[string]set{
 			"gate":         {"threshold": -60},
-			engine.PreID:   {"gain": 3, "bass": 5, "mid": 4, "treble": 7, "stack": engine.StackAmerican},
+			engine.PreID:   {"gain": 3, "bass": 8.7, "mid": 4, "treble": 7, "stack": engine.StackAmerican},
 			engine.PowerID: {"presence": 6, "volume": -4.9},
 			"tremolo":      {"rate": 6, "depth": 45, "shape": 0},
 			"reverb":       {"size": 85, "damping": 20, "mix": 45},
@@ -217,7 +217,7 @@ func Factory() []Preset {
 		// as capturas do TS7 com pouco drive deixam o grave passar
 		mk("Metal", simulado, "4x12 SM7", []string{"gate", "drive", "eq", "reverb"}, map[string]set{
 			"gate":         {"threshold": -42, "release": 40},
-			engine.PreID:   {"stack": engine.StackHighGain, "gain": 8, "bass": 5, "mid": 5, "treble": 5},
+			engine.PreID:   {"stack": engine.StackHighGain, "gain": 8, "bass": 9.3, "mid": 5, "treble": 5},
 			"drive":        {"mode": 1, "drive": 0.5, "tone": 7, "level": 6},
 			"eq":           {"f1": 90, "g1": 2, "f2": 120, "g2": 1.5, "q2": 0.6, "f3": 680, "g3": -6, "q3": 0.8, "f5": 5500, "g5": -4, "level": 1.4},
 			engine.PowerID: {"volume": -7.7},
@@ -265,7 +265,7 @@ func Factory() []Preset {
 		mk("Ambiente", simulado, "2x12 SM57", []string{"gate", "comp", "chorus", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -55},
 			"comp":         {"threshold": -30, "ratio": 4, "attack": 30, "level": 7},
-			engine.PreID:   {"gain": 3, "bass": 5, "mid": 4.5, "treble": 6.5, "stack": engine.StackAmerican},
+			engine.PreID:   {"gain": 3, "bass": 8.7, "mid": 4.5, "treble": 6.5, "stack": engine.StackAmerican},
 			engine.PowerID: {"presence": 6, "volume": -1.9},
 			"chorus":       {"rate": 0.5, "depth": 2.5, "mix": 40},
 			"delay":        {"time": 500, "feedback": 50, "tone": 50, "mix": 35},

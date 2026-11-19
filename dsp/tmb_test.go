@@ -170,3 +170,38 @@ func TestGenericCabIR(t *testing.T) {
 		t.Error("abaixo da ressonância (50 Hz) deveria ter menos grave que em 110 Hz")
 	}
 }
+
+// O knob de grave anda em passos iguais de dB em 100 Hz (médio e agudo em 5), do pot quase
+// zerado ao máximo, e BassKnob é o inverso de BassPot.
+func TestTMBCurvaDoGrave(t *testing.T) {
+	for _, m := range []TMBModel{TMBFender, TMBMarshall, TMBHighGain} {
+		c := m.newBassCurve()
+		if p0, p10 := c.pot(0), c.pot(10); math.Abs(p0-bassPotMin) > 1e-12 || p10 != 1 {
+			t.Errorf("%s: pot(0) = %g, pot(10) = %g", m.Name, p0, p10)
+		}
+		g0, g10 := m.bassDB(c.pot(0)), m.bassDB(c.pot(10))
+		if g10-g0 < 8 {
+			t.Errorf("%s: faixa do grave em 100 Hz só %.1f dB", m.Name, g10-g0)
+		}
+		prev := c.pot(0)
+		for k := 0.25; k <= 10; k += 0.25 {
+			l := c.pot(k)
+			if l <= prev {
+				t.Fatalf("%s: curva não cresce em %.2f", m.Name, k)
+			}
+			prev = l
+			want := g0 + (g10-g0)*k/10
+			if d := math.Abs(m.bassDB(l) - want); d > 0.05 {
+				t.Errorf("%s knob %.2f: %.2f dB, esperava %.2f (linear)", m.Name, k, m.bassDB(l), want)
+			}
+			if kk := m.BassKnob(l); math.Abs(kk-k) > 1e-6 {
+				t.Errorf("%s: BassKnob(BassPot(%.2f)) = %.6f", m.Name, k, kk)
+			}
+		}
+		// metade de cima do knob com efeito real (antes: < 1,5 dB de 5 a 10)
+		if d := m.bassDB(c.pot(10)) - m.bassDB(c.pot(5)); d < 4 {
+			t.Errorf("%s: de 5 a 10 só %.1f dB em 100 Hz", m.Name, d)
+		}
+		t.Logf("%s: %.1f dB de faixa em 100 Hz; o antigo 5 é o %.2f", m.Name, g10-g0, m.BassKnob(LegacyBassPot))
+	}
+}

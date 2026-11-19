@@ -881,3 +881,31 @@ func TestBotaoEstereo(t *testing.T) {
 		t.Errorf("erro no rodapé: %q", a.status)
 	}
 }
+
+// O LED da saída: LIMIT acende quando o limitador reduz pelo menos LimitLedDB e apaga depois;
+// o botão Limitador liga e desliga a cadeia e grava em ajustes.json.
+func TestLimitadorLEDEBotao(t *testing.T) {
+	var m Meters
+	now := time.Now()
+	m.Update(audio.Levels{LimitDB: LimitLedDB / 2}, now)
+	if m.Limiting(now) {
+		t.Error("redução pequena não deveria acender o LED")
+	}
+	m.Update(audio.Levels{LimitDB: 3}, now)
+	if !m.Limiting(now) || m.Limiting(now.Add(time.Second)) {
+		t.Error("o LED deveria acender e apagar depois")
+	}
+
+	a, _ := novoApp(t)
+	if !a.Chain.Limiter() {
+		t.Fatal("o limitador começa ligado no app")
+	}
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.limBtn.Click()
+	h.frame(a.Layout)
+	st, _ := presets.LoadSettings(a.settings)
+	if a.Chain.Limiter() || st.LimiterOn() {
+		t.Errorf("depois do clique: cadeia %v, ajustes %v", a.Chain.Limiter(), st.LimiterOn())
+	}
+}

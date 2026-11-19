@@ -3,6 +3,7 @@ package dsp
 import (
 	"math"
 	"math/cmplx"
+	"sync"
 )
 
 // Tone stack "TMB" (treble, middle, bass) dos amps Fender e Marshall clássicos: um circuito
@@ -261,20 +262,126 @@ type TMBStack struct {
 	cur    [3]float64  // valores aplicados
 	count  int
 	makeup float64 // compensa a perda do circuito passivo
+	bass   bassCurve
 }
 
-// Taper do pot de grave (logarítmico, "audio taper"), como em Yeh e Smith.
-func bassTaper(x float64) float64 { return math.Exp((x - 1) * 3.4) }
+// Curva do pot de grave. O circuito satura: acima de ~20% da resistência do pot o grave quase
+// não sobe mais, e com a curva log de Yeh e Smith (exp((x−1)·3,4)) o knob fazia ~80% do efeito
+// de 0 a 5. Em vez de uma fórmula, a curva vem do próprio circuito de cada modelo: o knob anda
+// em passos iguais de dB em 100 Hz (médio e agudo em 5), do pot a bassPotMin até o máximo.
+
+// bassPotMin é a posição do pot de grave com o knob em 0 (o resto mínimo de um pot real).
+const bassPotMin = 0.01
+
+// LegacyBassTaper é a curva antiga do pot de grave (log, como em Yeh e Smith): a posição do
+// pot (0..1) para o knob (0..10). Serve para converter presets antigos (BassKnob).
+func LegacyBassTaper(knob float64) float64 { return math.Exp((knob/10 - 1) * 3.4) }
+
+// LegacyBassPot é a posição do pot de grave que o knob em 5 dava na curva antiga: presets
+// antigos com o grave em 5 soam iguais com o grave em BassKnob(LegacyBassPot).
+var LegacyBassPot = LegacyBassTaper(5)
+
+const bassPoints = 41 // pontos da tabela (passos de 0,25 no knob)
+
+// bassCurve guarda ln(posição do pot) para knobs igualmente espaçados de 0 a 10.
+type bassCurve [bassPoints]float64
+
+// bassDB é o ganho (dB) do circuito em 100 Hz com médio e agudo em 5 e o grave na posição l.
+func (m TMBModel) bassDB(l float64) float64 {
+	b, a := m.Analog(0.5, 0.5, l)
+	w := 2 * math.Pi * 100
+	var num, den complex128
+	p := complex(1, 0)
+	for i := 0; i < 4; i++ {
+		num += complex(b[i], 0) * p
+		den += complex(a[i], 0) * p
+		p *= complex(0, w)
+	}
+	return 20 * math.Log10(cmplxAbs(num/den))
+}
+
+// bassCurves guarda as curvas já calculadas (~10 ms cada; o hgfit varia o modelo, então o
+// cache é limitado).
+var bassCurves struct {
+	sync.Mutex
+	m map[TMBModel]*bassCurve
+}
+
+// newBassCurve devolve a curva do modelo (calculada uma vez por modelo).
+func (m TMBModel) newBassCurve() bassCurve {
+	bassCurves.Lock()
+	defer bassCurves.Unlock()
+	if c, ok := bassCurves.m[m]; ok {
+		return *c
+	}
+	if len(bassCurves.m) >= 16 || bassCurves.m == nil {
+		bassCurves.m = map[TMBModel]*bassCurve{}
+	}
+	c := m.calcBassCurve()
+	bassCurves.m[m] = &c
+	return c
+}
+
+// calcBassCurve calcula a curva por bisseção (o grave em 100 Hz cresce com l).
+func (m TMBModel) calcBassCurve() (c bassCurve) {
+	lo, hi := math.Log(bassPotMin), 0.0
+	g0, g1 := m.bassDB(bassPotMin), m.bassDB(1)
+	c[0], c[bassPoints-1] = lo, hi
+	for i := 1; i < bassPoints-1; i++ {
+		want := g0 + (g1-g0)*float64(i)/(bassPoints-1)
+		a, b := lo, hi
+		for it := 0; it < 32; it++ { // ln(l) com erro < 1e-9
+			mid := (a + b) / 2
+			if m.bassDB(math.Exp(mid)) < want {
+				a = mid
+			} else {
+				b = mid
+			}
+		}
+		c[i] = (a + b) / 2
+	}
+	return c
+}
+
+// pot devolve a posição do pot (0..1) para o knob (0..10). Não aloca.
+func (c *bassCurve) pot(knob float64) float64 {
+	x := math.Max(0, math.Min(1, knob/10)) * (bassPoints - 1)
+	i := int(x)
+	if i >= bassPoints-1 {
+		return math.Exp(c[bassPoints-1])
+	}
+	f := x - float64(i)
+	return math.Exp(c[i] + f*(c[i+1]-c[i]))
+}
+
+// knob é o inverso de pot.
+func (c *bassCurve) knob(l float64) float64 {
+	v := math.Log(math.Max(bassPotMin, math.Min(1, l)))
+	for i := 1; i < bassPoints; i++ {
+		if v <= c[i] {
+			f := (v - c[i-1]) / (c[i] - c[i-1])
+			return 10 * (float64(i-1) + f) / (bassPoints - 1)
+		}
+	}
+	return 10
+}
+
+// BassPot devolve a posição do pot de grave (0..1) para o knob de grave (0..10).
+func (m TMBModel) BassPot(knob float64) float64 { c := m.newBassCurve(); return c.pot(knob) }
+
+// BassKnob devolve o knob de grave (0..10) que põe o pot de grave na posição l (0..1).
+func (m TMBModel) BassKnob(l float64) float64 { c := m.newBassCurve(); return c.knob(l) }
 
 // NewTMBStack cria o tone stack do modelo para a taxa fs (aloca; fora da thread de áudio).
 func NewTMBStack(fs float64, m TMBModel) *TMBStack {
-	s := &TMBStack{model: m, fs: fs}
+	s := &TMBStack{model: m, fs: fs, bass: m.newBassCurve()}
 	for i := range s.knobs {
 		s.knobs[i] = NewSmoother(fs, 30)
 		s.knobs[i].Snap(5)
 	}
-	// ganho de compensação: média (em dB) da resposta com tudo em 5, de 100 Hz a 5 kHz
-	b, a := m.Analog(0.5, 0.5, bassTaper(0.5))
+	// ganho de compensação: média (em dB) da resposta com médio e agudo em 5 e o grave na
+	// posição do antigo 5 (o nível dos presets não muda com a curva nova), de 100 Hz a 5 kHz
+	b, a := m.Analog(0.5, 0.5, LegacyBassPot)
 	sum, n := 0.0, 0
 	for f := 100.0; f <= 5000; f *= 1.1 {
 		h := 0.0
@@ -317,7 +424,7 @@ func (s *TMBStack) update() {
 		return
 	}
 	s.cur = v
-	ba, aa := s.model.Analog(v[2]/10, v[1]/10, bassTaper(v[0]/10))
+	ba, aa := s.model.Analog(v[2]/10, v[1]/10, s.bass.pot(v[0]))
 	s.b, s.a = Bilinear3(ba, aa, s.fs)
 	for i := range s.b {
 		s.b[i] *= s.makeup

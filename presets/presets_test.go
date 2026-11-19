@@ -181,3 +181,48 @@ func TestFabricaEmBancosTematicos(t *testing.T) {
 		t.Errorf("início dos bancos: %s, %s, %s", f[0].Name, f[FactoryBankSize].Name, f[2*FactoryBankSize].Name)
 	}
 }
+
+// Os presets com tone stack TMB (Americano, Britânico, High Gain) soam como antes da curva
+// nova do grave: o knob cai na posição do pot que o antigo 5 dava.
+func TestFabricaGraveTMBComoAntes(t *testing.T) {
+	models := map[int]dsp.TMBModel{engine.StackAmerican: dsp.TMBFender, engine.StackBritish: dsp.TMBMarshall,
+		engine.StackHighGain: dsp.TMBHighGain}
+	n := 0
+	for _, p := range Factory() {
+		for _, m := range p.State.Modules {
+			if m.ID != engine.PreID || m.Extra["amp"] != "" {
+				continue
+			}
+			tm, ok := models[int(m.Params["stack"])]
+			if !ok {
+				continue
+			}
+			n++
+			want := tm.BassKnob(dsp.LegacyBassPot)
+			if d := math.Abs(m.Params["bass"] - want); d > 0.05 {
+				t.Errorf("%s: grave %.2f, o antigo 5 no %s é %.2f", p.Name, m.Params["bass"], tm.Name, want)
+			}
+		}
+	}
+	if n == 0 {
+		t.Error("nenhum preset de fábrica com TMB")
+	}
+}
+
+// ajustes.json: sem o arquivo, estéreo e limitador ligados; o que é salvo volta igual.
+func TestAjustes(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "ajustes.json")
+	s, err := LoadSettings(p)
+	if err != nil || !s.StereoOn() || !s.LimiterOn() {
+		t.Fatalf("padrões: %+v, %v", s, err)
+	}
+	off := false
+	s.Limiter = &off
+	if err := s.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	s, err = LoadSettings(p)
+	if err != nil || !s.StereoOn() || s.LimiterOn() {
+		t.Errorf("depois de salvar: estéreo %v, limitador %v, %v", s.StereoOn(), s.LimiterOn(), err)
+	}
+}

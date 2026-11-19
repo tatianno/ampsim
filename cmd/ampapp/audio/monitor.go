@@ -10,6 +10,7 @@ type Levels struct {
 	InPeak, OutPeak float32 // pico linear (InPeak = o que entra no engine, depois do trim)
 	InRaw           float32 // pico da placa, antes do trim
 	Clips           uint64  // total acumulado de amostras cortadas na saída
+	LimitDB         float32 // maior redução do limitador de saída (dB)
 	InClips         uint64  // total acumulado de clips do conversor de entrada
 	Overruns        uint64  // total acumulado de callbacks que passaram do tempo
 	MaxLoad         float32 // maior carga de CPU de um callback (0..1+)
@@ -56,6 +57,7 @@ func (m *Monitor) run() {
 				m.acc.Overruns++
 			}
 			m.acc.Clips += uint64(v.OutClips)
+			m.acc.LimitDB = max(m.acc.LimitDB, v.LimitDB)
 			m.acc.MaxLoad = max(m.acc.MaxLoad, v.Load)
 			m.acc.GateOpen = v.GateOpen
 			m.acc.Bypassed = v.Bypassed
@@ -69,7 +71,7 @@ func (m *Monitor) Take() Levels {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	l := m.acc
-	m.acc.InPeak, m.acc.OutPeak, m.acc.InRaw, m.acc.MaxLoad = 0, 0, 0, 0
+	m.acc.InPeak, m.acc.OutPeak, m.acc.InRaw, m.acc.MaxLoad, m.acc.LimitDB = 0, 0, 0, 0, 0
 	return l
 }
 

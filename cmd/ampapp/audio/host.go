@@ -1,6 +1,7 @@
 // Pacote audio liga uma fonte (arquivo ou guitarra) ao engine e à placa de som.
 //
-//	fonte.Read → engine.ProcessStereo → clip de segurança → saída intercalada (L, R)
+//	fonte.Read → engine.ProcessStereo (com o limitador, se ligado) → clip de segurança →
+//	saída intercalada (L, R)
 //
 // O render é separado do dispositivo (malgo) para poder ser testado sem placa de som.
 package audio
@@ -29,6 +30,7 @@ type Meter struct {
 	InRaw           float32 // pico da placa, antes do trim (só com entrada ao vivo)
 	InClips         uint32  // amostras em que o conversor da placa clipou
 	OutClips        uint32  // amostras que passaram de ±1 (cortadas)
+	LimitDB         float32 // maior redução do limitador de saída (dB; 0 = não atuou)
 	GateOpen        bool
 	Bypassed        bool    // bypass A/B global ligado
 	Load            float32 // tempo de processamento / duração do bloco
@@ -157,6 +159,7 @@ func (r *Renderer) render(out []float32, channels, frames int, start time.Time, 
 		copy(dry, buf)
 		right := r.right[:n]
 		r.chain.ProcessStereo(buf, right) // a cadeia sempre roda: caudas continuam e a volta do bypass é suave
+		m.LimitDB = max(m.LimitDB, float32(r.chain.LimiterReduction()))
 		r.mixAB(buf, right, dry)
 		r.applyMute(buf, right)
 		if an := r.analyzer.Load(); an != nil && an.running.Load() {

@@ -714,7 +714,7 @@ func TestAdicionarERemover(t *testing.T) {
 	}
 	// estado só com os presentes, e volta igual
 	st := c.State()
-	if st.Version != 3 || len(st.Modules) != len(c.Order()) {
+	if st.Version != StateVersion || len(st.Modules) != len(c.Order()) {
 		t.Fatalf("estado v%d com %d módulos", st.Version, len(st.Modules))
 	}
 	d := NewDefaultChain()
@@ -773,5 +773,41 @@ func TestAdicionarAoVivo(t *testing.T) {
 	}
 	if a := testing.AllocsPerRun(30, func() { d.ProcessMono(buf) }); a != 0 {
 		t.Errorf("processar aloca %.0f vezes", a)
+	}
+}
+
+// Preset da versão 3: o grave dos tone stacks TMB vai para a curva nova do knob, com o pot na
+// mesma posição (o som não muda); no Moderno (outra curva) fica como está.
+func TestPresetV3GraveTMB(t *testing.T) {
+	for _, tc := range []struct {
+		stack float64
+		model dsp.TMBModel
+	}{{StackAmerican, dsp.TMBFender}, {StackBritish, dsp.TMBMarshall}, {StackHighGain, dsp.TMBHighGain}, {StackModern, dsp.TMBModel{}}} {
+		for _, old := range []float64{0, 3, 5, 10} {
+			params := map[string]float64{"bass": old, "stack": tc.stack}
+			st := State{Version: 3, Modules: []ModuleState{{ID: PreID, Enabled: true, Params: params}}}
+			c := NewDefaultChain()
+			if err := c.ApplyState(st); err != nil {
+				t.Fatal(err)
+			}
+			if params["bass"] != old {
+				t.Fatal("a migração mudou o estado original")
+			}
+			got := c.Module(PreID).Param("bass").Get()
+			if tc.stack == StackModern {
+				if got != old {
+					t.Errorf("Moderno: grave %v virou %v", old, got)
+				}
+				continue
+			}
+			if d := math.Abs(math.Log(tc.model.BassPot(got) / dsp.LegacyBassTaper(old))); d > 0.01 {
+				t.Errorf("%s grave %v → %v: pot %.4f, antes %.4f", tc.model.Name, old, got, tc.model.BassPot(got), dsp.LegacyBassTaper(old))
+			}
+			// e a versão atual não é convertida de novo
+			d := NewDefaultChain()
+			if err := d.ApplyState(c.State()); err != nil || d.Module(PreID).Param("bass").Get() != got {
+				t.Errorf("reaplicar o estado mudou o grave: %v", err)
+			}
+		}
 	}
 }

@@ -51,6 +51,7 @@ func run() error {
 		tail      = flag.Float64("cauda", 2, "segundos de silêncio no fim para delay/reverb terminarem")
 		block     = flag.Int("bloco", 256, "tamanho de bloco (simula o buffer da placa)")
 		estereo   = flag.Bool("estereo", false, "saída estéreo (modulações e ambiências com Largura)")
+		limitador = flag.Bool("limitador", false, "limitador de segurança no fim da cadeia (teto −0,3 dBFS), como no app")
 		format    = flag.String("formato", "pcm16", "formato de saída: pcm16 ou float32")
 		normalize = flag.Float64("normalizar", 0, "se > 0, normaliza o pico para este valor em dBFS negativo (ex.: 1 → -1 dBFS)")
 		list      = flag.Bool("listar", false, "lista módulos e parâmetros e sai")
@@ -150,7 +151,8 @@ func run() error {
 	lat := chain.Latency()
 	start := time.Now()
 	// mesma renderização offline da GUI ("Exportar…"): cadeia nova com o estado atual
-	ys, err := engine.RenderOfflineChannels(chain.State(), x, float64(fs), *tail, *block, *estereo, nil)
+	ys, err := engine.RenderOfflineChannels(chain.State(), x, float64(fs), *tail, *block,
+		engine.Output{Stereo: *estereo, Limiter: *limitador}, nil)
 	if err != nil {
 		return err
 	}
