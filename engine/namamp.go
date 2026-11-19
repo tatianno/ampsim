@@ -37,8 +37,11 @@ const NAMTargetLoudness = -12.0
 // AmpFadeMs é o crossfade ao trocar de modelo, de tamanho ou entre Simulado e NAM.
 const AmpFadeMs = 20.0
 
-// DefaultNAM é o modelo usado até o usuário escolher outro.
+// DefaultNAM é o modelo do amp até o usuário escolher outro.
 var DefaultNAM = capturas.Prefix + "Dist Sat5 V4 B5 M5 T5 P5"
+
+// DefaultDriveNAM é a captura do Drive no tipo NAM até o usuário escolher outra.
+var DefaultDriveNAM = capturas.Prefix + "TS7 TS9 D5 T5 L5 (Medium Drive)"
 
 // NAMInfo descreve o modelo carregado (para a GUI).
 type NAMInfo struct {
@@ -58,9 +61,14 @@ type namInst struct {
 	gain  float32    // normalização pelo loudness
 }
 
-// namAmp roda modelos NAM; é o "motor" do pré-amp no modo NAM. A latência é compensada
-// para ficar igual à do amp simulado (a cadeia tem latência constante).
-type namAmp struct {
+// namBlock roda modelos NAM; é o "motor" do pré-amp no modo NAM e do Drive no tipo NAM. A
+// latência é compensada para ficar igual à do bloco simulado (a cadeia tem latência constante).
+type namBlock struct {
+	// configuração (fixa, dada na criação)
+	latency   int    // atraso da saída, em amostras (a latência do bloco simulado)
+	normalize bool   // normaliza a saída pelo loudness dos metadados (amp); pedal: não
+	def       string // modelo usado até escolherem outro
+
 	fs       float64
 	maxBlock int
 
@@ -102,7 +110,7 @@ func displayName(m *nam.Model, ref string) string {
 
 // Load carrega um modelo. Seguro com o áudio rodando: as redes são montadas e aquecidas
 // aqui e entram com crossfade no próximo bloco.
-func (n *namAmp) Load(ref string) error {
+func (n *namBlock) Load(ref string) error {
 	m, err := loadModel(ref)
 	if err != nil {
 		return err
@@ -117,13 +125,13 @@ func (n *namAmp) Load(ref string) error {
 }
 
 // Ref devolve a referência do modelo atual ("" se nenhum).
-func (n *namAmp) Ref() string {
+func (n *namBlock) Ref() string {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.ref
 }
 
-func (n *namAmp) build(m *nam.Model, ref string) *namInst {
+func (n *namBlock) build(m *nam.Model, ref string) *namInst {
 	in := &namInst{model: m, ref: ref, gain: 1}
 	for i, sm := range m.Submodels {
 		net := nam.NewNet(sm.Spec, n.maxBlock)
@@ -141,24 +149,26 @@ func (n *namAmp) build(m *nam.Model, ref string) *namInst {
 		}
 		in.infos = append(in.infos, info)
 	}
-	if l := m.Metadata.Loudness; l != nil {
+	// Pedal: o ganho que a rede aprendeu (o quanto o pedal empurra o amp) faz parte do som;
+	// além disso, o loudness dos metadados muda entre versões do mesmo arquivo.
+	if l := m.Metadata.Loudness; l != nil && n.normalize {
 		in.gain = float32(math.Pow(10, (NAMTargetLoudness-*l)/20))
 	}
 	return in
 }
 
-func (n *namAmp) prepare(fs float64, maxBlock int) {
+func (n *namBlock) prepare(fs float64, maxBlock int) {
 	n.fs, n.maxBlock = fs, maxBlock
 	n.in = make([]float32, maxBlock)
 	n.a = make([]float32, maxBlock)
 	n.b = make([]float32, maxBlock)
 	n.xstep = 1 / (AmpFadeMs / 1000 * fs)
-	n.delay = dsp.NewDelayLine(dsp.PreampLatency)
+	n.delay = dsp.NewDelayLine(n.latency)
 
 	n.mu.Lock()
-	if n.model == nil {
-		if m, err := loadModel(DefaultNAM); err == nil {
-			n.model, n.ref = m, DefaultNAM
+	if n.model == nil && n.def != "" {
+		if m, err := loadModel(n.def); err == nil {
+			n.model, n.ref = m, n.def
 		}
 	}
 	n.prepared = true
@@ -170,7 +180,7 @@ func (n *namAmp) prepare(fs float64, maxBlock int) {
 	n.mu.Unlock()
 }
 
-func (n *namAmp) reset() {
+func (n *namBlock) reset() {
 	if n.cur != nil {
 		n.cur.Reset()
 	}
@@ -187,7 +197,7 @@ func (in *namInst) netFor(size int) int {
 }
 
 // process roda o modelo sobre buf (in-place), com ganho de entrada inGain e tamanho size.
-func (n *namAmp) process(buf []float64, inGain float64, size int) {
+func (n *namBlock) process(buf []float64, inGain float64, size int) {
 	// troca de modelo ou de tamanho: só começa quando o crossfade anterior terminou
 	if n.xf >= 1 {
 		if p := n.pending.Swap(nil); p != nil {
@@ -231,18 +241,16 @@ func (n *namAmp) process(buf []float64, inGain float64, size int) {
 		}
 	}
 	for i, v := range a {
-		buf[i] = n.delay.ReadInt(dsp.PreampLatency)
+		buf[i] = n.delay.ReadInt(n.latency)
 		n.delay.Write(float64(v * gain))
 	}
 }
 
 // Info devolve o modelo em uso (nil antes do primeiro bloco no modo NAM).
-func (n *namAmp) Info() *NAMInfo { return n.info.Load() }
+func (n *namBlock) Info() *NAMInfo { return n.info.Load() }
 
-// ---------------------------------------------------------------- API no Pre
-
-// LoadNAM carrega um modelo NAM no pré-amp: "embutida:<nome>" ou o caminho de um .nam.
-func (m *Pre) LoadNAM(ref string) error {
+// load valida a referência e carrega o modelo: "embutida:<nome>" ou o caminho de um .nam.
+func (n *namBlock) load(ref string) error {
 	if ref == "" {
 		return errors.New("modelo NAM vazio")
 	}
@@ -251,19 +259,35 @@ func (m *Pre) LoadNAM(ref string) error {
 			return fmt.Errorf("carregando modelo NAM: %w", err)
 		}
 	}
-	if err := m.nam.Load(ref); err != nil {
+	if err := n.Load(ref); err != nil {
 		return fmt.Errorf("carregando modelo NAM: %w", err)
 	}
 	return nil
 }
 
-// NAMRef devolve o modelo NAM escolhido ("embutida:<nome>" ou caminho).
-func (m *Pre) NAMRef() string {
-	if r := m.nam.Ref(); r != "" {
+// current devolve o modelo escolhido, ou o padrão se nenhum foi carregado.
+func (n *namBlock) current() string {
+	if r := n.Ref(); r != "" {
 		return r
 	}
-	return DefaultNAM
+	return n.def
 }
+
+// applyExtra carrega o modelo de um preset (extra.nam), se for outro.
+func (n *namBlock) applyExtra(s map[string]string) error {
+	if r := s["nam"]; r != "" && r != n.Ref() {
+		return n.load(r)
+	}
+	return nil
+}
+
+// ---------------------------------------------------------------- API no Pre
+
+// LoadNAM carrega um modelo NAM no pré-amp: "embutida:<nome>" ou o caminho de um .nam.
+func (m *Pre) LoadNAM(ref string) error { return m.nam.load(ref) }
+
+// NAMRef devolve o modelo NAM escolhido ("embutida:<nome>" ou caminho).
+func (m *Pre) NAMRef() string { return m.nam.current() }
 
 // NAMInfo descreve o modelo NAM em uso (nil se o modo NAM ainda não rodou).
 func (m *Pre) NAMInfo() *NAMInfo { return m.nam.Info() }
@@ -275,9 +299,4 @@ func (m *Pre) ExtraState() map[string]string {
 	return map[string]string{"nam": m.NAMRef()}
 }
 
-func (m *Pre) ApplyExtraState(s map[string]string) error {
-	if r := s["nam"]; r != "" && r != m.nam.Ref() {
-		return m.LoadNAM(r)
-	}
-	return nil
-}
+func (m *Pre) ApplyExtraState(s map[string]string) error { return m.nam.applyExtra(s) }

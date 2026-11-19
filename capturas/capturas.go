@@ -1,7 +1,8 @@
 // Pacote capturas traz os modelos NAM incluídos no app (embutidos no binário).
 //
-// São capturas do autor do projeto, só do amplificador (sem gabinete): no app elas
-// passam pelo gabinete por IR. Cada arquivo é um SlimmableContainer com um modelo lite
+// São capturas do autor do projeto: as da raiz são só do amplificador (sem gabinete; no app
+// elas passam pelo gabinete por IR) e as de pedais/ são só de pedais de drive (para o Drive
+// no tipo NAM, na frente do amp). Cada arquivo é um SlimmableContainer com um modelo lite
 // (3 canais) e um completo (8 canais). Veja o README desta pasta.
 package capturas
 
@@ -16,16 +17,24 @@ import (
 	"github.com/tatianno/ampsim/nam"
 )
 
-//go:embed *.nam
+//go:embed *.nam pedais/*.nam
 var files embed.FS
+
+// pedalDir é a pasta das capturas de pedais.
+const pedalDir = "pedais"
 
 // Prefix marca, no estado do engine, um modelo embutido (ex.: "embutida:Clean V10 B5 M5 T5 P5").
 const Prefix = "embutida:"
 
-// Names devolve os nomes das capturas (o nome do arquivo sem .nam), em ordem natural
+// Names devolve os nomes das capturas de amp (o nome do arquivo sem .nam), em ordem natural
 // (V7 antes de V10).
-func Names() []string {
-	ents, _ := fs.ReadDir(files, ".")
+func Names() []string { return list(".") }
+
+// PedalNames devolve os nomes das capturas de pedais, em ordem natural.
+func PedalNames() []string { return list(pedalDir) }
+
+func list(dir string) []string {
+	ents, _ := fs.ReadDir(files, dir)
 	var out []string
 	for _, e := range ents {
 		if n, ok := strings.CutSuffix(e.Name(), ".nam"); ok {
@@ -36,13 +45,16 @@ func Names() []string {
 	return out
 }
 
-// Data devolve o conteúdo do .nam de uma captura.
+// Data devolve o conteúdo do .nam de uma captura (de amp ou de pedal: os nomes não se repetem).
 func Data(name string) ([]byte, error) {
-	b, err := files.ReadFile(path.Clean(name) + ".nam")
-	if err != nil {
-		return nil, fmt.Errorf("captura desconhecida: %q", name)
+	if !strings.ContainsAny(name, `/\`) {
+		for _, dir := range []string{".", pedalDir} {
+			if b, err := files.ReadFile(path.Join(dir, name+".nam")); err == nil {
+				return b, nil
+			}
+		}
 	}
-	return b, nil
+	return nil, fmt.Errorf("captura desconhecida: %q", name)
 }
 
 // Load carrega e valida uma captura.

@@ -10,30 +10,53 @@ import (
 
 // ---------------------------------------------------------------- Drive
 
-// Drive é o pedal de drive: Boost, Overdrive, Distorção, Fuzz ou Muff. A troca de modo faz um
-// crossfade de 20 ms (os dois modos rodam juntos durante a troca).
+// Tipos do Drive (parâmetro "type"): os circuitos modelados ou uma captura NAM de pedal.
+const (
+	DriveModeled = iota
+	DriveNAM
+)
+
+// driveNAMMode é o "modo" interno do tipo NAM (fora da faixa dos modos de dsp.Drive).
+const driveNAMMode = -1
+
+// Drive é o pedal de drive: Boost, Overdrive, Distorção, Fuzz ou Muff modelados, ou uma
+// captura NAM de pedal (tipo NAM). A troca de modo ou de tipo faz um crossfade de 20 ms (os
+// dois rodam juntos durante a troca).
 //
 // Os knobs seguem os pedais de cada modo (ParamView): Boost = Boost e Tone (o Level não atua);
 // Overdrive = Drive, Tone, Level (Tube Screamer); Distorção = Distortion, Tone, Level (RAT/DS-1);
 // Fuzz = Fuzz e Volume (Fuzz Face, sem tom: o Tone fica plano); Muff = Sustain, Tone, Volume
-// (Big Muff).
+// (Big Muff). No tipo NAM a captura é um ajuste fixo do pedal: sobram Entrada (o quanto o sinal
+// bate no modelo) e Level (depois dele). A saída do modelo não é normalizada: o ganho do pedal
+// (quanto ele empurra o amp) vem da captura.
 type Drive struct {
 	base
 	cur, old  *dsp.Drive
-	mode      int
+	mode      int // modo em uso: um dos dsp.Drive* ou driveNAMMode
+	pmode     int // o anterior, durante a troca
 	xf, xstep float64
 	scratch   []float64
+
+	nam     namBlock
+	namLvl  dsp.Smoother
+	namOnce bool // namLvl já recebeu o primeiro valor
 }
 
 // NewDrive cria o módulo de drive.
 func NewDrive() *Drive {
-	return &Drive{base: base{id: "drive", name: "Drive", paramSet: newParamSet(
-		ParamInfo{ID: "drive", Name: "Drive", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "tone", Name: "Tone", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "level", Name: "Level", Unit: "dB", Min: -24, Max: 12, Default: 0},
-		ParamInfo{ID: "mode", Name: "Modo", Min: 0, Max: 4, Default: dsp.DriveOverdrive, Step: 1,
-			Choices: []string{"Boost", "Overdrive", "Distorção", "Fuzz", "Muff"}},
-	)}}
+	return &Drive{nam: namBlock{latency: dsp.DriveLatency, def: DefaultDriveNAM},
+		base: base{id: "drive", name: "Drive", paramSet: newParamSet(
+			ParamInfo{ID: "drive", Name: "Drive", Min: 0, Max: 10, Default: 5},
+			ParamInfo{ID: "tone", Name: "Tone", Min: 0, Max: 10, Default: 5},
+			ParamInfo{ID: "level", Name: "Level", Unit: "dB", Min: -24, Max: 12, Default: 0},
+			ParamInfo{ID: "type", Name: "Tipo", Min: 0, Max: 1, Default: DriveModeled, Step: 1,
+				Choices: []string{"Modelado", "NAM"}},
+			ParamInfo{ID: "mode", Name: "Modo", Min: 0, Max: 4, Default: dsp.DriveOverdrive, Step: 1,
+				Choices: []string{"Boost", "Overdrive", "Distorção", "Fuzz", "Muff"}},
+			ParamInfo{ID: "nam_input", Name: "Entrada", Unit: "dB", Min: -24, Max: 24, Default: 0},
+			ParamInfo{ID: "nam_size", Name: "Tamanho", Min: 0, Max: 1, Default: NAMLite, Step: 1,
+				Choices: []string{"Lite", "Completo"}},
+		)}}
 }
 
 // driveViews são os knobs de cada modo (veja ParamView).
@@ -45,20 +68,50 @@ var driveViews = [...][]ParamShow{
 	dsp.DriveMuff:       {{"drive", "Sustain"}, {"tone", "Tone"}, {"level", "Volume"}},
 }
 
-// ParamView devolve os knobs do modo atual.
-func (m *Drive) ParamView() []ParamShow {
+// driveNAMView são os knobs do tipo NAM.
+var driveNAMView = []ParamShow{{"nam_input", "Entrada"}, {"level", "Level"}}
+
+// Type devolve o tipo do drive (DriveModeled ou DriveNAM).
+func (m *Drive) Type() int { return int(m.get("type")) }
+
+// modelMode devolve o modo modelado escolhido (válido).
+func (m *Drive) modelMode() int {
 	mode := int(m.get("mode"))
 	if mode < 0 || mode >= len(driveViews) {
 		mode = dsp.DriveOverdrive
 	}
-	return driveViews[mode]
+	return mode
 }
 
-// effective devolve drive, tone e level como o modo atual os usa: o que não é knob do modo
-// fica neutro (Boost sem Level; Fuzz com o Tone plano).
+// target é o modo que deve tocar: o modelado escolhido ou o NAM.
+func (m *Drive) target() int {
+	if m.Type() == DriveNAM {
+		return driveNAMMode
+	}
+	return m.modelMode()
+}
+
+// ParamView devolve os knobs do modo atual.
+func (m *Drive) ParamView() []ParamShow {
+	if m.Type() == DriveNAM {
+		return driveNAMView
+	}
+	return driveViews[m.modelMode()]
+}
+
+// SelectorView devolve as chaves do tipo atual: o modo só vale no modelado, o tamanho só no NAM.
+func (m *Drive) SelectorView() []string {
+	if m.Type() == DriveNAM {
+		return []string{"type", "nam_size"}
+	}
+	return []string{"type", "mode"}
+}
+
+// effective devolve drive, tone e level como o modo modelado atual os usa: o que não é knob do
+// modo fica neutro (Boost sem Level; Fuzz com o Tone plano).
 func (m *Drive) effective() (drive, tone, lvl float64) {
 	drive, tone, lvl = m.get("drive"), m.get("tone"), m.get("level")
-	switch int(m.get("mode")) {
+	switch m.modelMode() {
 	case dsp.DriveBoost:
 		lvl = 0
 	case dsp.DriveFuzz:
@@ -69,38 +122,100 @@ func (m *Drive) effective() (drive, tone, lvl float64) {
 
 func (m *Drive) Prepare(fs float64, maxBlock int) {
 	m.cur, m.old = dsp.NewDrive(fs), dsp.NewDrive(fs)
-	m.mode = int(m.get("mode"))
-	m.cur.SetMode(m.mode)
-	m.xf, m.xstep = 1, 1/(AmpFadeMs/1000*fs)
+	m.cur.SetMode(m.modelMode())
+	m.mode = m.target()
+	m.pmode, m.xf, m.xstep = m.mode, 1, 1/(AmpFadeMs/1000*fs)
 	m.scratch = make([]float64, maxBlock)
+	m.nam.prepare(fs, maxBlock)
+	m.namLvl = dsp.NewSmoother(fs, 20)
+	m.namOnce = false
 }
 
-func (m *Drive) Reset()       { m.cur.Reset(); m.xf = 1 }
+func (m *Drive) Reset() {
+	m.cur.Reset()
+	m.nam.reset()
+	m.xf = 1
+}
+
 func (m *Drive) Latency() int { return dsp.DriveLatency }
 
-func (m *Drive) Process(buf []float64) {
-	if mode := int(m.get("mode")); mode != m.mode && m.xf >= 1 {
-		m.old, m.cur = m.cur, m.old
-		m.cur.SetMode(mode)
-		m.cur.Reset()
-		m.mode, m.xf = mode, 0
+// modeled devolve o dsp.Drive de um modo modelado: o novo fica em cur; o que sai na troca
+// (isOld), em old se os dois forem modelados, ou em cur se o novo for o NAM.
+func (m *Drive) modeled(isOld bool) *dsp.Drive {
+	if isOld && m.mode != driveNAMMode {
+		return m.old
 	}
-	drive, tone, lvl := m.effective()
-	m.cur.Set(drive, tone, lvl)
+	return m.cur
+}
+
+func (m *Drive) Process(buf []float64) {
+	if t := m.target(); t != m.mode && m.xf >= 1 {
+		switch {
+		case t == driveNAMMode:
+			m.nam.reset() // o modelado continua em cur até o fim da troca
+		case m.mode == driveNAMMode:
+			m.cur.SetMode(t)
+			m.cur.Reset()
+		default:
+			m.old, m.cur = m.cur, m.old
+			m.cur.SetMode(t)
+			m.cur.Reset()
+		}
+		m.pmode, m.mode, m.xf = m.mode, t, 0
+	}
 	if m.xf >= 1 {
-		m.cur.ProcessBlock(buf)
+		m.run(m.mode, false, buf)
 		return
 	}
 	old := m.scratch[:len(buf)]
 	copy(old, buf)
-	m.old.Set(drive, tone, lvl)
-	m.old.ProcessBlock(old)
-	m.cur.ProcessBlock(buf)
+	m.run(m.pmode, true, old)
+	m.run(m.mode, false, buf)
 	for i := range buf {
 		m.xf = math.Min(1, m.xf+m.xstep)
 		buf[i] = m.xf*buf[i] + (1-m.xf)*old[i]
 	}
 }
+
+// run toca o modo mode sobre buf (isOld: é o modo que está saindo na troca).
+func (m *Drive) run(mode int, isOld bool, buf []float64) {
+	if mode == driveNAMMode {
+		m.nam.process(buf, math.Pow(10, m.get("nam_input")/20), int(m.get("nam_size")))
+		g := math.Pow(10, m.get("level")/20)
+		if !m.namOnce {
+			m.namLvl.Snap(g)
+			m.namOnce = true
+		}
+		m.namLvl.SetTarget(g)
+		for i := range buf {
+			buf[i] *= m.namLvl.Next()
+		}
+		return
+	}
+	d := m.modeled(isOld)
+	drive, tone, lvl := m.effective()
+	d.Set(drive, tone, lvl)
+	d.ProcessBlock(buf)
+}
+
+// LoadNAM carrega a captura do Drive no tipo NAM: "embutida:<nome>" ou o caminho de um .nam.
+func (m *Drive) LoadNAM(ref string) error { return m.nam.load(ref) }
+
+// NAMRef devolve a captura escolhida ("embutida:<nome>" ou caminho).
+func (m *Drive) NAMRef() string { return m.nam.current() }
+
+// NAMInfo descreve a captura em uso (nil se o tipo NAM ainda não rodou).
+func (m *Drive) NAMInfo() *NAMInfo { return m.nam.Info() }
+
+// ExtraState guarda a captura só no tipo NAM (os presets do modelado ficam como antes).
+func (m *Drive) ExtraState() map[string]string {
+	if m.Type() != DriveNAM {
+		return nil
+	}
+	return map[string]string{"nam": m.NAMRef()}
+}
+
+func (m *Drive) ApplyExtraState(s map[string]string) error { return m.nam.applyExtra(s) }
 
 // ---------------------------------------------------------------- Wah
 

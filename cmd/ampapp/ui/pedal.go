@@ -27,6 +27,10 @@ type Pedal struct {
 	eq    *eqView     // só no EQ (curva e knobs por banda)
 	synth *synthView  // só no Synth (sequência, knobs e chaves)
 	rm    widget.Clickable
+	drive *engine.Drive // só no Drive (escolha da captura no tipo NAM)
+	pick  widget.Clickable
+	// OnPickNAM abre a lista de capturas de pedal (Drive no tipo NAM).
+	OnPickNAM func()
 	// OnRemoved é chamado depois de tirar o pedal da cadeia (o app fecha a sobreposição).
 	OnRemoved func()
 }
@@ -50,6 +54,7 @@ func NewPedal(chain *engine.Chain, mod engine.Module) *Pedal {
 		p.eq = newEQView(m, chain)
 		return p
 	}
+	p.drive, _ = mod.(*engine.Drive)
 	for _, par := range mod.Params() {
 		in := par.Info()
 		if in.Step > 0 && (in.Max-in.Min)/in.Step <= 4 {
@@ -78,6 +83,53 @@ func (p *Pedal) visibleKnobs() []*Knob {
 		}
 	}
 	return out
+}
+
+// visibleSels devolve as chaves a mostrar: todas, ou as do modo atual (engine.SelectorViewer).
+func (p *Pedal) visibleSels() []*Selector {
+	sv, ok := p.mod.(engine.SelectorViewer)
+	if !ok {
+		return p.sels
+	}
+	var out []*Selector
+	for _, id := range sv.SelectorView() {
+		for _, s := range p.sels {
+			if s.P.Info().ID == id {
+				out = append(out, s)
+			}
+		}
+	}
+	return out
+}
+
+// namControls é a escolha da captura do Drive no tipo NAM: o botão com o nome, canais e tamanho
+// e o aviso de taxa diferente.
+func (p *Pedal) namControls(gtx layout.Context, th *Theme, st PedalStyle) layout.Dimensions {
+	if p.pick.Clicked(gtx) && p.OnPickNAM != nil {
+		p.OnPickNAM()
+	}
+	info := p.drive.NAMInfo()
+	sub := withAlpha(st.Text, 190)
+	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return drawText(gtx, th, "CAPTURA NAM", textOpts{size: 11, color: sub, bold: true})
+		}),
+		layout.Rigid(spacer(0, 4)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return coloredButton(gtx, th, &p.pick, namLabel(p.drive)+"  ▾", gtx.Constraints.Max.X,
+				withAlpha(rgb(0x000000), 70), st.Text)
+		}),
+		layout.Rigid(spacer(0, 4)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return drawText(gtx, th, namDetail(info), textOpts{size: 11, color: sub})
+		}),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			if info == nil || info.Warning == "" {
+				return layout.Dimensions{}
+			}
+			return drawText(gtx, th, info.Warning, textOpts{size: 11, color: th.Warn})
+		}),
+	)
 }
 
 // PedalWidthDp é a largura do pedal aberto.
@@ -115,6 +167,11 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 				return p.synth.controls(gtx, th, st)
 			}), layout.Rigid(spacer(0, 10)))
 		}
+		if p.drive != nil && p.drive.Type() == engine.DriveNAM {
+			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return p.namControls(gtx, th, st)
+			}), layout.Rigid(spacer(0, 12)))
+		}
 		knobs := p.visibleKnobs()
 		perRow := 3
 		if len(knobs) == 4 {
@@ -144,7 +201,7 @@ func (p *Pedal) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 				return p.tap.Layout(gtx, th, st)
 			}), layout.Rigid(spacer(0, 10)))
 		}
-		for _, s := range p.sels {
+		for _, s := range p.visibleSels() {
 			rows = append(rows, layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return layout.Center.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					return s.Layout(gtx, th, st.Text, lighten(st.Body, 0.55))

@@ -12,18 +12,25 @@ import (
 	"github.com/tatianno/ampsim/engine"
 )
 
-// Sobreposições com as listas de modelos NAM e de IRs.
+// Sobreposições com as listas de modelos NAM (amp e pedal) e de IRs.
 const (
-	NAMListID = "__nam__"
-	IRListID  = "__ir__"
+	NAMListID      = "__nam__"
+	DriveNAMListID = "__namdrive__"
+	IRListID       = "__ir__"
 )
 
+// namHolder é um bloco com modelo NAM (o pré-amp ou o drive).
+type namHolder interface {
+	NAMRef() string
+	NAMInfo() *engine.NAMInfo
+}
+
 // namLabel é o nome curto do modelo escolhido.
-func namLabel(pre *engine.Pre) string {
-	if info := pre.NAMInfo(); info != nil && info.Ref == pre.NAMRef() {
+func namLabel(h namHolder) string {
+	if info := h.NAMInfo(); info != nil && info.Ref == h.NAMRef() {
 		return info.Name
 	}
-	ref := pre.NAMRef()
+	ref := h.NAMRef()
 	if n, ok := strings.CutPrefix(ref, capturas.Prefix); ok {
 		return n
 	}
@@ -61,6 +68,24 @@ type NAMList = AssetList
 func NewNAMList(chain *engine.Chain) *AssetList {
 	return newAssetList("MODELOS NAM", "INCLUÍDAS · só o amp (use o gabinete)", "Abrir arquivo .nam…",
 		capturas.Names(), func() string { return chain.Pre().NAMRef() })
+}
+
+// NewDriveNAMList cria a lista de capturas de pedal do drive.
+func NewDriveNAMList(chain *engine.Chain) *AssetList {
+	return newAssetList("CAPTURAS DE PEDAL", "INCLUÍDAS · só o pedal (vai na frente do amp)", "Abrir arquivo .nam…",
+		capturas.PedalNames(), func() string { return chain.Drive().NAMRef() })
+}
+
+// namDetail descreve o modelo em uso: canais e tamanho.
+func namDetail(info *engine.NAMInfo) string {
+	if info == nil {
+		return ""
+	}
+	d := fmt.Sprintf("%d canais", info.Channels)
+	if info.Size != "" {
+		d += " · " + info.Size
+	}
+	return d
 }
 
 // NewIRList cria a lista de IRs do gabinete.
@@ -135,13 +160,7 @@ func (h *Head) namSection(gtx layout.Context, th *Theme) layout.Dimensions {
 	pre := h.chain.Pre()
 	on := h.chain.Enabled(engine.PreID)
 	info := pre.NAMInfo()
-	detail := ""
-	if info != nil {
-		detail = fmt.Sprintf("%d canais", info.Channels)
-		if info.Size != "" {
-			detail += " · " + info.Size
-		}
-	}
+	detail := namDetail(info)
 	return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return layout.Flex{Alignment: layout.Middle}.Layout(gtx,

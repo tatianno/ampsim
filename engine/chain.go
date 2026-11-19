@@ -194,6 +194,9 @@ func (c *Chain) Pre() *Pre { m, _ := c.Module(PreID).(*Pre); return m }
 // Power devolve o power amp, se houver.
 func (c *Chain) Power() *Power { m, _ := c.Module(PowerID).(*Power); return m }
 
+// Drive devolve o pedal de drive, se houver (mesmo fora da cadeia).
+func (c *Chain) Drive() *Drive { m, _ := c.Module("drive").(*Drive); return m }
+
 // Cab devolve o gabinete, se houver.
 func (c *Chain) Cab() *Cab { m, _ := c.Module(CabID).(*Cab); return m }
 

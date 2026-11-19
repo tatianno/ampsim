@@ -691,6 +691,32 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   novas medida como as outras (Drive 5 = nível da entrada). Presets: Treble Booster com Boost 9 (+18 dB, mesmo
   volume de antes), Psicodélico e Fuzz Oitavado no Fuzz Face, volumes recalibrados (−18,0 dBFS). Seletor com 5 ou
   mais posições põe o nome numa linha acima
+- [x] **Drive com captura NAM de pedal** (19/11): o Drive ganhou a chave **Tipo: Modelado | NAM**. No NAM, a
+  captura substitui os 5 modos (o Modo some e aparece o Tamanho Lite | Completo); knobs Entrada (−24 a +24 dB, antes
+  do modelo) e Level (depois); botão "CAPTURA NAM" no pedal abre a lista "CAPTURAS DE PEDAL" (incluídas + "Abrir
+  arquivo .nam…") e escolher volta ao pedal. Estado: `drive.type`, `nam_input`, `nam_size` e `extra.nam` (só no
+  tipo NAM; os presets do modelado não mudam); o backup leva o `.nam` do usuário como já fazia com o do amp
+  - `engine/namamp.go`: o motor virou `namBlock`, usado pelo pré-amp e pelo drive, com latência, normalização e
+    modelo padrão por instância. **Pedal sem normalização pelo loudness**: o ganho aprendido (TS9 D0 = +6 dB, SD-1
+    cranked ≈ +10 dB) é o quanto o pedal empurra o amp; e o `loudness` dos metadados mudou entre duas versões do
+    mesmo arquivo (pesos idênticos), então não é confiável
+  - latência: a resposta ao impulso das 10 capturas começa nas mesmas 32 amostras do modelado (o pico vem 20–45
+    amostras depois: são os filtros e o clipping do pedal, não latência)
+  - troca de tipo com crossfade de 20 ms (o modelado que sai continua em `cur` quando o novo é o NAM)
+  - `engine.SelectorViewer`: as chaves que valem no modo (Tipo + Modo, ou Tipo + Tamanho)
+  - **10 capturas de pedal embutidas** em `capturas/pedais/` (do autor, MIT): Ibanez TS7 nos modos TS9 e HOT (9
+    ajustes, Level 5 em todas) e Oliver SD-10 (SD-1) cranked; padrão `TS7 TS9 D5 T5 L5 (Medium Drive)`. Nomes sem o
+    travessão do original (o `go:embed` só aceita letras e pontuação ASCII); `capturas.PedalNames()`
+  - `ampcli -drive-nam "<captura>"` (reamostra para 48 kHz como o `-nam`); `-listar` mostra as de pedal
+  - CPU (i5-10310U, blocos de 64): cada rede custa o mesmo que a do amp, ~5% no Lite e ~27% no Completo; drive NAM
+    + amp NAM Completos ≈ 54% (o caso dos atrasos com a Sat7). O drive começa no Lite
+  - testes: trocas ao vivo (sem estalo, saída idêntica com blocos de 64/512/1024), zero alocação, ganho da captura
+    preservado e Level depois do modelo, latência alinhada nas 10, preset guarda a captura só no NAM, GUI (chaves,
+    knobs, lista, arquivo do usuário, volta ao pedal). Visual conferido em render headless
+- [ ] **Drive NAM: ouvir ao vivo** com a guitarra (TS9/HOT na frente das capturas Dist e Clean do amp) e decidir:
+  aviso na GUI quando drive e amp estão os dois no Completo; presets de fábrica com o TS7 NAM; o pico de saída com o
+  SD-1 cranked na frente do Clean V10 chega a +7,6 dBFS no volume padrão (o ganho do pedal agora é real: baixar o
+  Level ou o volume)
 - [x] **Wah: knobs do modo** (19/11, `engine.ParamViewer`): Envelope = Sensib., Resposta, Faixa, Q, Mix; LFO =
   Rate, Faixa, Q, Mix; Fixo = Posição, Faixa, Q, Mix. Teste: cada knob visível muda o som e os escondidos não
 - [x] **Atalhos no Menu** (19/11, `cmd/ampapp/ui/shortcuts.go`): lista do teclado (T, A, 1 a 6, Espaço, Esc) e do

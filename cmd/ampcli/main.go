@@ -9,6 +9,7 @@
 //	ampcli -in di.wav -out out.wav -preset clean.json
 //	ampcli -in di.wav -out out.wav -nam "Clean V10 B5 M5 T5 P5"          # amp NAM (captura incluída)
 //	ampcli -in di.wav -out out.wav -nam captura.nam -set pre.nam_size=1  # arquivo .nam, modelo completo
+//	ampcli -in di.wav -out out.wav -drive-nam "TS7 TS9 D5 T5 L5 (Medium Drive)"  # drive NAM (captura de pedal)
 //	ampcli -listar
 //	ampcli -salvar-preset meu.json -set pre.gain=3
 package main
@@ -55,6 +56,7 @@ func run() error {
 		ordem     = flag.String("ordem", "", "ordem completa da cadeia, separada por vírgula")
 		mover     = flag.String("mover", "", "move módulos: id:antes|depois:ref, separados por vírgula (ex.: delay:depois:cab)")
 		namModel  = flag.String("nam", "", "liga o amp NAM com este modelo: arquivo .nam ou nome de uma captura incluída (veja -listar)")
+		driveNAM  = flag.String("drive-nam", "", "liga o drive no tipo NAM com esta captura de pedal: arquivo .nam ou nome de uma incluída (veja -listar)")
 	)
 	flag.Parse()
 
@@ -86,6 +88,19 @@ func run() error {
 			return err
 		}
 		chain.Pre().Param("amp").Set(engine.AmpNAM)
+	}
+	if *driveNAM != "" {
+		ref := *driveNAM
+		if _, err := os.Stat(ref); err != nil {
+			ref = capturas.Prefix + ref
+		}
+		if err := chain.Drive().LoadNAM(ref); err != nil {
+			return err
+		}
+		chain.Drive().Param("type").Set(engine.DriveNAM)
+		if err := chain.SetEnabled("drive", true); err != nil {
+			return err
+		}
 	}
 	if err := aplicarFlags(chain, *on, *off, *set); err != nil {
 		return err
@@ -122,7 +137,9 @@ func run() error {
 		return err
 	}
 	// os modelos NAM foram treinados a 48 kHz: no modo NAM, processa (e grava) a 48 kHz
-	if chain.Pre().Mode() == engine.AmpNAM && fs != namRate {
+	usaNAM := chain.Pre().Mode() == engine.AmpNAM ||
+		(chain.Enabled("drive") && chain.InChain("drive") && chain.Drive().Type() == engine.DriveNAM)
+	if usaNAM && fs != namRate {
 		fmt.Printf("modo NAM: reamostrando %d → %d Hz\n", fs, namRate)
 		x = dsp.ResampleRate(x, fs, namRate)
 		fs = namRate
@@ -225,6 +242,11 @@ func listar(c *engine.Chain) {
 	fmt.Println()
 	fmt.Println("capturas NAM incluídas (-nam):")
 	for _, n := range capturas.Names() {
+		fmt.Println("  " + n)
+	}
+	fmt.Println()
+	fmt.Println("capturas de pedal incluídas (-drive-nam):")
+	for _, n := range capturas.PedalNames() {
 		fmt.Println("  " + n)
 	}
 	fmt.Println()

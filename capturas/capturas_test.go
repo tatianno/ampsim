@@ -7,11 +7,19 @@ import (
 )
 
 func TestTodasCarregam(t *testing.T) {
-	names := Names()
-	if len(names) == 0 {
+	names, pedals := Names(), PedalNames()
+	if len(names) == 0 || len(pedals) == 0 {
 		t.Fatal("nenhuma captura embutida")
 	}
-	for _, n := range names {
+	for _, n := range pedals {
+		if slices.Contains(names, n) {
+			t.Errorf("%s: mesmo nome em amp e pedal", n)
+		}
+	}
+	if pedals[0] != "SD-1 Oliver SD-10 D10 T6 L10 (Cranked)" || !slices.Contains(pedals, "TS7 TS9 D5 T5 L5 (Medium Drive)") {
+		t.Errorf("pedais: %v", pedals)
+	}
+	for _, n := range append(names, pedals...) {
 		m, err := Load(n)
 		if err != nil {
 			t.Fatal(err)
@@ -41,6 +49,9 @@ func TestTodasCarregam(t *testing.T) {
 	}
 	if _, err := Data("../go.mod"); err == nil {
 		t.Error("Data não pode sair da pasta")
+	}
+	if _, err := Data("pedais/TS7 TS9 D5 T5 L5 (Medium Drive)"); err == nil {
+		t.Error("Data aceita só o nome, sem pasta")
 	}
 }
 

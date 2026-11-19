@@ -534,3 +534,93 @@ func TestPedalDriveKnobsDoModo(t *testing.T) {
 	h := newHarness(1280, 800)
 	h.frame(a.Layout) // desenha sem quebrar
 }
+
+// selByID devolve a chave do pedal com o parâmetro id.
+func selByID(p *Pedal, id string) *Selector {
+	for _, s := range p.sels {
+		if s.P.Info().ID == id {
+			return s
+		}
+	}
+	return nil
+}
+
+// Drive no tipo NAM: a chave troca o tipo, o Modo some e o Tamanho aparece, o botão abre a
+// lista de capturas de pedal e escolher volta para o pedal.
+func TestDriveTipoNAM(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	a.Open("drive")
+	h.frame(a.Layout)
+	p := a.pedals["drive"]
+	drv := a.Chain.Drive()
+	ids := func() (out []string) {
+		for _, s := range p.visibleSels() {
+			out = append(out, s.P.Info().ID)
+		}
+		return
+	}
+	if got := ids(); !slices.Equal(got, []string{"type", "mode"}) {
+		t.Fatalf("chaves no modelado: %v", got)
+	}
+	selByID(p, "type").btns[engine.DriveNAM].Click()
+	h.frame(a.Layout)
+	if drv.Type() != engine.DriveNAM {
+		t.Fatal("a chave não ligou o tipo NAM")
+	}
+	h.frame(a.Layout)
+	if got := ids(); !slices.Equal(got, []string{"type", "nam_size"}) {
+		t.Errorf("chaves no NAM: %v", got)
+	}
+	var knobs []string
+	for _, k := range p.visibleKnobs() {
+		knobs = append(knobs, k.Label)
+	}
+	if !slices.Equal(knobs, []string{"Entrada", "Level"}) {
+		t.Errorf("knobs no NAM: %v", knobs)
+	}
+
+	p.pick.Click()
+	h.frame(a.Layout)
+	if a.Opened() != DriveNAMListID {
+		t.Fatalf("aberto %q, esperava a lista de capturas de pedal", a.Opened())
+	}
+	h.frame(a.Layout)
+	names := capturas.PedalNames()
+	if len(a.driveNAM.rows) != len(names) {
+		t.Fatalf("a lista tem %d itens, esperava %d", len(a.driveNAM.rows), len(names))
+	}
+	a.driveNAM.rows[0].Click()
+	espera(t, h, a, "a captura da lista", func() bool { return drv.NAMRef() == capturas.Prefix+names[0] })
+	if a.Opened() != "drive" {
+		t.Errorf("depois de escolher, aberto %q (esperava voltar ao pedal)", a.Opened())
+	}
+	if a.Chain.Pre().NAMRef() == drv.NAMRef() {
+		t.Error("a captura do pedal foi parar no amp")
+	}
+
+	// arquivo .nam do usuário
+	b, err := capturas.Data(names[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "meu pedal.nam")
+	if err := os.WriteFile(path, b, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	a.PickNAM = func(string) (string, error) { return path, nil }
+	a.driveNAM.OnOpenFile()
+	espera(t, h, a, "o arquivo .nam", func() bool { return drv.NAMRef() == path })
+
+	// o preset guarda a captura e o tipo
+	c := engine.NewDefaultChain()
+	if err := c.ApplyState(a.Chain.State()); err != nil || c.Drive().NAMRef() != path || c.Drive().Type() != engine.DriveNAM {
+		t.Errorf("preset: %v, %q, tipo %d", err, c.Drive().NAMRef(), c.Drive().Type())
+	}
+
+	selByID(p, "type").btns[engine.DriveModeled].Click()
+	h.frame(a.Layout)
+	if drv.Type() != engine.DriveModeled {
+		t.Error("não voltou ao modelado")
+	}
+}

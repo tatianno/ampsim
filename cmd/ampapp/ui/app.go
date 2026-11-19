@@ -57,6 +57,7 @@ type App struct {
 	menu       *Menu
 	spectrum   *SpectrumView
 	namList    *AssetList
+	driveNAM   *AssetList // capturas de pedal do drive
 	irList     *AssetList
 	cab        *CabPanel
 	board      *Board
@@ -149,6 +150,20 @@ func NewApp(s *audio.Session) *App {
 			a.pedals[m.ID()] = p
 		}
 	}
+	if p := a.pedals["drive"]; p != nil {
+		p.OnPickNAM = func() { a.open = DriveNAMListID }
+	}
+	a.driveNAM = NewDriveNAMList(chain)
+	a.driveNAM.Load = func(ref string) {
+		a.loadAsync(ref, func() error { return a.Chain.Drive().LoadNAM(ref) }, "captura do drive")
+	}
+	a.driveNAM.OnOpenFile = func() {
+		pick := a.PickNAM
+		if pick == nil {
+			pick = a.Pick
+		}
+		a.pickWith(pick, "Abrir captura de pedal (.nam)", func(path string) error { return a.Chain.Drive().LoadNAM(path) })
+	}
 	a.board.OnOpen = func(id string) {
 		if _, ok := a.pedals[id]; ok {
 			a.open = id
@@ -193,7 +208,7 @@ func (a *App) Open(id string) {
 	switch id {
 	case AudioID:
 		a.input.OnAudio()
-	case PresetListID, TunerID, AboutID, NAMListID, IRListID, AddPedalID, AnalyzerID, ShortcutsID:
+	case PresetListID, TunerID, AboutID, NAMListID, DriveNAMListID, IRListID, AddPedalID, AnalyzerID, ShortcutsID:
 		a.open = id
 	case RecordingsID:
 		a.recs.dir = a.RecordDir
@@ -585,6 +600,10 @@ func (a *App) overlay(gtx layout.Context) {
 		content = func(gtx layout.Context) layout.Dimensions { return a.irList.Layout(gtx, th, closeOverlay) }
 	} else if a.open == NAMListID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.namList.Layout(gtx, th, closeOverlay) }
+	} else if a.open == DriveNAMListID { // escolher volta para o pedal
+		content = func(gtx layout.Context) layout.Dimensions {
+			return a.driveNAM.Layout(gtx, th, func() { a.open = "drive" })
+		}
 	} else if a.open == PresetListID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.presetBar.ListLayout(gtx, th, closeOverlay) }
 	} else if a.open == SaveAsID {

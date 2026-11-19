@@ -46,6 +46,33 @@ com captadores mais fracos, espere uma resposta um pouco mais limpa.
   padrão) e um **completo** (8 canais), a 48 kHz
 - **Licença:** a mesma do projeto (MIT, veja `LICENSE` na raiz)
 
+## Capturas de pedal (`pedais/`)
+
+Usadas pelo **Drive** no **Tipo: NAM** (botão "CAPTURA NAM" no pedal); no `ampcli`: `-drive-nam "<nome>"`. São
+**só o pedal**, sem amp nem gabinete: vão na frente de um amp (simulado ou NAM). Direto num gabinete soam ásperas,
+como qualquer overdrive sem amp. A saída **não é normalizada** no app: o ganho do pedal (quanto ele empurra o amp)
+vem da captura, e o knob Level atua depois do modelo.
+
+**Ibanez TS7 Tone-Lok Tube Screamer**, nos modos padrão (estilo TS9) e HOT. Cada captura é um ajuste fixo, de um
+quase unitário com o drive no zero ao drive no máximo. O Level ficou em 5 em todas, para a saída ser coerente entre
+os ajustes. Bom para apertar um amp com crunch, como boost com médios na frente para solos, ou como overdrive sozinho
+num amp limpo.
+
+**Oliver SD-10 Super Over Drive**, a versão brasileira licenciada pela Roland do Boss SD-1, com Drive 10, Tone 6 e
+Level 10: o circuito do SD-1 todo aberto. O ceifamento assimétrico (dois diodos de um lado da onda e um do outro)
+acrescenta harmônicos pares, com uma quebra mais parecida com a de amp e textura um pouco granulada. Voz nos médios,
+mas com mais graves que o Tube Screamer; com Drive e Level no máximo, satura bastante e sai quente, empurrando forte
+o amp seguinte.
+
+| Parte | Significado |
+|---|---|
+| `TS7 TS9` / `TS7 HOT` | modo do TS7 |
+| `D` / `T` / `L` | Drive / Tone / Level (0–10) |
+| entre parênteses | descrição do ajuste |
+
+Os nomes originais usam um travessão (`TS7 TS9 – D5 T5 L5`), que o `go:embed` não aceita; aqui ficou um espaço.
+Mesma ficha técnica das capturas de amp (TONE3000, NAM 0.7, lite + completo, 48 kHz) e mesma licença (MIT).
+
 ## IRs de gabinete
 
 Também embutidas, escolhidas no gabinete (**IR: ▾**) ou com `-ir "<nome>"`; o nome sai do arquivo

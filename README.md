@@ -28,7 +28,9 @@ para Go em streaming, validados contra as saídas do Python.
   ambiência) e cada pedal tem **Remover**; a cadeia mostra só o que você usa.
 - **Drive** com 5 modos, cada um com os knobs do pedal de referência (Boost: Boost e Tone; Overdrive estilo
   Tube Screamer; Distorção estilo RAT; Fuzz estilo Fuzz Face: Fuzz e Volume; Muff estilo Big Muff: Sustain, Tone e
-  Volume; ceifamento com oversampling 4x), **Wah** automático
+  Volume; ceifamento com oversampling 4x), ou **Tipo NAM**: uma captura de pedal no lugar dos modos, com Entrada e
+  Level. Vêm incluídas 10 capturas só do pedal: Ibanez TS7 (modos TS9 e HOT, 9 ajustes) e Oliver SD-10 (SD-1); também
+  abre arquivos `.nam`. **Wah** automático
   (envelope, LFO ou fixo), **Octave** (−1/−2/+1 oitava, estilo OC-2), **Rotary** (Leslie, lento/rápido com
   aceleração), **Vibe** (chorus/vibrato) e **Pitch** (2 vozes até ±1 oitava, emendas sincronizadas com o período).
 - **Synth**: filtro de sintetizador (ladder de 4 polos estilo Moog, LP/BP/HP, ressonância até oscilar) com o corte

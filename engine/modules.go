@@ -105,7 +105,7 @@ type Pre struct {
 	xf, xstep  float64 // crossfade da troca de tone stack (0 → 1)
 	scratch    []float64
 
-	nam         namAmp
+	nam         namBlock
 	mode, pmode int     // modo do amp atual e o anterior (durante a troca)
 	mxf, mxstep float64 // crossfade da troca de modo
 	mscratch    []float64
@@ -124,7 +124,8 @@ const StackFadeMs = 20.0
 // NewPre cria o pré-amp. No modo NAM ("amp" = NAM), um modelo NAM substitui o
 // pré-amp simulado (e o power amp passa a ser só o volume; veja Power).
 func NewPre() *Pre {
-	return &Pre{base: base{id: "pre", name: "Pré-amp", paramSet: newParamSet(
+	return &Pre{nam: namBlock{latency: dsp.PreampLatency, normalize: true, def: DefaultNAM},
+		base: base{id: "pre", name: "Pré-amp", paramSet: newParamSet(
 		ParamInfo{ID: "gain", Name: "Ganho", Min: 0, Max: 10, Default: 6.5},
 		ParamInfo{ID: "bass", Name: "Grave", Min: 0, Max: 10, Default: 5},
 		ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
@@ -658,9 +659,15 @@ type ParamShow struct{ ID, Name string }
 
 // ParamViewer é implementado pelos módulos cujos controles mudam com o modo (ex.: o drive):
 // devolve os parâmetros contínuos que valem no modo atual, na ordem, com o nome de cada um.
-// Os que ficam de fora não afetam o som nesse modo. Os seletores (o próprio modo) sempre aparecem.
+// Os que ficam de fora não afetam o som nesse modo. As chaves seguem SelectorViewer.
 type ParamViewer interface {
 	ParamView() []ParamShow
+}
+
+// SelectorViewer é implementado pelos módulos que escondem chaves conforme o modo (ex.: o
+// drive): devolve os ids das chaves que valem agora, na ordem. Sem ele, todas aparecem.
+type SelectorViewer interface {
+	SelectorView() []string
 }
 
 // GainReducer é implementado por módulos que reduzem ganho (para o medidor de GR na GUI).
