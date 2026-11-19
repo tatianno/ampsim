@@ -35,6 +35,7 @@ type Meter struct {
 	Bypassed        bool    // bypass A/B global ligado
 	Load            float32 // tempo de processamento / duração do bloco
 	Overrun         bool    // o processamento passou do tempo do bloco (provável estalo)
+	Warmup          bool    // callback da partida (saída muda; não conta atraso nem CPU)
 	Frames          uint32
 }
 
@@ -69,6 +70,28 @@ type Renderer struct {
 	mute     atomic.Bool              // saída muda (ex.: enquanto afina), com rampa
 	muteGain float64
 	muteStep float64
+
+	// partida (débito D4): ao abrir a placa, os primeiros ciclos podem atrasar (o PipeWire
+	// troca de ciclo, e a primeira chamada de Go na thread do JACK é lenta). A cadeia roda
+	// normalmente, mas a saída fica muda por StartupSilenceMs e entra com a rampa do mudo.
+	warmReq atomic.Int64 // pedido de partida (amostras), consumido pelo callback
+	warm    int          // amostras de partida que faltam (thread de áudio)
+}
+
+// StartupSilenceMs é quanto a saída fica muda depois de abrir a placa.
+const StartupSilenceMs = 100.0
+
+// Warmup pede a partida silenciosa (chamado ao abrir a placa; seguro de qualquer goroutine).
+func (r *Renderer) Warmup() {
+	r.warmReq.Store(max(1, int64(StartupSilenceMs/1000*r.fs)))
+}
+
+// startCallback consome um pedido de partida e marca o medidor se o callback é da partida.
+func (r *Renderer) startCallback(m *Meter) {
+	if n := r.warmReq.Swap(0); n > 0 {
+		r.warm, r.muteGain = int(n), 0
+	}
+	m.Warmup = r.warm > 0
 }
 
 // MuteFadeMs é a rampa ao emudecer/voltar a saída.
@@ -123,6 +146,7 @@ func (r *Renderer) SampleRate() float64 { return r.fs }
 // Render preenche out (intercalado, channels canais) com frames quadros (só saída).
 func (r *Renderer) Render(out []float32, channels, frames int) {
 	var m Meter
+	r.startCallback(&m)
 	r.render(out, channels, frames, time.Now(), &m)
 }
 
@@ -131,6 +155,7 @@ func (r *Renderer) Render(out []float32, channels, frames int) {
 func (r *Renderer) RenderDuplex(out []float32, outCh int, in []float32, inCh, frames int) {
 	start := time.Now()
 	var m Meter
+	r.startCallback(&m)
 	if l := r.live.Load(); l != nil {
 		l.Feed(in, inCh, frames)
 		m.InRaw, m.InClips = l.RawPeak()
@@ -218,7 +243,7 @@ func (r *Renderer) finish(m *Meter, frames int, start time.Time) {
 	m.Bypassed = r.bypass.Load()
 	budget := float64(frames) / r.fs
 	m.Load = float32(time.Since(start).Seconds() / budget)
-	m.Overrun = m.Load > 1
+	m.Overrun = m.Load > 1 && !m.Warmup
 	if !r.meters.Push(*m) {
 		r.dropped.Add(1)
 	}
@@ -253,9 +278,10 @@ func (r *Renderer) mixAB(wet, wetR, dry []float64) {
 // applyMute aplica a rampa de mudo (a cadeia continua rodando por baixo).
 func (r *Renderer) applyMute(buf, right []float64) {
 	target := 1.0
-	if r.mute.Load() {
+	if r.mute.Load() || r.warm > 0 {
 		target = 0
 	}
+	r.warm = max(0, r.warm-len(buf))
 	if r.muteGain == target && target == 1 {
 		return
 	}

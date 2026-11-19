@@ -710,3 +710,72 @@ func (p *pulsoSource) Read(buf []float64) {
 		buf[0], p.done = 1, true
 	}
 }
+
+// Partida (D4): ao abrir a placa, a saída fica muda por StartupSilenceMs (a cadeia roda e
+// aquece) e entra com a rampa do mudo; os callbacks da partida não contam atraso nem CPU.
+func TestPartidaSilenciosa(t *testing.T) {
+	r, _ := renderVivo(t)
+	r.SetSource(&senoSource{f: 220, fs: 48000, amp: 0.3})
+	const frames = 64
+	out := make([]float32, 2*frames)
+	r.Render(out, 2, frames) // tocando normalmente
+	r.Meters().Pop()
+	r.Warmup()
+
+	warm := int(StartupSilenceMs / 1000 * 48000)
+	ramp := int(MuteFadeMs / 1000 * 48000)
+	var y []float32
+	var warmups int
+	for done := 0; done < warm+ramp+10*frames; done += frames {
+		r.RenderDuplex(out, 2, make([]float32, frames), 1, frames)
+		m, _ := r.Meters().Pop()
+		if m.Warmup {
+			warmups++
+		}
+		for i := range frames {
+			y = append(y, out[2*i])
+		}
+	}
+	for i := range warm {
+		if y[i] != 0 {
+			t.Fatalf("amostra %d da partida não é silêncio: %g", i, y[i])
+		}
+	}
+	if want := (warm + frames - 1) / frames; warmups != want {
+		t.Errorf("%d callbacks de partida, esperado %d", warmups, want)
+	}
+	// a volta é gradual (rampa do mudo) e o som volta
+	var peakRamp, peakAfter float64
+	for i := warm; i < warm+ramp/4; i++ {
+		peakRamp = max(peakRamp, math.Abs(float64(y[i])))
+	}
+	for i := warm + 2*ramp; i < len(y); i++ {
+		peakAfter = max(peakAfter, math.Abs(float64(y[i])))
+	}
+	if peakAfter == 0 || peakRamp > 0.5*peakAfter {
+		t.Errorf("rampa: pico no começo %.3f, depois %.3f", peakRamp, peakAfter)
+	}
+
+	// atraso na partida não conta; fora dela, conta
+	m := Meter{Warmup: true}
+	r.finish(&m, frames, time.Now().Add(-time.Second))
+	if m.Overrun {
+		t.Error("atraso na partida não deveria contar")
+	}
+	m = Meter{}
+	r.finish(&m, frames, time.Now().Add(-time.Second))
+	if !m.Overrun {
+		t.Error("atraso fora da partida deveria contar")
+	}
+
+	// o monitor ignora a carga da partida
+	r2, _ := renderVivo(t)
+	mon := NewMonitor(r2)
+	defer mon.Close()
+	r2.Meters().Push(Meter{Warmup: true, Load: 5})
+	r2.Meters().Push(Meter{Load: 0.2})
+	time.Sleep(50 * time.Millisecond)
+	if l := mon.Take(); l.MaxLoad != 0.2 || l.Overruns != 0 {
+		t.Errorf("monitor: carga %.2f, atrasos %d", l.MaxLoad, l.Overruns)
+	}
+}

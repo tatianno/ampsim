@@ -155,6 +155,7 @@ func (h *Host) Open(cfg Config) error {
 		cfg.Buffer = 256
 	}
 	h.closeDevice()
+	h.r.Warmup() // partida com a saída muda (débito D4)
 
 	warning := ""
 	if useJack(cfg.Backend) {

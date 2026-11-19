@@ -58,7 +58,9 @@ func (m *Monitor) run() {
 			}
 			m.acc.Clips += uint64(v.OutClips)
 			m.acc.LimitDB = max(m.acc.LimitDB, v.LimitDB)
-			m.acc.MaxLoad = max(m.acc.MaxLoad, v.Load)
+			if !v.Warmup { // a partida é lenta de propósito (aquecimento): não é carga real
+				m.acc.MaxLoad = max(m.acc.MaxLoad, v.Load)
+			}
 			m.acc.GateOpen = v.GateOpen
 			m.acc.Bypassed = v.Bypassed
 		}
