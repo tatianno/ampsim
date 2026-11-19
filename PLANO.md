@@ -722,6 +722,9 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 - [x] **Pedaleira de presets** (18/11, `cmd/ampapp/ui/pedalboard.go`): abaixo da cadeia, 6 footswitches por banco
   (◀ BANCO ▶), LED no preset atual, teclas 1 a 6; o banco acompanha o preset atual. Some em janelas com menos de
   720 dp de altura (o rodapé tem prioridade; as teclas continuam valendo). A dica da cadeia subiu para a linha do título
+- [x] **Release v0.14.0** (19/11/2026): plugin LV2 (Fase 6a): um efeito por preset (os de fábrica e os do
+  usuário, mantidos pelo app em `~/.lv2/ampsim.lv2`) e os 17 pedais sozinhos; testado no Audacity e no Reaper.
+  Banco de fábrica Amps clássicos (24 presets em 4 bancos)
 - [x] **Release v0.13.0** (19/11/2026): grave dos TMB com a curva do circuito, limitador de segurança na saída,
   reamostragem em tempo real do NAM (placa a 44,1 kHz), calibração de entrada por `input_level_dbu` e partida
   silenciosa ao abrir a placa (D4)
