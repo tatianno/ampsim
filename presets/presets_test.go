@@ -225,4 +225,16 @@ func TestAjustes(t *testing.T) {
 	if err != nil || !s.StereoOn() || s.LimiterOn() {
 		t.Errorf("depois de salvar: estéreo %v, limitador %v, %v", s.StereoOn(), s.LimiterOn(), err)
 	}
+	// calibração de entrada NAM: desligada em 12 dBu por padrão; o que é salvo volta igual
+	if s.InputCalOn() || s.InputLevel() != engine.DefaultInputLevelDBu {
+		t.Errorf("calibração padrão: %v %v", s.InputCalOn(), s.InputLevel())
+	}
+	on, lvl := true, 8.5
+	s.InputCal, s.InputLevelDBu = &on, &lvl
+	if err := s.Save(p); err != nil {
+		t.Fatal(err)
+	}
+	if s, err = LoadSettings(p); err != nil || !s.InputCalOn() || s.InputLevel() != 8.5 {
+		t.Errorf("calibração depois de salvar: %v %v %v", s.InputCalOn(), s.InputLevel(), err)
+	}
 }

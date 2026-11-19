@@ -52,6 +52,7 @@ func run() error {
 		block     = flag.Int("bloco", 256, "tamanho de bloco (simula o buffer da placa)")
 		estereo   = flag.Bool("estereo", false, "saída estéreo (modulações e ambiências com Largura)")
 		limitador = flag.Bool("limitador", false, "limitador de segurança no fim da cadeia (teto −0,3 dBFS), como no app")
+		nivelDBu  = flag.Float64("nivel-entrada", math.NaN(), "calibração de entrada NAM: dBu que dá 0 dBFS na placa em que a DI foi gravada (ajusta os modelos com input_level_dbu)")
 		format    = flag.String("formato", "pcm16", "formato de saída: pcm16 ou float32")
 		normalize = flag.Float64("normalizar", 0, "se > 0, normaliza o pico para este valor em dBFS negativo (ex.: 1 → -1 dBFS)")
 		list      = flag.Bool("listar", false, "lista módulos e parâmetros e sai")
@@ -152,7 +153,7 @@ func run() error {
 	start := time.Now()
 	// mesma renderização offline da GUI ("Exportar…"): cadeia nova com o estado atual
 	ys, err := engine.RenderOfflineChannels(chain.State(), x, float64(fs), *tail, *block,
-		engine.Output{Stereo: *estereo, Limiter: *limitador}, nil)
+		engine.Output{Stereo: *estereo, Limiter: *limitador, InputCal: !math.IsNaN(*nivelDBu), InputLevelDBu: *nivelDBu}, nil)
 	if err != nil {
 		return err
 	}

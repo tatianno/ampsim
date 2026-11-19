@@ -8,7 +8,11 @@ import (
 	"gioui.org/widget"
 
 	"github.com/tatianno/ampsim/cmd/ampapp/audio"
+	"github.com/tatianno/ampsim/engine"
 )
+
+// CalStepDB é o passo dos botões − e + do nível da placa.
+const CalStepDB = 0.5
 
 // AudioID é o "pedal" da sobreposição que mostra as configurações de áudio.
 const AudioID = "__audio__"
@@ -33,6 +37,10 @@ type AudioPanel struct {
 	inNone          widget.Clickable
 	bufBtns         [8]widget.Clickable
 	apply, measure  widget.Clickable
+
+	// calibração de entrada NAM (salva por OnCalibration)
+	calOn, calDown, calUp widget.Clickable
+	OnCalibration         func(on bool, dbu float64)
 
 	applying   bool
 	msg        string
@@ -112,6 +120,24 @@ func (p *AudioPanel) update(gtx layout.Context) {
 				}
 			})
 		}()
+	}
+	on, dbu := p.s.Chain.InputCalibration()
+	changed := false
+	if p.calOn.Clicked(gtx) {
+		on, changed = !on, true
+	}
+	if p.calDown.Clicked(gtx) {
+		dbu, changed = dbu-CalStepDB, true
+	}
+	if p.calUp.Clicked(gtx) {
+		dbu, changed = dbu+CalStepDB, true
+	}
+	if changed {
+		if p.OnCalibration != nil {
+			p.OnCalibration(on, dbu)
+		} else {
+			p.s.Chain.SetInputCalibration(on, dbu)
+		}
 	}
 	if p.measure.Clicked(gtx) {
 		if err := p.s.Renderer.StartLatencyTest(); err != nil {
@@ -238,6 +264,47 @@ func (p *AudioPanel) Layout(gtx layout.Context, th *Theme) layout.Dimensions {
 				}
 				return coloredButton(gtx, th, &p.apply, label, 0, darken(th.Good, 0.45), th.Text)
 			}),
+			title("CALIBRAÇÃO DE ENTRADA (NAM)"),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				on, dbu := p.s.Chain.InputCalibration()
+				label := "Desligada"
+				if on {
+					label = "Ligada"
+				}
+				return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return choice(gtx, th, &p.calOn, label, on, gtx.Dp(108))
+					}),
+					layout.Rigid(spacer(16, 0)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return drawText(gtx, th, "placa: 0 dBFS =", textOpts{size: 12, color: th.Text})
+					}),
+					layout.Rigid(spacer(8, 0)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return smallButton(gtx, th, &p.calDown, "−", gtx.Dp(30))
+					}),
+					layout.Rigid(spacer(6, 0)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return drawText(gtx, th, fmt.Sprintf("%+.1f dBu", dbu), textOpts{size: 13, color: th.Gold, bold: true})
+					}),
+					layout.Rigid(spacer(6, 0)),
+					layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+						return smallButton(gtx, th, &p.calUp, "+", gtx.Dp(30))
+					}),
+				)
+			}),
+			layout.Rigid(spacer(0, 4)),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return drawText(gtx, th, "o nível em dBu que dá 0 dBFS na entrada da sua placa (no manual: \"max input level\")",
+					textOpts{size: 11, color: th.Dim})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return drawText(gtx, th, "modelos com input_level_dbu recebem placa − captura; os incluídos não têm esse dado e não mudam",
+					textOpts{size: 11, color: th.Dim})
+			}),
+			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+				return drawText(gtx, th, calStatus(p.s.Chain), textOpts{size: 11, color: th.Text})
+			}),
 			title("LATÊNCIA"),
 			layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 				return drawText(gtx, th, "Para medir: ligue um cabo da saída da placa numa entrada (canal escolhido) e baixe o volume.",
@@ -279,4 +346,34 @@ func choice(gtx layout.Context, th *Theme, c *widget.Clickable, label string, on
 		bg = darken(th.Gold, 0.35)
 	}
 	return coloredButton(gtx, th, c, label, width, bg, fg)
+}
+
+// calStatus descreve o ajuste de calibração do amp e do Drive NAM.
+func calStatus(c *engine.Chain) string {
+	on, _ := c.InputCalibration()
+	part := func(nome string, info *engine.NAMInfo, off func() (float64, bool)) string {
+		switch {
+		case info == nil:
+			return ""
+		case info.InputLevelDBu == nil:
+			return nome + ": o modelo não traz input_level_dbu"
+		case !on:
+			return fmt.Sprintf("%s: captura a %+.1f dBu (calibração desligada)", nome, *info.InputLevelDBu)
+		}
+		db, _ := off()
+		return fmt.Sprintf("%s: captura a %+.1f dBu → entrada %+.1f dB", nome, *info.InputLevelDBu, db)
+	}
+	var s string
+	if c.Pre().Mode() == engine.AmpNAM {
+		s = part("amp", c.Pre().NAMInfo(), c.Pre().NAMInputOffset)
+	}
+	if d := c.Drive(); c.Enabled("drive") && c.InChain("drive") && d.Type() == engine.DriveNAM {
+		if t := part("drive", d.NAMInfo(), d.NAMInputOffset); t != "" {
+			if s != "" {
+				s += "  ·  "
+			}
+			s += t
+		}
+	}
+	return s
 }

@@ -18,6 +18,16 @@ func RenderOffline(st State, x []float64, fs, tailS float64, block int, progress
 type Output struct {
 	Stereo  bool // saída estéreo (senão, mono)
 	Limiter bool // limitador de segurança no fim da cadeia
+	// Calibração de entrada dos modelos NAM (veja Chain.SetInputCalibration).
+	InputCal      bool
+	InputLevelDBu float64
+}
+
+// OutputOf devolve os ajustes de saída e de calibração em uso na cadeia c (para renderizar
+// offline com o mesmo som do app).
+func OutputOf(c *Chain) Output {
+	on, dbu := c.InputCalibration()
+	return Output{Stereo: c.Stereo(), Limiter: c.Limiter(), InputCal: on, InputLevelDBu: dbu}
 }
 
 // RenderOfflineChannels é o RenderOffline com os ajustes de saída: em estéreo devolve L e R;
@@ -33,6 +43,7 @@ func RenderOfflineChannels(st State, x []float64, fs, tailS float64, block int, 
 	}
 	c.SetStereo(stereo)
 	c.SetLimiter(out.Limiter)
+	c.SetInputCalibration(out.InputCal, out.InputLevelDBu)
 	c.Prepare(fs, block)
 	lat := c.Latency()
 	n := len(x) + int(tailS*fs)

@@ -45,12 +45,15 @@ var DefaultDriveNAM = capturas.Prefix + "TS7 TS9 D5 T5 L5 (Medium Drive)"
 
 // NAMInfo descreve o modelo carregado (para a GUI).
 type NAMInfo struct {
-	Ref       string // "embutida:<nome>" ou caminho do arquivo
-	Name      string // nome para exibir
-	Channels  int    // canais da rede em uso
-	Size      string // "lite" ou "completo" (vazio se o arquivo só tem uma rede)
-	Warning   string // ex.: taxa da placa diferente da do modelo, sem reamostragem possível
-	Resampled string // ex.: "44,1↔48 kHz" (reamostrado; vazio se o modelo roda na taxa do áudio)
+	Ref      string // "embutida:<nome>" ou caminho do arquivo
+	Name     string // nome para exibir
+	Channels int    // canais da rede em uso
+	Size     string // "lite" ou "completo" (vazio se o arquivo só tem uma rede)
+	Warning  string // ex.: taxa da placa diferente da do modelo, sem reamostragem possível
+	// InputLevelDBu é o input_level_dbu do modelo (nil se o arquivo não traz): o nível em dBu
+	// que dava 0 dBFS na placa da captura (veja SetInputCalibration).
+	InputLevelDBu *float64
+	Resampled     string // ex.: "44,1↔48 kHz" (reamostrado; vazio se o modelo roda na taxa do áudio)
 }
 
 // namNet é uma rede pronta para a thread de áudio, na taxa do áudio: se o modelo foi
@@ -114,6 +117,7 @@ type namInst struct {
 	nets  []*namNet
 	infos []*NAMInfo // um por rede (montados fora da thread de áudio)
 	gain  float32    // normalização pelo loudness
+	level *float64   // input_level_dbu (nil se o arquivo não traz)
 }
 
 // namBlock roda modelos NAM; é o "motor" do pré-amp no modo NAM e do Drive no tipo NAM. A
@@ -126,6 +130,7 @@ type namBlock struct {
 
 	fs       float64
 	maxBlock int
+	cal      *inputCal // calibração da cadeia (nil fora de uma cadeia)
 
 	// thread de áudio
 	inst      *namInst
@@ -134,6 +139,7 @@ type namBlock struct {
 	xf, xstep float64
 	in, a, b  []float32
 	pending   atomic.Pointer[namInst]
+	calG      dsp.Smoother // ganho de calibração (linear), com rampa
 
 	info atomic.Pointer[NAMInfo]
 
@@ -186,11 +192,11 @@ func (n *namBlock) Ref() string {
 }
 
 func (n *namBlock) build(m *nam.Model, ref string) *namInst {
-	in := &namInst{model: m, ref: ref, gain: 1}
+	in := &namInst{model: m, ref: ref, gain: 1, level: m.Metadata.InputLevelDBu}
 	for i, sm := range m.Submodels {
 		net, err := newNamNet(sm.Spec, m.SampleRate, n.fs, n.maxBlock, n.latency)
 		in.nets = append(in.nets, net)
-		info := &NAMInfo{Ref: ref, Name: displayName(m, ref), Channels: sm.Spec.Channels}
+		info := &NAMInfo{Ref: ref, Name: displayName(m, ref), Channels: sm.Spec.Channels, InputLevelDBu: in.level}
 		if len(m.Submodels) > 1 {
 			info.Size = "completo"
 			if i < len(m.Submodels)-1 {
@@ -219,6 +225,7 @@ func (n *namBlock) prepare(fs float64, maxBlock int) {
 	n.a = make([]float32, maxBlock)
 	n.b = make([]float32, maxBlock)
 	n.xstep = 1 / (AmpFadeMs / 1000 * fs)
+	n.calG = dsp.NewSmoother(fs, CalibrationFadeMs)
 
 	n.mu.Lock()
 	if n.model == nil && n.def != "" {
@@ -240,6 +247,18 @@ func (n *namBlock) reset() {
 		n.cur.reset()
 	}
 	n.old, n.xf = nil, 1
+	n.calG = dsp.NewSmoother(n.fs, CalibrationFadeMs) // volta direto ao alvo no próximo bloco
+}
+
+// calOffset devolve o ajuste de calibração do modelo atual (dB) e se ele vale.
+func (n *namBlock) calOffset() (float64, bool) {
+	n.mu.Lock()
+	m := n.model
+	n.mu.Unlock()
+	if m == nil || m.Metadata.InputLevelDBu == nil || n.cal == nil || !n.cal.on.Load() {
+		return 0, false
+	}
+	return n.cal.offsetDB(m.Metadata.InputLevelDBu), true
 }
 
 // netFor devolve o índice da rede para o tamanho pedido.
@@ -275,10 +294,10 @@ func (n *namBlock) process(buf []float64, inGain float64, size int) {
 		clear(buf)
 		return
 	}
-	g := float32(inGain)
+	n.calG.SetTarget(math.Pow(10, n.cal.offsetDB(n.inst.level)/20))
 	x := n.in[:k]
 	for i, v := range buf {
-		x[i] = float32(v) * g
+		x[i] = float32(v * inGain * n.calG.Next())
 	}
 	a := n.a[:k]
 	n.cur.process(x, a)

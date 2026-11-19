@@ -5,6 +5,8 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+
+	"github.com/tatianno/ampsim/engine"
 )
 
 // Settings são os ajustes do app que não fazem parte do som de um preset (dependem do
@@ -12,6 +14,10 @@ import (
 type Settings struct {
 	Stereo  *bool `json:"estereo,omitempty"`   // saída estéreo (ausente = ligada)
 	Limiter *bool `json:"limitador,omitempty"` // limitador de segurança na saída (ausente = ligado)
+	// Calibração de entrada dos modelos NAM: ligada ou não (ausente = desligada) e o nível da
+	// placa em dBu para 0 dBFS (ausente = engine.DefaultInputLevelDBu).
+	InputCal      *bool    `json:"calibrar_entrada,omitempty"`
+	InputLevelDBu *float64 `json:"nivel_entrada_dbu,omitempty"`
 }
 
 // StereoOn informa se a saída estéreo está ligada (o padrão é ligada).
@@ -19,6 +25,17 @@ func (s Settings) StereoOn() bool { return s.Stereo == nil || *s.Stereo }
 
 // LimiterOn informa se o limitador de saída está ligado (o padrão é ligado).
 func (s Settings) LimiterOn() bool { return s.Limiter == nil || *s.Limiter }
+
+// InputCalOn informa se a calibração de entrada está ligada (o padrão é desligada).
+func (s Settings) InputCalOn() bool { return s.InputCal != nil && *s.InputCal }
+
+// InputLevel devolve o nível da placa em dBu para 0 dBFS (padrão: o do plugin, 12 dBu).
+func (s Settings) InputLevel() float64 {
+	if s.InputLevelDBu == nil {
+		return engine.DefaultInputLevelDBu
+	}
+	return *s.InputLevelDBu
+}
 
 // SettingsPath devolve o ajustes.json ao lado da pasta de presets dir ("" sem pasta).
 func SettingsPath(dir string) string {

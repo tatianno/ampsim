@@ -114,6 +114,7 @@ func run() error {
 		st, _ := presets.LoadSettings(presets.SettingsPath(dir))
 		chain.SetStereo(st.StereoOn())
 		chain.SetLimiter(st.LimiterOn())
+		chain.SetInputCalibration(st.InputCalOn(), st.InputLevel())
 	}
 
 	s := audio.NewSession(chain, float64(*taxa))
@@ -282,6 +283,7 @@ const ajuda = `comandos:
   spillover [on|off]             caudas de delay/reverb continuam na troca de preset (padrão: on)
   estereo [on|off]               saída estéreo (padrão: on, salvo pela janela em ajustes.json)
   limitador [on|off]             limitador de segurança na saída, teto −0,3 dBFS (padrão: on)
+  calibrar [on|off|<dBu>]        calibração de entrada NAM pelo input_level_dbu (dBu da placa em 0 dBFS)
   gravar <nome>                  salva o som atual como preset seu
   salvar <arq.json> | carregar <arq.json|nome>   presets em arquivo
   sair`
@@ -400,6 +402,32 @@ func (a *app) exec(line string) bool {
 		} else {
 			fmt.Println("limitador: desligado (acima de 0 dBFS corta)")
 		}
+	case "calibrar":
+		on, dbu := a.chain.InputCalibration()
+		switch rest {
+		case "":
+		case "on":
+			on = true
+		case "off":
+			on = false
+		default:
+			v, perr := strconv.ParseFloat(strings.ReplaceAll(rest, ",", "."), 64)
+			if perr != nil {
+				err = fmt.Errorf("use: calibrar [on|off|<dBu da placa em 0 dBFS>]")
+				break
+			}
+			on, dbu = true, v
+		}
+		a.chain.SetInputCalibration(on, dbu)
+		on, dbu = a.chain.InputCalibration()
+		if on {
+			fmt.Printf("calibração de entrada NAM: ligada, placa com 0 dBFS = %+.1f dBu\n", dbu)
+		} else {
+			fmt.Printf("calibração de entrada NAM: desligada (nível da placa guardado: %+.1f dBu)\n", dbu)
+		}
+		if db, ok := a.chain.Pre().NAMInputOffset(); ok {
+			fmt.Printf("  amp NAM: ajuste de entrada %+.1f dB\n", db)
+		}
 	case "spillover":
 		switch rest {
 		case "on":
@@ -489,7 +517,7 @@ func (a *app) exec(line string) bool {
 		default:
 			var out [][]float64
 			if out, err = engine.RenderOfflineChannels(a.chain.State(), clip.Samples, float64(clip.FS), 2, 512,
-				engine.Output{Stereo: a.chain.Stereo(), Limiter: a.chain.Limiter()}, nil); err == nil {
+				engine.OutputOf(a.chain), nil); err == nil {
 				if err = wav.WriteFile(rest, clip.FS, out, wav.PCM24); err == nil {
 					fmt.Println("exportado:", rest)
 				}

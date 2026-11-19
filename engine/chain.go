@@ -72,6 +72,7 @@ type Chain struct {
 	stereo     bool        // modo em uso (thread de áudio)
 
 	limWant atomic.Bool        // limitador de saída pedido (SetLimiter)
+	cal     inputCal           // calibração de entrada dos modelos NAM (SetInputCalibration)
 	lim     *dsp.SafetyLimiter // no fim da cadeia (criado em Prepare)
 
 	// spillover (spill.go)
@@ -88,7 +89,11 @@ type Chain struct {
 // NewChain monta uma cadeia com os módulos na ordem dada (todos ligados).
 func NewChain(mods ...Module) *Chain {
 	c := &Chain{byID: make(map[string]*slot), rgain: 1}
+	c.cal.set(false, DefaultInputLevelDBu)
 	for _, m := range mods {
+		if u, ok := m.(calUser); ok {
+			u.useCal(&c.cal)
+		}
 		s := &slot{m: m}
 		s.enabled.Store(true)
 		c.all = append(c.all, s)

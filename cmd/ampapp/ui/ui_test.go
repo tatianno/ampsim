@@ -909,3 +909,41 @@ func TestLimitadorLEDEBotao(t *testing.T) {
 		t.Errorf("depois do clique: cadeia %v, ajustes %v", a.Chain.Limiter(), st.LimiterOn())
 	}
 }
+
+// Calibração de entrada NAM no painel Áudio: liga, ajusta o nível em passos de CalStepDB e
+// grava em ajustes.json; reabrindo o app, volta igual.
+func TestPainelDeAudioCalibracao(t *testing.T) {
+	a, _ := novoApp(t)
+	dir := t.TempDir()
+	a.UsePresetDir(dir)
+	if on, dbu := a.Chain.InputCalibration(); on || dbu != engine.DefaultInputLevelDBu {
+		t.Fatalf("começa com %v %v", on, dbu)
+	}
+	a.input.OnAudio()
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	a.audioSet.calOn.Click()
+	h.frame(a.Layout)
+	a.audioSet.calUp.Click()
+	h.frame(a.Layout)
+	a.audioSet.calUp.Click()
+	h.frame(a.Layout)
+	a.audioSet.calDown.Click()
+	h.frame(a.Layout)
+	want := engine.DefaultInputLevelDBu + CalStepDB
+	if on, dbu := a.Chain.InputCalibration(); !on || dbu != want {
+		t.Errorf("cadeia: %v %v, esperado ligada em %v", on, dbu, want)
+	}
+	st, _ := presets.LoadSettings(a.settings)
+	if !st.InputCalOn() || st.InputLevel() != want {
+		t.Errorf("ajustes.json: %v %v", st.InputCalOn(), st.InputLevel())
+	}
+	a.Chain.SetInputCalibration(false, 0)
+	a.UsePresetDir(dir) // reabrindo: lê ajustes.json
+	if on, dbu := a.Chain.InputCalibration(); !on || dbu != want {
+		t.Errorf("reaberto: %v %v", on, dbu)
+	}
+	if a.statusErr {
+		t.Errorf("erro no rodapé: %q", a.status)
+	}
+}

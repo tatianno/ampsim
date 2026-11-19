@@ -113,6 +113,11 @@ func NewApp(s *audio.Session) *App {
 	a.transport = NewTransport(s.Player)
 	a.input = NewInputPanel(s)
 	a.audioSet = NewAudioPanel(s, a.Post)
+	a.audioSet.OnCalibration = func(on bool, dbu float64) {
+		if err := a.SetInputCalibration(on, dbu); err != nil {
+			a.setStatus("ajustes: "+err.Error(), true)
+		}
+	}
 	a.input.OnAudio = func() {
 		a.audioSet.Refresh()
 		a.open = AudioID
@@ -204,6 +209,7 @@ func (a *App) UsePresetDir(dir string) {
 	}
 	a.Chain.SetStereo(st.StereoOn())
 	a.Chain.SetLimiter(st.LimiterOn())
+	a.Chain.SetInputCalibration(st.InputCalOn(), st.InputLevel())
 }
 
 // SetStereo liga ou desliga a saída estéreo e salva em ajustes.json.
@@ -219,6 +225,16 @@ func (a *App) SetLimiter(on bool) error {
 	a.Chain.SetLimiter(on)
 	st, _ := presets.LoadSettings(a.settings)
 	st.Limiter = &on
+	return st.Save(a.settings)
+}
+
+// SetInputCalibration liga ou desliga a calibração de entrada NAM, com o nível da placa em dBu
+// para 0 dBFS, e salva em ajustes.json.
+func (a *App) SetInputCalibration(on bool, dbu float64) error {
+	a.Chain.SetInputCalibration(on, dbu)
+	on, dbu = a.Chain.InputCalibration()
+	st, _ := presets.LoadSettings(a.settings)
+	st.InputCal, st.InputLevelDBu = &on, &dbu
 	return st.Save(a.settings)
 }
 
@@ -756,7 +772,7 @@ func (a *App) exportAsync() {
 		return
 	}
 	st := a.Chain.State() // o som de agora; mexer nos knobs durante a exportação não afeta
-	output := engine.Output{Stereo: a.Chain.Stereo(), Limiter: a.Chain.Limiter()}
+	output := engine.OutputOf(a.Chain)
 	suggested := strings.TrimSuffix(clip.Name, filepath.Ext(clip.Name)) + "-ampsim.wav"
 	a.exporting, a.exportPct = true, 0
 	go func() {

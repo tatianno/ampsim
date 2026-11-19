@@ -923,8 +923,20 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
     até 15 kHz (a diferença que sobra vem do que a rede recebe acima de 18 kHz); impulso alinhado com o simulado
   - a GUI mostra "44,1↔48 kHz" na linha de detalhes do modelo; o aviso de taxa só aparece se não der para
     reamostrar (taxa não inteira ou razão L/M > 4096). O `ampcli` continua reamostrando a entrada offline para 48 kHz
-- [ ] Calibração de nível a partir de `input_level_dbu` (as capturas incluídas não têm; a da EVH tem 13 dBu):
-  hoje o ajuste é o knob Entrada + o trim da Fase 4
+- [x] **Calibração de entrada por `input_level_dbu`** (19/11), com a regra do plugin oficial: ganho de entrada do
+  modelo += nível da placa (dBu em 0 dBFS) − `input_level_dbu` da captura. Vale para o amp e o Drive NAM; modelos
+  sem o metadado (todas as capturas incluídas) não mudam
+  - `Chain.SetInputCalibration(on, dBu)` (atômico, rampa de 20 ms ao ligar, mudar o nível ou trocar de modelo);
+    padrão desligada em +12 dBu (o padrão do plugin); limites −20..+40 dBu
+  - é ajuste do equipamento, não do som: fica em ajustes.json (`calibrar_entrada`, `nivel_entrada_dbu`), fora do
+    preset; a exportação leva junto (`engine.OutputOf`)
+  - painel Áudio…: seção CALIBRAÇÃO DE ENTRADA (NAM) com Ligada/Desligada, nível com − / + (0,5 dB) e o ajuste
+    em uso ("amp: captura a +13.0 dBu → entrada −1.0 dB"); console `calibrar [on|off|<dBu>]`; `ampcli -nivel-entrada`
+  - testes: calibrada = −1 dB no knob Entrada (diferença < −100 dB); desligada e sem metadado não mudam nada;
+    Drive; limites; zero alocação ligando e desligando; ajustes.json ida e volta; botões do painel
+  - AudioBox USB: o manual não traz o nível máximo da entrada de instrumento, e o knob GAIN o muda dB por dB
+    (só daria para medir com multímetro e o knob numa posição marcada). Decisão (19/11): não medir; fica
+    desligada e o nível é acertado à mão com o trim + knob Entrada. Útil com placas de ganho fixo que publicam o valor
 - [ ] Testar ao vivo com a guitarra (CPU no callback com o completo, crossfades, nível de entrada ideal)
 - [ ] Medir a CPU com standard (A1, 16 canais) quando houver um arquivo (o SIMD de 19/11 já vale para ele)
 - [ ] (Depois) LSTM
