@@ -26,7 +26,7 @@ func runGUI(s *audio.Session, cleanup func(), version, aviso string) error {
 		a.Open(id)
 	}
 	if os.Getenv("AMPSIM_PEDALEIRA_EDITAR") != "" { // também para conferir o visual
-		a.Pedalboard().SetEditing(true)
+		a.Pedalboard().OpenEditor()
 	}
 	go func() {
 		w := new(gioapp.Window)

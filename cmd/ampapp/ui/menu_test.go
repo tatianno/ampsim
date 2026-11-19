@@ -144,3 +144,28 @@ func TestAnalisadorNaTela(t *testing.T) {
 		t.Error("desligar o analisador deveria parar a cópia do áudio")
 	}
 }
+
+func TestAtalhosPeloMenu(t *testing.T) {
+	a, _ := novoApp(t)
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	escolhe(h, a, MenuShortcuts)
+	if a.Opened() != ShortcutsID {
+		t.Fatalf("aberto %q, esperava os atalhos", a.Opened())
+	}
+	h.frame(a.Layout)
+}
+
+// TestAtalhosListados confere que cada tecla tratada em App.keys aparece na lista.
+func TestAtalhosListados(t *testing.T) {
+	var all []string
+	for _, s := range keyShortcuts {
+		all = append(all, s.keys)
+	}
+	got := strings.Join(all, "|")
+	for _, k := range []string{"T", "A", "1 a 6", "Espaço", "Esc"} {
+		if !strings.Contains(got, k) {
+			t.Errorf("a tecla %q não está na lista de atalhos", k)
+		}
+	}
+}

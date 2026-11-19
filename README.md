@@ -47,13 +47,15 @@ para Go em streaming, validados contra as saídas do Python.
   abrir a versão grande, com leitura sob o ponteiro.
 - **Menu** (canto superior direito): Áudio…, Afinador, **Backup dos presets…** (um `.zip` com os seus presets, a
   pedaleira e os `.nam`/IRs que eles usam), **Restaurar presets…** (guarda antes o estado atual em
-  `~/.config/ampsim/backups`) e Sobre.
-- **Presets**: 14 de fábrica (Clean, Crunch, Blues, Rock Clássico, Solo Hard Rock, Metal, Funk, Country, Surf,
-  Psicodélico, Modulação, Worship, Ambiente, Synth), cada um com seu amp NAM, gabinete e pedais, todos no mesmo
+  `~/.config/ampsim/backups`), **Atalhos** (teclado e mouse) e Sobre.
+- **Presets**: 18 de fábrica em 3 bancos temáticos da pedaleira: **Limpos** (Clean, Country, Funk, Surf, New
+  Wave, Pop Anos 80), **Drive e rock** (Blues, Crunch, Rock Clássico, Treble Booster, Solo Hard Rock, Metal) e
+  **Efeitos e texturas** (Psicodélico, Fuzz Oitavado, Modulação, Worship, Ambiente, Synth), cada um com seu amp NAM, gabinete e pedais, todos no mesmo
   volume; e os seus, salvos em `~/.config/ampsim/presets`
   (JSON, o mesmo formato servirá para o futuro plugin LV2); `-preset Metal` funciona no app e no CLI.
-- **Pedaleira de presets** abaixo da cadeia: 6 footswitches por banco, como um controlador (teclas 1 a 6); em
-  **Editar**, escolha o preset de cada footswitch (ou **Restaurar padrão**).
+- **Pedaleira de presets** abaixo da cadeia: 6 footswitches por banco, como um controlador (teclas 1 a 6), com o
+  nome do banco (ex.: LIMPOS) entre as setas. **Editar** abre a matriz de bancos × footswitches: clique numa célula
+  para escolher o preset, dê nome aos bancos, acrescente bancos (até 10) ou **Restaurar padrão**.
 - **CLI** para processar arquivos offline.
 
 ## Requisitos

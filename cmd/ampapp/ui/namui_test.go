@@ -13,6 +13,7 @@ import (
 
 	"github.com/tatianno/ampsim/capturas"
 	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/presets"
 )
 
 // espera roda quadros até cond valer (os modelos carregam numa goroutine).
@@ -306,11 +307,14 @@ func TestPedaleira(t *testing.T) {
 	h := newHarness(1280, 800)
 	h.frame(a.Layout)
 	pb, b := a.Presets(), a.Pedalboard()
-	// footswitch 2 do banco 1 = 2º preset (Crunch)
+	// footswitch 2 do banco 1 = 2º preset (Country); o banco 1 é o dos limpos
+	if b.BankName(b.Bank()) != "Limpos" {
+		t.Errorf("nome do banco 1: %q", b.BankName(b.Bank()))
+	}
 	b.sw[1].Click()
 	h.frame(a.Layout)
-	if c, _ := pb.Current(); c.Name != "Crunch" {
-		t.Errorf("footswitch 2: %q, esperava Crunch", c.Name)
+	if c, _ := pb.Current(); c.Name != "Country" {
+		t.Errorf("footswitch 2: %q, esperava Country", c.Name)
 	}
 	// tecla 4 = 4º preset do banco
 	h.r.Queue(key.Event{Name: "4", State: key.Press})
@@ -326,6 +330,9 @@ func TestPedaleira(t *testing.T) {
 	if c, _ := pb.Current(); c.Name != pb.list[BoardSlots].Name {
 		t.Errorf("banco 2, footswitch 1: %q, esperava %q", c.Name, pb.list[BoardSlots].Name)
 	}
+	if b.BankName(b.Bank()) != "Drive e rock" {
+		t.Errorf("nome do banco 2: %q", b.BankName(b.Bank()))
+	}
 	pb.Load(0)
 	h.frame(a.Layout)
 	if b.Bank() != 0 {
@@ -337,8 +344,8 @@ func TestPedaleira(t *testing.T) {
 	}
 }
 
-// Configurar os footswitches: escolher o preset de um footswitch, salvar, reabrir, preset
-// apagado e restaurar o padrão.
+// Configurar os footswitches pela matriz: escolher o preset de uma célula, salvar, reabrir,
+// preset apagado e restaurar o padrão. Trocar um preset mantém os nomes dos bancos.
 func TestPedaleiraConfiguravel(t *testing.T) {
 	a, _ := novoApp(t)
 	cfg := filepath.Join(t.TempDir(), "pedaleira.json")
@@ -349,39 +356,42 @@ func TestPedaleiraConfiguravel(t *testing.T) {
 	if b.Custom() {
 		t.Fatal("começa na ordem padrão")
 	}
-	// modo de edição: o footswitch 1 abre a escolha em vez de trocar de preset
+	// Editar abre a matriz; clicar na célula 1 do banco 1 abre a escolha
 	b.edit.Click()
 	h.frame(a.Layout)
-	b.sw[0].Click()
-	h.frame(a.Layout)
-	if a.Opened() != PedalboardPickID {
-		t.Fatalf("aberto %q, esperava a escolha do footswitch", a.Opened())
+	if a.Opened() != PedalboardEditID {
+		t.Fatalf("aberto %q, esperava a edição da pedaleira", a.Opened())
 	}
 	h.frame(a.Layout)
-	metal := -1
-	for i, p := range pb.list {
-		if p.Name == "Metal" {
-			metal = i
-		}
+	b.cells[0].Click()
+	h.frame(a.Layout)
+	if b.pick != 0 {
+		t.Fatalf("a célula 1 deveria abrir a escolha (pick %d)", b.pick)
 	}
+	h.frame(a.Layout)
+	metal := slices.IndexFunc(pb.list, func(p presets.Preset) bool { return p.Name == "Metal" })
 	b.rows[metal].Click()
 	h.frame(a.Layout)
-	if a.Opened() != "" || b.slotName(0) != "Metal" || !b.Custom() {
-		t.Fatalf("footswitch 1 = %q (aberto %q)", b.slotName(0), a.Opened())
+	if b.pick != -1 || a.Opened() != PedalboardEditID {
+		t.Fatalf("escolher deveria voltar à matriz (pick %d, aberto %q)", b.pick, a.Opened())
 	}
-	// fora da edição, o footswitch 1 carrega o Metal; o 2 continua o padrão (Crunch)
-	b.edit.Click()
-	h.frame(a.Layout)
+	if b.slotName(0) != "Metal" || !b.Custom() {
+		t.Fatalf("footswitch 1 = %q", b.slotName(0))
+	}
+	if b.BankName(0) != "Limpos" || b.BankName(2) != "Efeitos e texturas" {
+		t.Errorf("trocar um preset não pode apagar os nomes: %q, %q", b.BankName(0), b.BankName(2))
+	}
+	a.open = ""
 	b.Press(0)
 	if c, _ := pb.Current(); c.Name != "Metal" {
 		t.Errorf("footswitch 1 carregou %q, esperava Metal", c.Name)
 	}
-	if b.slotName(1) != "Crunch" {
-		t.Errorf("footswitch 2 = %q, esperava o padrão (Crunch)", b.slotName(1))
+	if b.slotName(1) != "Country" {
+		t.Errorf("footswitch 2 = %q, esperava o padrão (Country)", b.slotName(1))
 	}
-	// salvo em disco: uma pedaleira nova lê a mesma configuração
-	if c := NewPedalboard(pb, cfg, nil, nil); c.slotName(0) != "Metal" {
-		t.Errorf("reaberto: footswitch 1 = %q", c.slotName(0))
+	// salvo em disco: uma pedaleira nova lê a mesma configuração, com os nomes
+	if c := NewPedalboard(pb, cfg, nil, nil); c.slotName(0) != "Metal" || c.BankName(1) != "Drive e rock" {
+		t.Errorf("reaberto: footswitch 1 = %q, banco 2 = %q", c.slotName(0), c.BankName(1))
 	}
 	// preset que não existe mais: aparece apagado e não faz nada
 	if err := b.Assign(2, "Não Existe"); err != nil {
@@ -392,8 +402,8 @@ func TestPedaleiraConfiguravel(t *testing.T) {
 	if c, _ := pb.Current(); c.Name != antes.Name || b.slotPreset(2) != -1 {
 		t.Error("footswitch com preset apagado não deveria trocar de preset")
 	}
-	// restaurar o padrão: 1º clique arma, 2º confirma; o arquivo some
-	b.edit.Click()
+	// restaurar o padrão (na matriz): 1º clique arma, 2º confirma; o arquivo some
+	b.OpenEditor()
 	h.frame(a.Layout)
 	b.reset.Click()
 	h.frame(a.Layout)
@@ -402,20 +412,103 @@ func TestPedaleiraConfiguravel(t *testing.T) {
 	}
 	b.reset.Click()
 	h.frame(a.Layout)
-	if b.Custom() || b.slotName(0) != "Clean" {
-		t.Errorf("restaurado: footswitch 1 = %q", b.slotName(0))
+	if b.Custom() || b.slotName(0) != "Clean" || b.BankName(0) != "Limpos" {
+		t.Errorf("restaurado: footswitch 1 = %q, banco 1 = %q", b.slotName(0), b.BankName(0))
 	}
 	if _, err := os.Stat(cfg); !os.IsNotExist(err) {
 		t.Error("restaurar deveria apagar pedaleira.json")
 	}
 }
 
+// Nomes dos bancos: renomear pela matriz (com os atalhos desligados enquanto digita), banco
+// sem nome mostra "BANCO n/N", e bancos novos/removidos.
+func TestPedaleiraNomesEBancos(t *testing.T) {
+	a, _ := novoApp(t)
+	cfg := filepath.Join(t.TempDir(), "pedaleira.json")
+	a.pedalboard = NewPedalboard(a.Presets(), cfg, a.setStatus, func(id string) { a.open = id })
+	b := a.pedalboard
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	if got := b.bankLabel(); got != "LIMPOS" {
+		t.Errorf("rótulo do banco 1: %q", got)
+	}
+	b.OpenEditor()
+	h.frame(a.Layout)
+	// digitar no nome do banco 1: "1" vira texto, não aciona o footswitch
+	h.r.Source().Execute(key.FocusCmd{Tag: &b.nameEds[0]})
+	h.frame(a.Layout)
+	antes, _ := a.Presets().Current()
+	h.r.Queue(key.Event{Name: "1", State: key.Press})
+	h.frame(a.Layout)
+	if c, _ := a.Presets().Current(); c.Name != antes.Name {
+		t.Error("digitando o nome do banco, a tecla 1 não deveria trocar de preset")
+	}
+	b.nameEds[0].SetText("Meus limpos")
+	h.frame(a.Layout) // SetText não gera ChangeEvent: grava direto
+	if err := b.SetBankName(0, b.nameEds[0].Text()); err != nil {
+		t.Fatal(err)
+	}
+	if b.BankName(0) != "Meus limpos" || !b.Custom() {
+		t.Fatalf("nome do banco 1 = %q", b.BankName(0))
+	}
+	// sem nome: volta a mostrar a posição
+	if err := b.SetBankName(1, "  "); err != nil {
+		t.Fatal(err)
+	}
+	b.SetBank(1)
+	if got := b.bankLabel(); got != "BANCO 2/3" {
+		t.Errorf("banco sem nome: %q", got)
+	}
+	// nome comprido é cortado
+	if err := b.SetBankName(2, "Um nome comprido demais para caber"); err != nil {
+		t.Fatal(err)
+	}
+	if n := len([]rune(b.BankName(2))); n != boardNameMax {
+		t.Errorf("nome com %d letras, máximo %d", n, boardNameMax)
+	}
+	// + Banco e − Último banco
+	if b.CanRemoveBank() {
+		t.Error("com 3 bancos não dá para remover")
+	}
+	b.addBank.Click()
+	h.frame(a.Layout)
+	if b.banks() != 4 || !b.CanRemoveBank() {
+		t.Fatalf("depois de + Banco: %d bancos", b.banks())
+	}
+	if err := b.Assign(3*BoardSlots, "Clean"); err != nil {
+		t.Fatal(err)
+	}
+	if b.CanRemoveBank() {
+		t.Error("banco com preset não pode ser removido")
+	}
+	if err := b.Assign(3*BoardSlots, ""); err != nil {
+		t.Fatal(err)
+	}
+	b.delBank.Click()
+	h.frame(a.Layout)
+	if b.banks() != 3 {
+		t.Errorf("depois de − Último banco: %d bancos", b.banks())
+	}
+	// configuração antiga (sem nomes): bancos sem nome
+	old := filepath.Join(t.TempDir(), "antiga.json")
+	if err := os.WriteFile(old, []byte(`{"slots":["Metal","Clean"]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if c := NewPedalboard(a.Presets(), old, nil, nil); c.BankName(0) != "" || c.bankLabel() != "BANCO 1/3" {
+		t.Errorf("configuração antiga: nome %q, rótulo %q", c.BankName(0), c.bankLabel())
+	}
+}
+
 func TestPedaleiraEdicaoVisual(t *testing.T) {
 	a, _ := novoApp(t)
 	h := newHarness(1280, 800)
-	a.open = PedalboardPickID // sem footswitch escolhido: fecha, sem quebrar
+	a.pedalboard.OpenEditor()
 	h.frame(a.Layout)
-	if a.Opened() != "" {
-		t.Error("a escolha sem footswitch deveria fechar")
+	a.pedalboard.pick = 7 // escolha aberta: desenha sem quebrar
+	h.frame(a.Layout)
+	a.pedalboard.back.Click()
+	h.frame(a.Layout)
+	if a.pedalboard.pick != -1 || a.Opened() != PedalboardEditID {
+		t.Error("Voltar deveria retornar à matriz")
 	}
 }

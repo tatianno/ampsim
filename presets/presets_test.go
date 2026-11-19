@@ -145,3 +145,13 @@ func TestFabricaNoMesmoVolume(t *testing.T) {
 		}
 	}
 }
+
+func TestFabricaEmBancosTematicos(t *testing.T) {
+	f := Factory()
+	if len(f) != FactoryBankSize*len(FactoryBanks) {
+		t.Fatalf("%d presets de fábrica para %d bancos de %d", len(f), len(FactoryBanks), FactoryBankSize)
+	}
+	if f[0].Name != "Clean" || f[FactoryBankSize].Name != "Blues" || f[2*FactoryBankSize].Name != "Psicodélico" {
+		t.Errorf("início dos bancos: %s, %s, %s", f[0].Name, f[FactoryBankSize].Name, f[2*FactoryBankSize].Name)
+	}
+}

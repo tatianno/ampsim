@@ -24,13 +24,14 @@ const (
 	MenuTuner
 	MenuBackup
 	MenuRestore
+	MenuShortcuts
 	MenuAbout
 	menuItems
 )
 
-var menuLabels = [menuItems]string{"Áudio…", "Afinador", "Backup dos presets…", "Restaurar presets…", "Sobre"}
-var menuHints = [menuItems]string{"", "A", "", "", ""}
-var menuSepBefore = [menuItems]bool{MenuBackup: true, MenuAbout: true}
+var menuLabels = [menuItems]string{"Áudio…", "Afinador", "Backup dos presets…", "Restaurar presets…", "Atalhos", "Sobre"}
+var menuHints = [menuItems]string{MenuTuner: "A"}
+var menuSepBefore = [menuItems]bool{MenuBackup: true, MenuShortcuts: true}
 
 // Menu é o botão "Menu" da barra de topo e a lista que ele abre.
 type Menu struct {
@@ -140,6 +141,8 @@ func (a *App) menuActions(gtx layout.Context) {
 		a.backupAsync()
 	case MenuRestore:
 		a.restoreAsync()
+	case MenuShortcuts:
+		a.open = ShortcutsID
 	case MenuAbout:
 		a.open = AboutID
 	}

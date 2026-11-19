@@ -38,6 +38,12 @@ func Dir() (string, error) {
 	return filepath.Join(base, "ampsim", "presets"), nil
 }
 
+// FactoryBankSize é quantos presets de fábrica há em cada banco (os footswitches da pedaleira).
+const FactoryBankSize = 6
+
+// FactoryBanks são os temas dos bancos de fábrica, na ordem de Factory.
+var FactoryBanks = []string{"Limpos", "Drive e rock", "Efeitos e texturas"}
+
 // Factory devolve os presets de fábrica. Cada um escolhe o amp (uma captura NAM incluída
 // ou o amp simulado), o gabinete (uma IR incluída) e os pedais. Os volumes (power.volume)
 // foram acertados com a DI de teste para −18 dBFS RMS, sem passar de −1 dBFS de pico: trocar
@@ -47,6 +53,9 @@ func Dir() (string, error) {
 // Os EQs (Worship, Country, Solo Hard Rock, Metal) vêm do teste com guitarra ao vivo (19/11):
 // menos agudos acima de ~5 kHz (as capturas são só do pré e soavam brilhantes) e mais corpo
 // entre 150 e 800 Hz, com o level do EQ compensando o volume.
+//
+// A ordem é a da pedaleira padrão (FactoryBankSize por banco): um tema por banco (FactoryBanks),
+// com o ganho subindo dentro do banco.
 func Factory() []Preset {
 	type set map[string]float64
 	const (
@@ -101,28 +110,82 @@ func Factory() []Preset {
 		return Preset{Name: name, Factory: true, State: st}
 	}
 	return []Preset{
+		// ——— Banco 1: limpos ———
 		mk("Clean", cleanV10, "2x12 SM57", []string{"gate", "comp", "reverb"}, map[string]set{
 			"gate":         {"threshold": -60},
 			"comp":         {"threshold": -30, "ratio": 4, "attack": 5, "release": 200, "level": 4},
 			engine.PowerID: {"volume": -10.4},
 			"reverb":       {"size": 55, "damping": 40, "mix": 18},
 		}),
-		mk("Crunch", sat3, "2x12 SM57", []string{"gate", "reverb"}, map[string]set{
-			"gate":         {"threshold": -50},
-			engine.PowerID: {"volume": -12.0},
-			"reverb":       {"size": 50, "damping": 40, "mix": 14},
+		mk("Country", cleanV10, "2x12 SM57", []string{"gate", "comp", "eq", "delay", "reverb"}, map[string]set{
+			"gate":         {"threshold": -60},
+			"comp":         {"threshold": -34, "ratio": 8, "attack": 1, "release": 150, "level": 7},
+			"eq":           {"g1": -2, "f2": 140, "g2": 3, "q2": 0.5, "f3": 570, "g3": 3, "q3": 0.6, "f5": 5500, "g5": -8, "level": -3},
+			engine.PowerID: {"volume": -6.2},
+			"delay":        {"time": 110, "feedback": 0, "tone": 70, "mix": 30}, // slapback
+			"reverb":       {"size": 35, "damping": 40, "mix": 12},
 		}),
+		mk("Funk", cleanV7G, "2x12 SM57", []string{"gate", "comp", "wah", "reverb"}, map[string]set{
+			"gate":         {"threshold": -60},
+			"comp":         {"threshold": -34, "ratio": 8, "attack": 1, "release": 120, "level": 8},
+			"wah":          {"mode": 0, "sens": 70, "range": 55, "q": 4, "response": 120},
+			engine.PowerID: {"volume": -11.1},
+			"reverb":       {"size": 30, "damping": 50, "mix": 12},
+		}),
+		mk("Surf", simulado, "2x12 SM57", []string{"gate", "tremolo", "reverb"}, map[string]set{
+			"gate":         {"threshold": -60},
+			engine.PreID:   {"gain": 3, "bass": 5, "mid": 4, "treble": 7, "stack": engine.StackAmerican},
+			engine.PowerID: {"presence": 6, "volume": -4.9},
+			"tremolo":      {"rate": 6, "depth": 45, "shape": 0},
+			"reverb":       {"size": 85, "damping": 20, "mix": 45},
+		}),
+		// estilo Andy Summers (The Police): Tele num Marshall quase limpo, chorus largo e profundo e
+		// eco de fita em semínima (~150 BPM), arpejos com as notas soltas soando juntas
+		mk("New Wave", cleanV10G, "4x12 SM7", []string{"gate", "comp", "chorus", "delay", "reverb"}, map[string]set{
+			"gate":         {"threshold": -60},
+			"comp":         {"threshold": -26, "ratio": 3, "attack": 20, "release": 200, "level": 4},
+			"chorus":       {"rate": 0.7, "depth": 3.5, "delay": 14, "mix": 50},
+			engine.PowerID: {"volume": -5.8},
+			"delay":        {"time": 400, "feedback": 35, "tone": 50, "mix": 25},
+			"reverb":       {"size": 40, "damping": 45, "mix": 12},
+		}),
+		// estilo pop/rock sueco dos anos 80 (Roxette): limpo comprimido e brilhante, chorus médio,
+		// delay curto e reverb de sala grande
+		mk("Pop Anos 80", cleanV10, "2x12 SM57", []string{"gate", "comp", "chorus", "delay", "reverb"}, map[string]set{
+			"gate":         {"threshold": -60},
+			"comp":         {"threshold": -32, "ratio": 5, "attack": 8, "release": 180, "level": 6},
+			"chorus":       {"rate": 1.1, "depth": 2.2, "delay": 20, "mix": 40},
+			engine.PowerID: {"volume": -6.0},
+			"delay":        {"time": 300, "feedback": 25, "tone": 60, "mix": 18},
+			"reverb":       {"size": 75, "damping": 35, "mix": 26},
+		}),
+		// ——— Banco 2: drive e rock, do menos para o mais saturado ———
 		mk("Blues", cleanV10G, "1x10 SM58", []string{"gate", "drive", "reverb"}, map[string]set{
 			"gate":         {"threshold": -60},
 			"drive":        {"mode": 1, "drive": 4, "tone": 6, "level": 3},
 			engine.PowerID: {"volume": -17.0},
 			"reverb":       {"size": 55, "damping": 35, "mix": 22},
 		}),
+		mk("Crunch", sat3, "2x12 SM57", []string{"gate", "reverb"}, map[string]set{
+			"gate":         {"threshold": -50},
+			engine.PowerID: {"volume": -12.0},
+			"reverb":       {"size": 50, "damping": 40, "mix": 14},
+		}),
 		mk("Rock Clássico", sat3MD, "4x12 SM7", []string{"gate", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -50},
 			engine.PowerID: {"volume": -8.0},
 			"delay":        {"time": 320, "feedback": 15, "tone": 60, "mix": 12},
 			"reverb":       {"size": 45, "damping": 40, "mix": 12},
+		}),
+		// estilo Brian May (Queen, solo de Bohemian Rhapsody): treble booster (Boost com tone alto)
+		// empurrando um AC30 2x12; médios "cantados" da Red Special, delay e sala
+		mk("Treble Booster", sat3MD, "2x12 SM57", []string{"gate", "drive", "eq", "delay", "reverb"}, map[string]set{
+			"gate":         {"threshold": -48, "release": 120},
+			"drive":        {"mode": 0, "drive": 6, "tone": 8, "level": 6},
+			"eq":           {"f1": 150, "g1": -4, "f3": 1200, "g3": 3, "q3": 0.8, "f5": 5500, "g5": -6},
+			engine.PowerID: {"volume": -14.1},
+			"delay":        {"time": 350, "feedback": 25, "tone": 55, "mix": 18},
+			"reverb":       {"size": 55, "damping": 40, "mix": 16},
 		}),
 		// estilo Slash: Les Paul num Marshall modificado, médios na frente, delay no solo
 		mk("Solo Hard Rock", sat7MD, "4x12 SM7", []string{"gate", "drive", "eq", "delay", "reverb"}, map[string]set{
@@ -141,28 +204,7 @@ func Factory() []Preset {
 			engine.PowerID: {"volume": -5.4},
 			"reverb":       {"size": 40, "damping": 50, "mix": 10},
 		}),
-		mk("Funk", cleanV7G, "2x12 SM57", []string{"gate", "comp", "wah", "reverb"}, map[string]set{
-			"gate":         {"threshold": -60},
-			"comp":         {"threshold": -34, "ratio": 8, "attack": 1, "release": 120, "level": 8},
-			"wah":          {"mode": 0, "sens": 70, "range": 55, "q": 4, "response": 120},
-			engine.PowerID: {"volume": -11.1},
-			"reverb":       {"size": 30, "damping": 50, "mix": 12},
-		}),
-		mk("Country", cleanV10, "2x12 SM57", []string{"gate", "comp", "eq", "delay", "reverb"}, map[string]set{
-			"gate":         {"threshold": -60},
-			"comp":         {"threshold": -34, "ratio": 8, "attack": 1, "release": 150, "level": 7},
-			"eq":           {"g1": -2, "f2": 140, "g2": 3, "q2": 0.5, "f3": 570, "g3": 3, "q3": 0.6, "f5": 5500, "g5": -8, "level": -3},
-			engine.PowerID: {"volume": -6.2},
-			"delay":        {"time": 110, "feedback": 0, "tone": 70, "mix": 30}, // slapback
-			"reverb":       {"size": 35, "damping": 40, "mix": 12},
-		}),
-		mk("Surf", simulado, "2x12 SM57", []string{"gate", "tremolo", "reverb"}, map[string]set{
-			"gate":         {"threshold": -60},
-			engine.PreID:   {"gain": 3, "bass": 5, "mid": 4, "treble": 7, "stack": engine.StackAmerican},
-			engine.PowerID: {"presence": 6, "volume": -4.9},
-			"tremolo":      {"rate": 6, "depth": 45, "shape": 0},
-			"reverb":       {"size": 85, "damping": 20, "mix": 45},
-		}),
+		// ——— Banco 3: efeitos e texturas ———
 		mk("Psicodélico", cleanV10G, "4x12 SM7", []string{"gate", "drive", "vibe", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -55},
 			"drive":        {"mode": 3, "drive": 7, "tone": 5, "level": 0},
@@ -170,6 +212,15 @@ func Factory() []Preset {
 			engine.PowerID: {"volume": -10.2},
 			"delay":        {"time": 400, "feedback": 35, "tone": 45, "mix": 22},
 			"reverb":       {"size": 60, "damping": 40, "mix": 20},
+		}),
+		// estilo Jimi Hendrix (solo de Purple Haze): Octavia = oitava acima entrando no fuzz, num
+		// Marshall aberto; cru, só um reverb curto (o Psicodélico é o lado Uni-Vibe)
+		mk("Fuzz Oitavado", sat3MD, "4x12 SM7", []string{"gate", "octave", "drive", "reverb"}, map[string]set{
+			"gate":         {"threshold": -50, "release": 100},
+			"octave":       {"sub1": 0, "sub2": 0, "up": 60, "dry": 100},
+			"drive":        {"mode": 3, "drive": 7, "tone": 6, "level": 0},
+			engine.PowerID: {"volume": -11.8},
+			"reverb":       {"size": 35, "damping": 45, "mix": 12},
 		}),
 		mk("Modulação", cleanV10, "2x12 SM57", []string{"gate", "comp", "chorus", "tremolo", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -60},

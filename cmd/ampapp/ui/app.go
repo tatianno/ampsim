@@ -193,7 +193,7 @@ func (a *App) Open(id string) {
 	switch id {
 	case AudioID:
 		a.input.OnAudio()
-	case PresetListID, TunerID, AboutID, NAMListID, IRListID, AddPedalID, AnalyzerID:
+	case PresetListID, TunerID, AboutID, NAMListID, IRListID, AddPedalID, AnalyzerID, ShortcutsID:
 		a.open = id
 	case RecordingsID:
 		a.recs.dir = a.RecordDir
@@ -431,6 +431,11 @@ func (a *App) keys(gtx layout.Context) {
 		if !ok || e.State != key.Press {
 			continue
 		}
+		// digitando um nome (preset ou banco da pedaleira): só o Esc vale
+		typing := a.open == SaveAsID || (a.open == PedalboardEditID && a.pedalboard.Typing(gtx))
+		if typing && e.Name != key.NameEscape {
+			continue
+		}
 		switch e.Name {
 		case key.NameEscape:
 			if a.menu.open {
@@ -439,26 +444,20 @@ func (a *App) keys(gtx layout.Context) {
 				a.open = ""
 			}
 		case "A": // afinador: abre e fecha
-			if a.open != SaveAsID {
-				if a.open == TunerID {
-					a.open = ""
-				} else {
-					a.open = TunerID
-				}
+			if a.open == TunerID {
+				a.open = ""
+			} else {
+				a.open = TunerID
 			}
 		case key.NameSpace:
-			// play/pause do arquivo: só com a fonte em Arquivo (e não enquanto digita um nome)
-			if a.open != SaveAsID && a.Session.Source() == audio.SourceFile {
+			// play/pause do arquivo: só com a fonte em Arquivo
+			if a.Session.Source() == audio.SourceFile {
 				a.transport.TogglePlay()
 			}
 		case "T":
-			if a.open != SaveAsID { // digitando o nome de um preset
-				a.Tap(gtx.Now)
-			}
+			a.Tap(gtx.Now)
 		case "1", "2", "3", "4", "5", "6": // footswitches da pedaleira
-			if a.open != SaveAsID {
-				a.pedalboard.Press(int(e.Name[0] - '1'))
-			}
+			a.pedalboard.Press(int(e.Name[0] - '1'))
 		}
 	}
 }
@@ -572,10 +571,12 @@ func (a *App) overlay(gtx layout.Context) {
 		content = func(gtx layout.Context) layout.Dimensions { return a.recs.Layout(gtx, th) }
 	} else if a.open == TunerID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.tuner.Layout(gtx, th) }
-	} else if a.open == PedalboardPickID {
-		content = func(gtx layout.Context) layout.Dimensions { return a.pedalboard.PickLayout(gtx, th, closeOverlay) }
+	} else if a.open == PedalboardEditID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.pedalboard.EditLayout(gtx, th) }
 	} else if a.open == AddPedalID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.addPedal.Layout(gtx, th) }
+	} else if a.open == ShortcutsID {
+		content = func(gtx layout.Context) layout.Dimensions { return shortcutsLayout(gtx, th) }
 	} else if a.open == AnalyzerID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.spectrum.Layout(gtx, th) }
 	} else if a.open == AboutID {

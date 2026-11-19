@@ -22,6 +22,7 @@ import (
 	"github.com/tatianno/ampsim/cmd/ampapp/audio"
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/presets"
 )
 
 var (
@@ -469,7 +470,8 @@ func TestPresetsListaAbreECarrega(t *testing.T) {
 	h := newHarness(1280, 800)
 	h.frame(a.Layout)
 	pb := a.Presets()
-	pb.rows[3].Click() // Rock Clássico
+	i := slices.IndexFunc(pb.list, func(p presets.Preset) bool { return p.Name == "Rock Clássico" })
+	pb.rows[i].Click()
 	h.frame(a.Layout)
 	if c, _ := pb.Current(); c.Name != "Rock Clássico" {
 		t.Errorf("deveria ter carregado o Rock Clássico, atual %q", c.Name)

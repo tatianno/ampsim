@@ -660,6 +660,28 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   tracejadas azuis e sombra além delas, com o valor; rótulo "0" na curva
 - [x] **Menu** (19/11, `cmd/ampapp/ui/menu.go`): o botão "Sobre" virou "Menu" com Áudio…, Afinador (tecla A),
   Backup dos presets…, Restaurar presets… e Sobre; Afinador e Áudio… saíram da linha da ENTRADA
+- [x] **Presets New Wave e Pop Anos 80** (19/11, pedido do teste ao vivo): chorus estilo The Police (Clean V10 G,
+  4x12, chorus largo 0,7 Hz/3,5 ms, eco de 400 ms) e estilo Roxette (Clean V10, 2x12, compressor firme, chorus
+  1,1 Hz/2,2 ms, delay de 300 ms, sala grande); no fim da lista (a pedaleira padrão não muda de lugar os outros 14);
+  limpos, limitados pelo pico: −19,1 e −19,7 dBFS RMS
+- [x] **Presets Treble Booster e Fuzz Oitavado** (19/11): fecham o banco 3 (18 de fábrica = 3 bancos; os presets
+  do usuário começam no banco 4 na pedaleira padrão). Treble Booster = estilo Brian May (Boost com tone alto na
+  captura Sat3 MD, 2x12, EQ −4 dB em 150 Hz / +3 dB em 1,2 kHz / −6 dB acima de 5,5 kHz, delay 350 ms); Fuzz
+  Oitavado = estilo Hendrix/Octavia (+1 oitava 60% no Fuzz, Sat3 MD, 4x12, reverb curto). Ambos em −18,0 dBFS RMS
+- [x] **Presets de fábrica por tema** (19/11): um tema por banco da pedaleira padrão (`presets.FactoryBanks`),
+  com o ganho subindo dentro do banco: Limpos (Clean, Country, Funk, Surf, New Wave, Pop Anos 80), Drive e rock
+  (Blues, Crunch, Rock Clássico, Treble Booster, Solo Hard Rock, Metal), Efeitos e texturas (Psicodélico, Fuzz
+  Oitavado, Modulação, Worship, Ambiente, Synth). A pedaleira mostra o tema abaixo do "BANCO n/3" (só na ordem
+  padrão; personalizada, não). Teste garante 6 por banco
+- [x] **Pedaleira: nomes dos bancos e edição em matriz** (19/11): o tema dos bancos sumia ao trocar um preset
+  (estava ligado à ordem padrão). Agora o nome é do banco e fica no `pedaleira.json` (`banks`), com os temas de
+  fábrica como padrão; a primeira edição copia ordem e nomes para a configuração. Entre ◀ ▶ aparece o nome (ou
+  "BANCO n/N" se não tiver), e embaixo "banco n de N · teclas 1 a 6". "Editar" abre a matriz: nome editável por
+  banco (até 18 letras; atalhos desligados enquanto digita), 6 células (clique → escolha do preset, com os de fábrica
+  em colunas por tema e "Voltar"), "+ Banco" (até 10), "− Último banco" (vazio, acima de 3) e "Restaurar padrão" (2
+  cliques). Configuração antiga sem `banks` = bancos sem nome. Testes de nomes, digitação, bancos e restaurar
+- [x] **Atalhos no Menu** (19/11, `cmd/ampapp/ui/shortcuts.go`): lista do teclado (T, A, 1 a 6, Espaço, Esc) e do
+  mouse (Shift, duplo clique, roda, arrastar); teste confere que as teclas de `App.keys` estão na lista
 - [x] **Backup e restauração dos presets** (19/11, `presets/backup.go`): `.zip` com `presets/*.json`,
   `pedaleira.json` e `arquivos/` (os `.nam`/IRs do usuário usados pelos presets; as incluídas ficam como
   referência). Restaurar valida o zip inteiro antes de gravar, guarda o estado atual em
