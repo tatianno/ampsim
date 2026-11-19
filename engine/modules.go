@@ -91,15 +91,19 @@ func (m *Gate) Process(buf []float64) {
 
 // Pre é o pré-amp: HP 70 Hz → GANHO/saturação 4x → tone stack (grave/médio/agudo).
 //
-// O tone stack pode ser o "Moderno" (3 equalizadores independentes) ou o circuito passivo
-// TMB modelado ("Americano": Fender Bassman 5F6-A; "Britânico": Marshall JTM45/1959), em que
-// os controles interagem.
+// A voz (parâmetro "stack") escolhe o tone stack: o "Moderno" (3 equalizadores independentes)
+// ou o circuito passivo TMB modelado ("Americano": Fender Bassman 5F6-A; "Britânico": Marshall
+// JTM45/1959), em que os controles interagem. A voz "High Gain" troca também o pré: três
+// estágios de saturação em cascata (dsp.HighGain) e um TMB próprio, ajustados medindo uma
+// captura de um amp moderno de alto ganho.
 type Pre struct {
 	base
 	tight dsp.Biquad
 	pre   *dsp.Preamp
 	tone  *dsp.ToneStack
 	tmb   [2]*dsp.TMBStack // Americano, Britânico
+	hg    *dsp.HighGain    // pré da voz High Gain
+	hgTMB *dsp.TMBStack    // tone stack da voz High Gain
 
 	kind, prev int     // tone stack atual e o anterior (durante a troca)
 	xf, xstep  float64 // crossfade da troca de tone stack (0 → 1)
@@ -116,6 +120,7 @@ const (
 	StackModern = iota
 	StackAmerican
 	StackBritish
+	StackHighGain // voz High Gain: pré próprio (dsp.HighGain) + TMB próprio
 )
 
 // StackFadeMs é o crossfade ao trocar de tone stack (evita estalo).
@@ -130,8 +135,8 @@ func NewPre() *Pre {
 			ParamInfo{ID: "bass", Name: "Grave", Min: 0, Max: 10, Default: 5},
 			ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
 			ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
-			ParamInfo{ID: "stack", Name: "Tone stack", Min: 0, Max: 2, Default: StackModern, Step: 1,
-				Choices: []string{"Moderno", "Americano", "Britânico"}},
+			ParamInfo{ID: "stack", Name: "Voz", Min: 0, Max: 3, Default: StackModern, Step: 1,
+				Choices: []string{"Moderno", "Americano", "Britânico", "High Gain"}},
 			ParamInfo{ID: "amp", Name: "Amp", Min: 0, Max: 1, Default: AmpSimulated, Step: 1,
 				Choices: []string{"Simulado", "NAM"}},
 			ParamInfo{ID: "nam_input", Name: "Entrada", Unit: "dB", Min: -24, Max: 24, Default: 0},
@@ -145,6 +150,8 @@ func (m *Pre) Prepare(fs float64, maxBlock int) {
 	m.pre = dsp.NewPreamp(fs)
 	m.tone = dsp.NewToneStack(fs)
 	m.tmb = [2]*dsp.TMBStack{dsp.NewTMBStack(fs, dsp.TMBFender), dsp.NewTMBStack(fs, dsp.TMBMarshall)}
+	m.hg = dsp.NewHighGain(fs)
+	m.hgTMB = dsp.NewTMBStack(fs, dsp.TMBHighGain)
 	m.kind = int(m.get("stack"))
 	m.prev, m.xf = m.kind, 1
 	m.xstep = 1 / (StackFadeMs / 1000 * fs)
@@ -169,6 +176,8 @@ func (m *Pre) resetSim() {
 	for _, t := range m.tmb {
 		t.Reset()
 	}
+	m.hg.Reset()
+	m.hgTMB.Reset()
 }
 
 func (m *Pre) Latency() int { return dsp.PreampLatency }
@@ -218,38 +227,74 @@ func (m *Pre) run(mode int, buf []float64) {
 }
 
 func (m *Pre) processSim(buf []float64) {
-	m.pre.SetDrive(m.get("gain") / 10)
-	bass, mid, treble := m.get("bass"), m.get("mid"), m.get("treble")
+	gain, bass, mid, treble := m.get("gain")/10, m.get("bass"), m.get("mid"), m.get("treble")
+	m.pre.SetDrive(gain)
+	m.hg.SetDrive(gain)
 	m.tone.Set(bass, mid, treble)
 	for _, t := range m.tmb {
 		t.Set(bass, mid, treble)
 	}
-	m.tight.ProcessBlock(buf)
-	m.pre.ProcessBlock(buf)
+	m.hgTMB.Set(bass, mid, treble)
 
 	if k := int(m.get("stack")); k != m.kind && m.xf >= 1 {
 		m.prev, m.kind, m.xf = m.kind, k, 0
-		switch k { // o novo começa limpo
-		case StackAmerican:
-			m.tmb[0].Reset()
-		case StackBritish:
-			m.tmb[1].Reset()
+		switch { // a voz nova começa limpa
+		case k == StackHighGain:
+			m.hg.Reset()
+			m.hgTMB.Reset()
+		case m.prev == StackHighGain: // o pré clássico volta a rodar
+			m.tight.Reset()
+			m.pre.Reset()
+			m.resetStack(k)
 		default:
-			m.tone.Reset()
+			m.resetStack(k)
 		}
 	}
 	if m.xf >= 1 {
-		m.stack(m.kind, buf)
+		m.voice(m.kind, buf)
 		return
 	}
-	// troca em andamento: os dois tone stacks rodam e o resultado é misturado
+	// troca em andamento: as duas vozes rodam e o resultado é misturado
 	old := m.scratch[:len(buf)]
-	copy(old, buf)
-	m.stack(m.prev, old)
-	m.stack(m.kind, buf)
+	if m.kind != StackHighGain && m.prev != StackHighGain {
+		// só o tone stack muda: o pré clássico roda uma vez e os dois stacks em paralelo
+		m.tight.ProcessBlock(buf)
+		m.pre.ProcessBlock(buf)
+		copy(old, buf)
+		m.stack(m.prev, old)
+		m.stack(m.kind, buf)
+	} else {
+		copy(old, buf)
+		m.voice(m.prev, old)
+		m.voice(m.kind, buf)
+	}
 	for i := range buf {
 		m.xf = math.Min(1, m.xf+m.xstep)
 		buf[i] = m.xf*buf[i] + (1-m.xf)*old[i]
+	}
+}
+
+// voice roda o pré e o tone stack da voz k.
+func (m *Pre) voice(k int, buf []float64) {
+	if k == StackHighGain {
+		m.hg.ProcessBlock(buf)
+		m.hgTMB.ProcessBlock(buf)
+		return
+	}
+	m.tight.ProcessBlock(buf)
+	m.pre.ProcessBlock(buf)
+	m.stack(k, buf)
+}
+
+// resetStack zera o tone stack da voz k.
+func (m *Pre) resetStack(k int) {
+	switch k {
+	case StackAmerican:
+		m.tmb[0].Reset()
+	case StackBritish:
+		m.tmb[1].Reset()
+	default:
+		m.tone.Reset()
 	}
 }
 

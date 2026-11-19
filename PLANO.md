@@ -737,6 +737,33 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - corrigido: `ApplyState` agora volta ao padrão os parâmetros que o preset não tem (preset salvo antes de o
     parâmetro existir herdava o valor do som anterior, ex.: `drive.type` = NAM); `ampcli -drive-nam` põe o drive na
     cadeia (`Chain.Add`) quando o preset não o tem
+- [x] **Voz High Gain no amp simulado** (19/11, `dsp/highgain.go`, `dsp.TMBHighGain`): o seletor do cabeçote virou
+  **Voz: Moderno | Americano | Britânico | High Gain** (parâmetro `pre.stack` = 3; os presets antigos não mudam).
+  Motivo: o Metal com o Sat7 (pré do GT208, ceifamento por diodos) não tinha peso de grave (150–400 Hz a −26,6 dB
+  do total); uma captura de um EVH 5150III Ivory, canal vermelho (`NAM/APP-5153-Ivory-Red-X.nam`, do TONE3000,
+  fora do git e não distribuída), serviu de **referência de medição** para um modelo nosso
+  - pré: passa-alta de entrada (~420 Hz) e shelf leve de brilho → a 4x, três estágios `tanh(−g·x + b) − tanh(b)`
+    (a fase inverte a cada estágio, então a assimetria alterna como numa cascata de triodos), com passa-alta de
+    300 Hz depois do 1º e passa-baixas de ~3 kHz depois do 1º e do 2º (seguram o chiado) → DC → nível. O knob de
+    ganho muda o 1º estágio de 0,05× a ~506× (escala log; 8 = ponto do ajuste); os estágios 2 e 3 dão ~55 dB
+  - tone stack: TMB com os pots do Marshall e slope/capacitores ajustados (R4 66k, C1 332p, C2 47n, C3 31n)
+  - **ajuste** (`cmd/hgfit`, busca por coordenada contra a captura rodando no nosso `nam/`): espectro por 1/3 de
+    oitava com a DI e com ruído em −30/−50 dBFS, THD de senos em 82–1760 Hz de −72 a −32 dBFS e compressão.
+    Resultado: erro médio de 0,67 dB (DI) e 0,85 dB (ruído −30); a THD acompanha a da captura, inclusive o "tight"
+    (82 Hz: 2,4→14% de −72 a −56 dBFS na captura, 2,6→14% no modelo). `Out` fixo em 0,25 (acima disso o power amp
+    satura e o ajuste piora) e C2 limitado a 47 nF (com 200 nF o grave saturava no meio do knob)
+  - a captura distorce forte mesmo em −72 dBFS (THD de 20 a 80% conforme a frequência): ganho de +55 a +72 dB em
+    pequeno sinal, contra ~26 dB do pré clássico
+  - engine: trocar de voz faz crossfade do pré inteiro quando o High Gain entra ou sai (entre as clássicas, só o
+    tone stack muda, como antes); mesma latência (pico do impulso em 34 × 32 amostras); CPU ~2,7% em tempo real
+    (blocos de 64), o dobro do pré clássico. Testes: troca ao vivo sem estalo e idêntica com blocos de 16/64/512/1024,
+    zero alocação, estabilidade no knob todo, o knob de ganho muda a distorção
+  - **Metal** passa a usar o amp simulado com a voz High Gain (ganho 8, tone stack em 5, boost modelado e o EQ do
+    preset mantidos; volume −7,7 → −18,0 dBFS). Com a DI, fica a −2,3 a +2,5 dB do 5153 em todas as faixas; contra o
+    Sat7, +3,6 dB em 60–150 Hz e +8,7 dB em 150–400 Hz
+- [ ] **Knob de grave dos TMB quase parado acima de 5**: com o médio em 5, o grave em 100 Hz muda ~11 dB de 0 a
+  2,5 e menos de 0,5 dB de 5 a 10 (Britânico, Americano e High Gain; vem do `bassTaper` e do circuito). Avaliar a
+  curva do pot
 - [ ] **Drive NAM: ouvir ao vivo** com a guitarra (TS9/HOT na frente das capturas Dist e Clean do amp) e decidir:
   aviso na GUI quando drive e amp estão os dois no Completo; Blues e Worship mais escuros com o TS7 (compensar no EQ
   ou não); o pico de saída com o

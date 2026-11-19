@@ -18,7 +18,7 @@ import (
 // fica só com o volume (a captura já inclui o power amp).
 type Head struct {
 	chain      *engine.Chain
-	stackSel   *Selector // tone stack: Moderno / Americano / Britânico
+	stackSel   *Selector // voz: Moderno / Americano / Britânico / High Gain
 	ampSel     *Selector // Simulado / NAM
 	sizeSel    *Selector // Lite / Completo
 	preKnobs   []*Knob

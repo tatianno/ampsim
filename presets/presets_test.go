@@ -38,11 +38,12 @@ func TestFabricaCompletaComCapturasIncluidas(t *testing.T) {
 			t.Errorf("%s: aplicar e ler de volta deveria dar o mesmo estado", p.Name)
 		}
 	}
-	// o Metal fica no modelado (o boost aperta o grave; veja o preset)
+	// o Metal usa a voz High Gain do amp simulado, com o boost modelado (veja o preset)
 	if p, ok := Find(Factory(), "Metal"); ok {
 		c := engine.NewDefaultChain()
-		if err := c.ApplyState(p.State); err != nil || c.Drive().Type() != engine.DriveModeled {
-			t.Errorf("Metal: %v, tipo %d", err, c.Drive().Type())
+		if err := c.ApplyState(p.State); err != nil || c.Drive().Type() != engine.DriveModeled ||
+			c.Pre().Mode() != engine.AmpSimulated || c.Pre().Param("stack").Get() != engine.StackHighGain {
+			t.Errorf("Metal: %v, drive tipo %d, amp %d, voz %g", err, c.Drive().Type(), c.Pre().Mode(), c.Pre().Param("stack").Get())
 		}
 	}
 	// os presets com captura de pedal no drive

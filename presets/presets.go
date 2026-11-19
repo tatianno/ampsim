@@ -211,15 +211,16 @@ func Factory() []Preset {
 			"delay":        {"time": 430, "feedback": 30, "tone": 60, "mix": 22},
 			"reverb":       {"size": 60, "damping": 40, "mix": 15},
 		}, tsBoost),
-		// o clássico do metal: Tube Screamer de boost (pouco drive, muito level) no amp saturado
-		// (modelado de propósito: o boost aperta o grave, −9 dB em 80 Hz, e realça 2–3 kHz antes do
-		// amp; as capturas do TS7 deixam o grave passar, porque com o drive no zero o sinal vai quase
-		// todo pelo caminho limpo, e o Sat7 MD embola)
-		mk("Metal", sat7MD, "4x12 SM7", []string{"gate", "drive", "eq", "reverb"}, map[string]set{
+		// o clássico do metal: Tube Screamer de boost (pouco drive, muito level) num amp moderno de
+		// alto ganho (a voz High Gain do amp simulado, ajustada medindo um 5150III). O boost fica no
+		// modelado de propósito: ele aperta o grave (−9 dB em 80 Hz) e realça 2–3 kHz antes do amp;
+		// as capturas do TS7 com pouco drive deixam o grave passar
+		mk("Metal", simulado, "4x12 SM7", []string{"gate", "drive", "eq", "reverb"}, map[string]set{
 			"gate":         {"threshold": -42, "release": 40},
+			engine.PreID:   {"stack": engine.StackHighGain, "gain": 8, "bass": 5, "mid": 5, "treble": 5},
 			"drive":        {"mode": 1, "drive": 0.5, "tone": 7, "level": 6},
 			"eq":           {"f1": 90, "g1": 2, "f2": 120, "g2": 1.5, "q2": 0.6, "f3": 680, "g3": -6, "q3": 0.8, "f5": 5500, "g5": -4, "level": 1.4},
-			engine.PowerID: {"volume": -5.4},
+			engine.PowerID: {"volume": -7.7},
 			"reverb":       {"size": 40, "damping": 50, "mix": 10},
 		}),
 		// ——— Banco 3: efeitos e texturas ———

@@ -13,8 +13,9 @@ para Go em streaming, validados contra as saídas do Python.
 
 ## O que tem
 
-- **Amp em três partes** — pré-amp (ganho, grave, médio, agudo, com tone stack Moderno, Americano ou Britânico;
-  os dois últimos são os circuitos TMB do Fender Bassman e do Marshall JTM45 modelados), power amp (presença,
+- **Amp em três partes** — pré-amp (ganho, grave, médio, agudo, com a voz Moderno, Americano, Britânico ou
+  **High Gain**; Americano e Britânico são os circuitos TMB do Fender Bassman e do Marshall JTM45 modelados, e o
+  High Gain tem pré próprio, três estágios em cascata ajustados medindo um amp moderno de alto ganho), power amp (presença,
   volume) e gabinete (IR, low cut, high cut). Vêm incluídas três IRs (1x10 SM58, 2x12 SM57, a padrão, e 4x12 SM7),
   e o gabinete também abre qualquer WAV de IR.
 - **Amp NAM** — o seletor **Amp: Simulado | NAM** troca o pré-amp por um modelo

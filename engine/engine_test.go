@@ -641,7 +641,7 @@ func TestToneStackSemAlocacao(t *testing.T) {
 	k := 0
 	if a := testing.AllocsPerRun(60, func() {
 		k++
-		c.Module(PreID).Param("stack").Set(float64(k / 10 % 3)) // troca a cada 10 blocos
+		c.Module(PreID).Param("stack").Set(float64(k / 10 % 4)) // troca a cada 10 blocos, inclusive o High Gain
 		c.Module(PreID).Param("bass").Set(float64(k % 10))
 		c.ProcessMono(buf)
 	}); a != 0 {

@@ -36,6 +36,11 @@ var (
 		R1: 250e3, R2: 1e6, R3: 25e3, R4: 56e3, C1: 250e-12, C2: 20e-9, C3: 20e-9}
 	TMBMarshall = TMBModel{Name: "Marshall", // JTM45 / 1959
 		R1: 220e3, R2: 1e6, R3: 22e3, R4: 33e3, C1: 470e-12, C2: 22e-9, C3: 22e-9}
+	// TMBHighGain é o tone stack da voz High Gain: a topologia e os pots do Marshall, com o
+	// "slope" e os capacitores ajustados à curva medida de um amp moderno de alto ganho
+	// (vale nos médios e presença alta; veja dsp.HighGain).
+	TMBHighGain = TMBModel{Name: "HighGain",
+		R1: 220e3, R2: 1e6, R3: 22e3, R4: 66e3, C1: 332e-12, C2: 47e-9, C3: 31e-9}
 )
 
 // p6 é um polinômio em s (coeficientes em ordem crescente) com grau ≤ 5: o determinante
