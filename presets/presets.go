@@ -66,9 +66,15 @@ func Factory() []Preset {
 		sat3      = "Dist Sat3 V4 B5 M5 T5 P5"
 		sat3MD    = "Dist Sat3 V4 MD B5 M5 T5 P5"
 		sat7MD    = "Dist Sat7 V4 MD B5 M5 T5 P5"
+		// capturas de pedal (drive NAM); drive/tone/modo dos presets ficam com o ajuste do
+		// modelado equivalente, para comparar trocando o Tipo
+		sd1     = "SD-1 Oliver SD-10 D10 T6 L10 (Cranked)"
+		tsLight = "TS7 TS9 D3 T7 L5 (Light Drive, Bright)"
+		tsBoost = "TS7 TS9 D0 T0 L5 (Clean Boost)"
 	)
-	// mk monta o preset: amp = nome de uma captura NAM (ou simulado), ir = IR incluída.
-	mk := func(name, amp, ir string, on []string, params map[string]set) Preset {
+	// mk monta o preset: amp = nome de uma captura NAM (ou simulado), ir = IR incluída e, se
+	// houver, pedal = captura de pedal do drive (liga o tipo NAM do drive).
+	mk := func(name, amp, ir string, on []string, params map[string]set, pedal ...string) Preset {
 		c := engine.NewDefaultChain()
 		var ids []string // na cadeia: o amp e os pedais do preset, na ordem padrão
 		for _, id := range engine.DefaultOrder {
@@ -85,6 +91,9 @@ func Factory() []Preset {
 			mode = engine.AmpNAM
 		}
 		c.Module(engine.PreID).Param("amp").Set(mode)
+		if len(pedal) > 0 {
+			c.Drive().Param("type").Set(engine.DriveNAM)
+		}
 		for mod, ps := range params {
 			for id, v := range ps {
 				p := c.Module(mod).Param(id)
@@ -105,6 +114,10 @@ func Factory() []Preset {
 				}
 			case engine.CabID:
 				st.Modules[i].Extra = map[string]string{"ir": capturas.Prefix + ir}
+			case "drive":
+				if len(pedal) > 0 {
+					st.Modules[i].Extra = map[string]string{"nam": capturas.Prefix + pedal[0]}
+				}
 			}
 		}
 		return Preset{Name: name, Factory: true, State: st}
@@ -162,21 +175,23 @@ func Factory() []Preset {
 		// ——— Banco 2: drive e rock, do menos para o mais saturado ———
 		mk("Blues", cleanV10G, "1x10 SM58", []string{"gate", "drive", "reverb"}, map[string]set{
 			"gate":         {"threshold": -60},
-			"drive":        {"mode": 1, "drive": 4, "tone": 6, "level": 3},
-			engine.PowerID: {"volume": -17.0},
+			"drive":        {"mode": 1, "drive": 4, "tone": 6, "level": 0},
+			engine.PowerID: {"volume": -15.8},
 			"reverb":       {"size": 55, "damping": 35, "mix": 22},
-		}),
+		}, tsLight),
 		mk("Crunch", sat3, "2x12 SM57", []string{"gate", "reverb"}, map[string]set{
 			"gate":         {"threshold": -50},
 			engine.PowerID: {"volume": -12.0},
 			"reverb":       {"size": 50, "damping": 40, "mix": 14},
 		}),
-		mk("Rock Clássico", sat3MD, "4x12 SM7", []string{"gate", "delay", "reverb"}, map[string]set{
+		// overdrive estilo SD-1 todo aberto (captura NAM do Oliver SD-10) empurrando o amp com crunch
+		mk("Rock Clássico", sat3MD, "4x12 SM7", []string{"gate", "drive", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -50},
-			engine.PowerID: {"volume": -8.0},
+			"drive":        {"level": 0},
+			engine.PowerID: {"volume": -10.7},
 			"delay":        {"time": 320, "feedback": 15, "tone": 60, "mix": 12},
 			"reverb":       {"size": 45, "damping": 40, "mix": 12},
-		}),
+		}, sd1),
 		// estilo Brian May (Queen, solo de Bohemian Rhapsody): treble booster (Boost com tone alto)
 		// empurrando um AC30 2x12; médios "cantados" da Red Special, delay e sala
 		mk("Treble Booster", sat3MD, "2x12 SM57", []string{"gate", "drive", "eq", "delay", "reverb"}, map[string]set{
@@ -190,13 +205,16 @@ func Factory() []Preset {
 		// estilo Slash: Les Paul num Marshall modificado, médios na frente, delay no solo
 		mk("Solo Hard Rock", sat7MD, "4x12 SM7", []string{"gate", "drive", "eq", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -45, "release": 120},
-			"drive":        {"mode": 1, "drive": 2, "tone": 6, "level": 3},
+			"drive":        {"mode": 1, "drive": 2, "tone": 6, "level": -3.5},
 			"eq":           {"g1": -1, "f2": 240, "g2": 4.5, "q2": 0.6, "f3": 820, "g3": 5, "q3": 0.5, "f4": 2400, "g4": -2, "q4": 0.5, "f5": 5500, "g5": -10, "level": -2.5},
-			engine.PowerID: {"volume": -6.5},
+			engine.PowerID: {"volume": -7.0},
 			"delay":        {"time": 430, "feedback": 30, "tone": 60, "mix": 22},
 			"reverb":       {"size": 60, "damping": 40, "mix": 15},
-		}),
+		}, tsBoost),
 		// o clássico do metal: Tube Screamer de boost (pouco drive, muito level) no amp saturado
+		// (modelado de propósito: o boost aperta o grave, −9 dB em 80 Hz, e realça 2–3 kHz antes do
+		// amp; as capturas do TS7 deixam o grave passar, porque com o drive no zero o sinal vai quase
+		// todo pelo caminho limpo, e o Sat7 MD embola)
 		mk("Metal", sat7MD, "4x12 SM7", []string{"gate", "drive", "eq", "reverb"}, map[string]set{
 			"gate":         {"threshold": -42, "release": 40},
 			"drive":        {"mode": 1, "drive": 0.5, "tone": 7, "level": 6},
@@ -236,13 +254,13 @@ func Factory() []Preset {
 		mk("Worship", cleanV10G, "2x12 SM57", []string{"gate", "comp", "drive", "eq", "pitch", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -60},
 			"comp":         {"threshold": -28, "ratio": 3, "attack": 30, "level": 5},
-			"drive":        {"mode": 1, "drive": 3, "tone": 6, "level": 1},
+			"drive":        {"mode": 1, "drive": 3, "tone": 6, "level": -3},
 			"eq":           {"f1": 100, "g1": -2, "f2": 180, "g2": 5, "q2": 0.6, "f3": 700, "g3": 4, "q3": 0.6, "f5": 4500, "g5": -10, "level": -3.7},
 			"pitch":        {"voice1": 12, "level2": 0, "mix": 12},
-			engine.PowerID: {"volume": -15.8},
+			engine.PowerID: {"volume": -15.0},
 			"delay":        {"time": 375, "feedback": 45, "tone": 55, "mix": 30},
 			"reverb":       {"size": 92, "damping": 30, "mix": 40},
-		}),
+		}, tsLight),
 		mk("Ambiente", simulado, "2x12 SM57", []string{"gate", "comp", "chorus", "delay", "reverb"}, map[string]set{
 			"gate":         {"threshold": -55},
 			"comp":         {"threshold": -30, "ratio": 4, "attack": 30, "level": 7},

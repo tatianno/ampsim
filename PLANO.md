@@ -713,8 +713,33 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   - testes: trocas ao vivo (sem estalo, saída idêntica com blocos de 64/512/1024), zero alocação, ganho da captura
     preservado e Level depois do modelo, latência alinhada nas 10, preset guarda a captura só no NAM, GUI (chaves,
     knobs, lista, arquivo do usuário, volta ao pedal). Visual conferido em render headless
+- [x] **Rock Clássico com o SD-1 NAM** (19/11): drive no tipo NAM com `SD-1 Oliver SD-10 D10 T6 L10 (Cranked)`
+  (Level 0) na frente da Dist Sat3 MD; volume −8 → −10,7 dB (−17,9 dBFS na DI). O Level do pedal quase não muda a
+  saturação (crista ~11,1 dB com 0, −4 ou −8 dB: o SD-1 com Drive 10 já ceifa), entre o Rock Clássico antigo (12,7)
+  e o Solo Hard Rock (10,8). `mk` dos presets aceita a captura de pedal
+- [x] **Blues, Worship e Solo Hard Rock com o TS7 NAM** (19/11): Blues e Worship com `TS7 TS9 D3 T7 L5
+  (Light Drive, Bright)`, Solo Hard Rock com `TS7 TS9 D0 T0 L5 (Clean Boost)` de boost no Sat7 MD. O **Metal voltou
+  ao modelado** (o usuário achou estranho ao vivo): o boost modelado corta o grave antes do amp (−9 dB em 80 Hz,
+  −6,8 em 200) e realça 2–3 kHz (+4,7); a TS9 D0 T0 é plana no grave e escura (−9 dB em 3 kHz). No preset inteiro,
+  a captura deu +4,3 dB em 80 Hz (grave embolando no Sat7 MD) e −7 dB em 1,25 kHz. A mais próxima (TS9 D5 T7,
+  Entrada −6) acerta o grave mas segue −6 dB em 1,25 kHz. Com o drive no zero, o TS real passa o sinal quase todo
+  pelo caminho limpo (o corte de graves fica no ramo do ganho): para um "boost de metal" NAM, capturar com mais
+  drive ou aceitar e compensar no EQ. Level do
+  drive acertado para o mesmo empurrão no amp e volume recalibrado (−18,0 a −18,2 dBFS). Drive/Tone/Modo ficam com
+  o ajuste do modelado anterior, para comparar trocando o Tipo. Medido por FFT (bandas de 60 Hz a 8 kHz):
+  - Solo Hard Rock e Metal quase não mudam de timbre (±1,5 a 2,5 dB nas bandas; um pouco mais comprimidos)
+  - **Blues e Worship ficam bem mais escuros e com mais médios**: −4 a −5 dB em 1–2,5 kHz e −8 a −13 dB acima de
+    2,5 kHz. É o TS de verdade com pouco drive: as capturas TS9 D0 T0 e D3 T7 cortam −7 a −10 dB acima de 3 kHz em
+    relação à DI (o "Bright" T7 não fica mais claro que o T0); as de mais drive enchem os agudos com harmônicos, e a
+    SD-1 e as do HOT mostram conteúdo até 8 kHz (a cadeia de captura não corta). EQ não compensado: decidir de ouvido
+  - a métrica de bandas com filtros de 1 polo (usada na primeira comparação) vaza entre bandas e não via shelves
+    acima de 4,5 kHz; as diferenças de agudo de "2 a 3 dB" daquela comparação estavam subestimadas
+  - corrigido: `ApplyState` agora volta ao padrão os parâmetros que o preset não tem (preset salvo antes de o
+    parâmetro existir herdava o valor do som anterior, ex.: `drive.type` = NAM); `ampcli -drive-nam` põe o drive na
+    cadeia (`Chain.Add`) quando o preset não o tem
 - [ ] **Drive NAM: ouvir ao vivo** com a guitarra (TS9/HOT na frente das capturas Dist e Clean do amp) e decidir:
-  aviso na GUI quando drive e amp estão os dois no Completo; presets de fábrica com o TS7 NAM; o pico de saída com o
+  aviso na GUI quando drive e amp estão os dois no Completo; Blues e Worship mais escuros com o TS7 (compensar no EQ
+  ou não); o pico de saída com o
   SD-1 cranked na frente do Clean V10 chega a +7,6 dBFS no volume padrão (o ganho do pedal agora é real: baixar o
   Level ou o volume)
 - [x] **Wah: knobs do modo** (19/11, `engine.ParamViewer`): Envelope = Sensib., Resposta, Faixa, Q, Mix; LFO =

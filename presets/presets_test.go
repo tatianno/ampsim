@@ -38,6 +38,31 @@ func TestFabricaCompletaComCapturasIncluidas(t *testing.T) {
 			t.Errorf("%s: aplicar e ler de volta deveria dar o mesmo estado", p.Name)
 		}
 	}
+	// o Metal fica no modelado (o boost aperta o grave; veja o preset)
+	if p, ok := Find(Factory(), "Metal"); ok {
+		c := engine.NewDefaultChain()
+		if err := c.ApplyState(p.State); err != nil || c.Drive().Type() != engine.DriveModeled {
+			t.Errorf("Metal: %v, tipo %d", err, c.Drive().Type())
+		}
+	}
+	// os presets com captura de pedal no drive
+	for name, want := range map[string]string{
+		"Rock Clássico":  "SD-1 Oliver SD-10 D10 T6 L10 (Cranked)",
+		"Blues":          "TS7 TS9 D3 T7 L5 (Light Drive, Bright)",
+		"Worship":        "TS7 TS9 D3 T7 L5 (Light Drive, Bright)",
+		"Solo Hard Rock": "TS7 TS9 D0 T0 L5 (Clean Boost)",
+	} {
+		p, ok := Find(Factory(), name)
+		if !ok {
+			t.Errorf("sem o %s", name)
+			continue
+		}
+		c := engine.NewDefaultChain()
+		if err := c.ApplyState(p.State); err != nil || c.Drive().Type() != engine.DriveNAM ||
+			c.Drive().NAMRef() != capturas.Prefix+want || !c.InChain("drive") || c.Drive().Param("nam_size").Get() != engine.NAMLite {
+			t.Errorf("%s: %v, tipo %d, captura %q", name, err, c.Drive().Type(), c.Drive().NAMRef())
+		}
+	}
 	if p, ok := Find(Factory(), "solo hard rock"); !ok || p.State.Modules[0].ID != "gate" {
 		t.Error("deveria achar o Solo Hard Rock sem diferenciar maiúsculas")
 	}

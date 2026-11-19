@@ -126,18 +126,18 @@ const StackFadeMs = 20.0
 func NewPre() *Pre {
 	return &Pre{nam: namBlock{latency: dsp.PreampLatency, normalize: true, def: DefaultNAM},
 		base: base{id: "pre", name: "Pré-amp", paramSet: newParamSet(
-		ParamInfo{ID: "gain", Name: "Ganho", Min: 0, Max: 10, Default: 6.5},
-		ParamInfo{ID: "bass", Name: "Grave", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
-		ParamInfo{ID: "stack", Name: "Tone stack", Min: 0, Max: 2, Default: StackModern, Step: 1,
-			Choices: []string{"Moderno", "Americano", "Britânico"}},
-		ParamInfo{ID: "amp", Name: "Amp", Min: 0, Max: 1, Default: AmpSimulated, Step: 1,
-			Choices: []string{"Simulado", "NAM"}},
-		ParamInfo{ID: "nam_input", Name: "Entrada", Unit: "dB", Min: -24, Max: 24, Default: 0},
-		ParamInfo{ID: "nam_size", Name: "Tamanho", Min: 0, Max: 1, Default: NAMLite, Step: 1,
-			Choices: []string{"Lite", "Completo"}},
-	)}}
+			ParamInfo{ID: "gain", Name: "Ganho", Min: 0, Max: 10, Default: 6.5},
+			ParamInfo{ID: "bass", Name: "Grave", Min: 0, Max: 10, Default: 5},
+			ParamInfo{ID: "mid", Name: "Médio", Min: 0, Max: 10, Default: 5},
+			ParamInfo{ID: "treble", Name: "Agudo", Min: 0, Max: 10, Default: 5},
+			ParamInfo{ID: "stack", Name: "Tone stack", Min: 0, Max: 2, Default: StackModern, Step: 1,
+				Choices: []string{"Moderno", "Americano", "Britânico"}},
+			ParamInfo{ID: "amp", Name: "Amp", Min: 0, Max: 1, Default: AmpSimulated, Step: 1,
+				Choices: []string{"Simulado", "NAM"}},
+			ParamInfo{ID: "nam_input", Name: "Entrada", Unit: "dB", Min: -24, Max: 24, Default: 0},
+			ParamInfo{ID: "nam_size", Name: "Tamanho", Min: 0, Max: 1, Default: NAMLite, Step: 1,
+				Choices: []string{"Lite", "Completo"}},
+		)}}
 }
 
 func (m *Pre) Prepare(fs float64, maxBlock int) {

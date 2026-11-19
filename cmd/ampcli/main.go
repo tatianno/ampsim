@@ -98,7 +98,7 @@ func run() error {
 			return err
 		}
 		chain.Drive().Param("type").Set(engine.DriveNAM)
-		if err := chain.SetEnabled("drive", true); err != nil {
+		if err := chain.Add("drive"); err != nil { // põe na cadeia se o preset não tiver o drive
 			return err
 		}
 	}

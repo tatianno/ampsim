@@ -210,3 +210,23 @@ func TestDriveNAMPreset(t *testing.T) {
 		t.Error("a captura do drive foi parar no amp")
 	}
 }
+
+// Um preset salvo antes do tipo NAM (sem drive.type) volta o drive ao modelado, mesmo vindo de
+// um preset com o drive no NAM.
+func TestDrivePresetAntigoVoltaAoModelado(t *testing.T) {
+	c := NewDefaultChain()
+	c.Drive().Param("type").Set(DriveNAM)
+	st := NewDefaultChain().State()
+	for i, ms := range st.Modules {
+		if ms.ID == "drive" {
+			delete(st.Modules[i].Params, "type")
+			delete(st.Modules[i].Params, "nam_size")
+		}
+	}
+	if err := c.ApplyState(st); err != nil {
+		t.Fatal(err)
+	}
+	if c.Drive().Type() != DriveModeled {
+		t.Error("o drive ficou no NAM do preset anterior")
+	}
+}

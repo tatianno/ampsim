@@ -70,6 +70,13 @@ func (c *Chain) ApplyState(st State) error {
 			continue
 		}
 		s.enabled.Store(ms.Enabled)
+		// parâmetro que o preset não tem (salvo antes de ele existir) volta ao padrão, para não
+		// herdar o valor do som anterior (ex.: drive.type = NAM vindo de outro preset)
+		for _, p := range s.m.Params() {
+			if _, ok := ms.Params[p.Info().ID]; !ok {
+				p.Reset()
+			}
+		}
 		for id, v := range ms.Params {
 			p := s.m.Param(id)
 			if p == nil {
