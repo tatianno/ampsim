@@ -104,6 +104,11 @@ func run() error {
 		}
 	}
 
+	if dir, err := presets.Dir(); err == nil { // saída estéreo ou mono (ajustes.json; padrão: estéreo)
+		st, _ := presets.LoadSettings(presets.SettingsPath(dir))
+		chain.SetStereo(st.StereoOn())
+	}
+
 	s := audio.NewSession(chain, float64(*taxa))
 	defer s.Close()
 	s.Player.SetLoop(!*semLoop)
@@ -268,6 +273,7 @@ const ajuda = `comandos:
   presets                        lista os presets (fábrica e seus)
   preset <nome>                  carrega um preset
   spillover [on|off]             caudas de delay/reverb continuam na troca de preset (padrão: on)
+  estereo [on|off]               saída estéreo (padrão: on, salvo pela janela em ajustes.json)
   gravar <nome>                  salva o som atual como preset seu
   salvar <arq.json> | carregar <arq.json|nome>   presets em arquivo
   sair`
@@ -358,6 +364,20 @@ func (a *app) exec(line string) bool {
 		} else {
 			fmt.Println("A/B: processado")
 		}
+	case "estereo", "estéreo":
+		switch rest {
+		case "on":
+			a.chain.SetStereo(true)
+		case "off":
+			a.chain.SetStereo(false)
+		default:
+			a.chain.SetStereo(!a.chain.Stereo())
+		}
+		if a.chain.Stereo() {
+			fmt.Println("saída: estéreo (modulações e ambiências com Largura)")
+		} else {
+			fmt.Println("saída: mono (L = R)")
+		}
 	case "spillover":
 		switch rest {
 		case "on":
@@ -445,9 +465,9 @@ func (a *app) exec(line string) bool {
 		case rest == "":
 			err = fmt.Errorf("use: exportar <arquivo.wav>")
 		default:
-			var out []float64
-			if out, err = engine.RenderOffline(a.chain.State(), clip.Samples, float64(clip.FS), 2, 512, nil); err == nil {
-				if err = wav.WriteMonoFile(rest, clip.FS, out, wav.PCM24); err == nil {
+			var out [][]float64
+			if out, err = engine.RenderOfflineChannels(a.chain.State(), clip.Samples, float64(clip.FS), 2, 512, a.chain.Stereo(), nil); err == nil {
+				if err = wav.WriteFile(rest, clip.FS, out, wav.PCM24); err == nil {
 					fmt.Println("exportado:", rest)
 				}
 			}

@@ -85,3 +85,12 @@ func (l *LFO) Next(rate, fs float64) float64 {
 
 // Reset volta a fase para zero.
 func (l *LFO) Reset() { l.phase = 0 }
+
+// Phase devolve a fase atual (ciclos, [0, 1)).
+func (l *LFO) Phase() float64 { return l.phase }
+
+// SetPhase põe a fase em p ciclos (qualquer valor; fica em [0, 1)).
+func (l *LFO) SetPhase(p float64) { l.phase = wrap1(p) }
+
+// wrap1 leva p para [0, 1).
+func wrap1(p float64) float64 { return p - math.Floor(p) }

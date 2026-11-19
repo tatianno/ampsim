@@ -832,3 +832,52 @@ func TestEQCabCuts(t *testing.T) {
 		t.Fatal("com o gabinete desligado não deveria marcar cortes")
 	}
 }
+
+// O botão Estéreo (ao lado do título da cadeia) liga/desliga a saída estéreo, fica salvo em
+// ajustes.json e, em mono, esconde a Largura e o modo estéreo do delay.
+func TestBotaoEstereo(t *testing.T) {
+	a, _ := novoApp(t)
+	dir := t.TempDir()
+	a.UsePresetDir(dir)
+	h := newHarness(1280, 800)
+	h.frame(a.Layout)
+	if !a.Chain.Stereo() {
+		t.Fatal("sem ajustes.json, a saída começa em estéreo")
+	}
+	tem := func(id string) bool {
+		p := a.pedals[id]
+		for _, k := range p.visibleKnobs() {
+			if k.P.Info().ID == engine.WidthParam {
+				return true
+			}
+		}
+		for _, s := range p.visibleSels() {
+			if s.P.Info().ID == engine.StereoModeParam {
+				return true
+			}
+		}
+		return false
+	}
+	if !tem("chorus") || !tem("delay") {
+		t.Error("em estéreo, Largura e modo estéreo aparecem")
+	}
+	a.stereoBtn.Click()
+	h.frame(a.Layout)
+	if a.Chain.Stereo() {
+		t.Fatal("o botão deveria passar para mono")
+	}
+	if tem("chorus") || tem("delay") || tem("reverb") {
+		t.Error("em mono, os controles de estéreo deveriam sumir")
+	}
+	if len(a.pedals["chorus"].visibleKnobs()) != 4 {
+		t.Errorf("chorus em mono: %d knobs, esperava 4", len(a.pedals["chorus"].visibleKnobs()))
+	}
+	a.Chain.SetStereo(true)
+	a.UsePresetDir(dir) // reabrindo: lê ajustes.json
+	if a.Chain.Stereo() {
+		t.Error("a saída mono deveria continuar salva")
+	}
+	if a.statusErr {
+		t.Errorf("erro no rodapé: %q", a.status)
+	}
+}

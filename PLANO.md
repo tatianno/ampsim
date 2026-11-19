@@ -774,11 +774,26 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   fade de 1 s depois de 10 s; uma troca nova faz as caudas anteriores sumirem em 150 ms. Delay e reverb zerados
   aplicam o próximo ajuste na hora (sem rampa). Botão **Spillover** na pedaleira (salvo em `pedaleira.json`) e comando
   `spillover on|off` no console; desligado, a cauda some em 30 ms
-- [ ] **Estéreo nas ambiências e modulações** (planejado em 19/11): entrada do pré sempre mono; a cadeia fica
-  estéreo a partir do primeiro pedal estéreo depois do pré (power, gabinete e pedais mono seguintes com estado L/R,
-  compartilhando os `*Param`); chorus/flanger/phaser/vibe com LFO defasado, delay Mono/Estéreo/Ping-pong, reverb
-  com spread no R, tremolo → auto-pan, rotary com dois microfones; switch global Estéreo/Mono (Mono = cadeia de hoje)
-  e knob Largura nos pedais estéreo; saída L/R no malgo/JACK, gravação estéreo, afinador e medidores em (L+R)/2
+- [x] **Estéreo nas ambiências e modulações** (19/11, `engine/stereo.go`): a entrada do pré é sempre mono; com o
+  estéreo ligado, a cadeia tem L e R logo depois do pré-amp (sempre ali, não só a partir do 1º pedal estéreo:
+  assim ligar um pedal não muda o trecho e não há estado do R a inventar). Cada módulo do trecho estéreo processa
+  de um de três jeitos: `StereoProcessor` (delay, reverb e gabinete tratam os dois canais), `Twinner` (uma gêmea
+  com os mesmos `*Param` no R: power, EQ, gate, compressor, vibrato, pitch; com `TwinSyncer` a gêmea recebe o LFO
+  do L defasado em até 180° pela **Largura**, suavizado em 100 ms: chorus, flanger, phaser, vibe, tremolo →
+  auto-pan, rotary → 2º microfone) ou soma L+R e processa em mono (drive, wah, octave, synth). Delay **Duplo** (o
+  R até 25 ms mais atrasado) ou **Ping-pong** (L → R → L, cada repetição com o filtro do tone); reverb com um 2º
+  conjunto de combs/all-pass +23 amostras (Freeverb), alimentado por (L+R)/2. Largura padrão 100%, menos no
+  tremolo (0%: continua tremolo). Testes: estéreo desligado = mono bit a bit; estéreo com larguras em 0 = mono
+  (cadeia completa); blocos de 64 e 1024 iguais; ping-pong e duplo no lugar certo; troca mono/estéreo ao vivo com
+  a rampa da reordenação, sem alocar; spillover em estéreo. CPU: ~+2% do tempo real (power e gabinete dobrados;
+  NAM + chorus/delay/reverb: 6,4% → 8,5% com blocos de 256 a 48 kHz).
+  App: render L/R (placa de 1 canal recebe a média), A/B e mudo nos dois canais, analisador com (L+R)/2,
+  gravação e exportação em 2 canais quando estéreo (`wav.CreateChannels`, `engine.RenderOfflineChannels`),
+  `ampcli -estereo`, comando `estereo on|off` no console. Botão **Estéreo** ao lado de CADEIA DE SINAL (no
+  rodapé não cabia na janela mínima), salvo em `~/.config/ampsim/ajustes.json` (`presets.Settings`; padrão:
+  ligado); em mono a GUI esconde Largura e o modo estéreo do delay (`engine.StereoOnly`)
+- [ ] **Estéreo: ouvir ao vivo** e decidir se algum preset de fábrica ganha ping-pong ou outra largura (hoje todos
+  usam os padrões; os picos em estéreo seguem abaixo de −1 dBFS com a DI)
 - [ ] **Knob de grave dos TMB quase parado acima de 5**: com o médio em 5, o grave em 100 Hz muda ~11 dB de 0 a
   2,5 e menos de 0,5 dB de 5 a 10 (Britânico, Americano e High Gain; vem do `bassTaper` e do circuito). Avaliar a
   curva do pot

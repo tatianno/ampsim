@@ -39,6 +39,9 @@ func (t *Tremolo) Set(rate, depth float64, shape int) {
 // Reset volta a fase e o ganho para o início.
 func (t *Tremolo) Reset() { t.phase, t.gain = 0, 1 }
 
+// SyncLFO põe a fase na de src mais offset ciclos (estéreo: com 0,5 vira auto-pan).
+func (t *Tremolo) SyncLFO(src *Tremolo, offset float64) { t.phase = wrap1(src.phase + offset) }
+
 // squareK define o quão "quadrada" é a onda quadrada (tanh de um seno).
 const squareK = 4.0
 

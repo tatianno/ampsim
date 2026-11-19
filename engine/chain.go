@@ -38,6 +38,14 @@ type slot struct {
 
 	sp   Spiller // módulo com cauda (spillover), ou nil
 	free []Tail  // instâncias reservas (thread de áudio)
+
+	// estéreo (stereo.go)
+	twin     Module          // instância do canal R (Twinner), ou nil
+	sync     TwinSyncer      // acerta a gêmea a cada bloco, ou nil
+	sp2      StereoProcessor // processa os dois canais, ou nil
+	stereo   bool            // processado no trecho estéreo no último bloco
+	dryR     []float64
+	dryLineR *dsp.DelayLine
 }
 
 // Chain é a cadeia de módulos em série, com ordem configurável ao vivo. Implementa a
@@ -57,7 +65,11 @@ type Chain struct {
 	fs       float64
 	maxBlock int
 	mono     []float64
+	right    []float64
 	prepared bool
+
+	stereoWant atomic.Bool // saída estéreo pedida (GUI)
+	stereo     bool        // modo em uso (thread de áudio)
 
 	// spillover (spill.go)
 	noSpill                       atomic.Bool   // spillover desligado
@@ -65,7 +77,7 @@ type Chain struct {
 	transSeen                     uint64        // última atendida (thread de áudio)
 	groups                        []tailGroup
 	nTails                        int
-	tbuf                          []float64
+	tbuf, tbufR                   []float64
 	cutStep, overlapStep, endStep float64
 	maxTail                       int
 }
@@ -369,15 +381,25 @@ func (c *Chain) SectionOf(id string) Section {
 func (c *Chain) Prepare(fs float64, maxBlock int) {
 	c.fs, c.maxBlock = fs, maxBlock
 	c.mono = make([]float64, maxBlock)
+	c.right = make([]float64, maxBlock)
 	for _, s := range c.all {
 		s.m.Prepare(fs, maxBlock)
 		s.lat = s.m.Latency()
 		s.step = 1 / (BypassFadeMs / 1000 * fs)
 		s.dry = make([]float64, maxBlock)
-		s.dryLine = nil
+		s.dryR = make([]float64, maxBlock)
+		s.dryLine, s.dryLineR = nil, nil
 		if s.lat > 0 {
 			s.dryLine = dsp.NewDelayLine(s.lat)
+			s.dryLineR = dsp.NewDelayLine(s.lat)
 		}
+		s.twin, s.sync, s.sp2, s.stereo = nil, nil, nil, false
+		if tw, ok := s.m.(Twinner); ok {
+			s.twin = tw.Twin()
+			s.twin.Prepare(fs, maxBlock)
+			s.sync, _ = s.m.(TwinSyncer)
+		}
+		s.sp2, _ = s.m.(StereoProcessor)
 		if s.enabled.Load() {
 			s.gain = 1
 		} else {
@@ -387,6 +409,7 @@ func (c *Chain) Prepare(fs float64, maxBlock int) {
 	c.active = c.want.Load()
 	c.rgain = 1
 	c.rstep = 1 / (ReorderFadeMs / 1000 * fs)
+	c.stereo = c.stereoWant.Load()
 	c.prepareTails()
 	c.prepared = true
 }
@@ -401,10 +424,7 @@ func (c *Chain) MaxBlock() int { return c.maxBlock }
 func (c *Chain) Reset() {
 	c.releaseTails()
 	for _, s := range c.all {
-		s.m.Reset()
-		if s.dryLine != nil {
-			s.dryLine.Reset()
-		}
+		s.reset()
 	}
 }
 
@@ -419,46 +439,107 @@ func (c *Chain) Latency() int {
 	return total
 }
 
-// ProcessMono processa um bloco mono in-place, de qualquer tamanho.
-func (c *Chain) ProcessMono(buf []float64) {
-	for len(buf) > 0 {
-		n := min(len(buf), c.maxBlock)
-		b := buf[:n]
-		if r := c.transReq.Load(); r != c.transSeen {
-			c.transSeen = r
+// ProcessMono processa um bloco mono in-place, de qualquer tamanho. A cadeia toda roda em
+// mono, mesmo com o estéreo ligado (para a saída estéreo, ProcessStereo).
+func (c *Chain) ProcessMono(buf []float64) { c.run(buf, nil) }
+
+// ProcessStereo processa um bloco: l é a entrada (mono) e vira o canal esquerdo; r recebe o
+// direito (o conteúdo de entrada é ignorado). Com o estéreo desligado, r = l.
+func (c *Chain) ProcessStereo(l, r []float64) { c.run(l, r[:len(l)]) }
+
+// splitIndex é onde a cadeia passa a ser estéreo: logo depois do pré-amp (a entrada de um
+// amp é mono), ou desde o início, numa cadeia sem pré-amp.
+func splitIndex(act []*slot) int {
+	for i, s := range act {
+		if s.m.ID() == PreID {
+			return i + 1
+		}
+	}
+	return 0
+}
+
+// run processa l (e r, se não for nil: saída estéreo).
+func (c *Chain) run(l, r []float64) {
+	for len(l) > 0 {
+		n := min(len(l), c.maxBlock)
+		b := l[:n]
+		var br []float64
+		if r != nil {
+			br = r[:n]
+		}
+		if req := c.transReq.Load(); req != c.transSeen {
+			c.transSeen = req
 			c.spill()
 		}
-		for _, s := range *c.active {
-			if c.nTails > 0 {
-				c.mixTails(b, s)
+		st := c.stereo && br != nil
+		act := *c.active
+		split := len(act)
+		if st {
+			split = splitIndex(act)
+		}
+		for i, s := range act {
+			if i == split {
+				copy(br, b) // daqui em diante, dois canais
 			}
-			s.process(b)
+			var sr []float64
+			if i >= split {
+				sr = br
+			}
+			if c.nTails > 0 {
+				c.mixTails(b, sr, s)
+			}
+			s.process(b, sr)
+		}
+		var er []float64
+		if st {
+			if split == len(act) {
+				copy(br, b)
+			}
+			er = br
 		}
 		if c.nTails > 0 {
-			c.mixTails(b, nil)
+			c.mixTails(b, er, nil)
 		}
-		if want := c.want.Load(); want != c.active || c.rgain < 1 {
-			c.reorderRamp(b, want)
+		if br != nil && !st {
+			copy(br, b)
 		}
-		buf = buf[n:]
+		if want := c.want.Load(); want != c.active || c.rgain < 1 || c.stereoWant.Load() != c.stereo {
+			c.reorderRamp(b, br, want)
+		}
+		l = l[n:]
+		if r != nil {
+			r = r[n:]
+		}
 	}
 }
 
-// reorderRamp desce o volume até zero com a ordem antiga, troca a ordem e sobe de novo.
-func (c *Chain) reorderRamp(b []float64, want *[]*slot) {
+// reorderRamp desce o volume até zero com a ordem antiga, troca a ordem (e o modo
+// mono/estéreo) e sobe de novo. br pode ser nil.
+func (c *Chain) reorderRamp(b, br []float64, want *[]*slot) {
+	stw := c.stereoWant.Load()
 	for i := range b {
-		if want != c.active {
+		if want != c.active || stw != c.stereo {
 			c.rgain -= c.rstep
 			if c.rgain <= 0 {
 				c.rgain = 0
 				clear(b[i:])
+				if br != nil {
+					clear(br[i:])
+				}
 				c.enterOrder(want) // a nova ordem vale a partir do próximo bloco
+				if stw != c.stereo {
+					c.stereo = stw
+					c.releaseTails() // as caudas eram do outro modo
+				}
 				return
 			}
 		} else if c.rgain < 1 {
 			c.rgain = math.Min(1, c.rgain+c.rstep)
 		}
 		b[i] *= c.rgain
+		if br != nil {
+			br[i] *= c.rgain
+		}
 	}
 }
 
@@ -471,17 +552,14 @@ func (c *Chain) enterOrder(want *[]*slot) {
 	}
 	for _, s := range *want {
 		if s.mark != c.gen {
-			s.m.Reset()
-			if s.dryLine != nil {
-				s.dryLine.Reset()
-			}
+			s.reset()
 		}
 	}
 	c.active = want
 }
 
-// Process é a interface multicanal (float32) usada pelo app e pelo plugin:
-// mistura as entradas em mono, processa e copia o resultado para todas as saídas.
+// Process é a interface multicanal (float32) usada pelo plugin: mistura as entradas em mono e
+// processa; com duas saídas ou mais, a 1ª recebe o L e a 2ª o R (as demais, o L).
 func (c *Chain) Process(in, out [][]float32, n int) {
 	for off := 0; off < n; off += c.maxBlock {
 		k := min(c.maxBlock, n-off)
@@ -495,16 +573,67 @@ func (c *Chain) Process(in, out [][]float32, n int) {
 				}
 			}
 		}
-		c.ProcessMono(m)
-		for _, ch := range out {
-			for i, v := range m {
+		r := m
+		if len(out) >= 2 {
+			r = c.right[:k]
+			c.ProcessStereo(m, r)
+		} else {
+			c.ProcessMono(m)
+		}
+		for j, ch := range out {
+			src := m
+			if j == 1 {
+				src = r
+			}
+			for i, v := range src {
 				ch[off+i] = float32(v)
 			}
 		}
 	}
 }
 
-func (s *slot) process(buf []float64) {
+// reset limpa o módulo (e a instância do canal R) e o atraso do seco.
+func (s *slot) reset() {
+	s.m.Reset()
+	if s.twin != nil {
+		s.twin.Reset()
+	}
+	if s.dryLine != nil {
+		s.dryLine.Reset()
+		s.dryLineR.Reset()
+	}
+}
+
+// run processa o módulo em mono (r == nil) ou em estéreo: em dois canais de verdade
+// (StereoProcessor), com a instância gêmea no R (Twinner) ou, nos módulos só mono, somando
+// os canais.
+func (s *slot) run(l, r []float64) {
+	switch {
+	case r == nil:
+		s.m.Process(l)
+	case s.sp2 != nil:
+		s.sp2.ProcessStereo(l, r)
+	case s.twin != nil:
+		if s.sync != nil {
+			s.sync.SyncTwin(s.twin, len(l))
+		}
+		s.m.Process(l)
+		s.twin.Process(r)
+	default:
+		for i := range l {
+			l[i] = 0.5 * (l[i] + r[i])
+		}
+		s.m.Process(l)
+		copy(r, l)
+	}
+}
+
+// process processa o slot (r == nil: mono), com o crossfade de bypass.
+func (s *slot) process(l, r []float64) {
+	if st := r != nil; st != s.stereo { // mudou de trecho (mono ↔ estéreo): começa limpo
+		s.stereo = st
+		s.reset()
+	}
 	target := 0.0
 	if s.enabled.Load() {
 		target = 1
@@ -513,43 +642,69 @@ func (s *slot) process(buf []float64) {
 	// Bypass total: só mantém o atraso do sinal seco.
 	if s.gain == 0 && target == 0 {
 		if s.dryLine != nil {
-			for i, x := range buf {
-				buf[i] = s.dryLine.ReadInt(s.lat)
-				s.dryLine.Write(x)
+			delayDry(l, s.dryLine, s.lat)
+			if r != nil {
+				delayDry(r, s.dryLineR, s.lat)
 			}
 		}
 		return
 	}
 	if s.gain == 0 {
-		s.m.Reset() // pedal sendo ligado: começa sem resto de estado antigo
+		s.reset() // pedal sendo ligado: começa sem resto de estado antigo
 	}
 
-	dry := s.dry[:len(buf)]
-	copy(dry, buf)
-	s.m.Process(buf)
+	dry := s.dry[:len(l)]
+	copy(dry, l)
+	var dryR []float64
+	if r != nil {
+		dryR = s.dryR[:len(r)]
+		copy(dryR, r)
+	}
+	s.run(l, r)
 
 	if s.gain == 1 && target == 1 {
 		if s.dryLine != nil {
 			for _, x := range dry {
 				s.dryLine.Write(x)
 			}
+			for _, x := range dryR {
+				s.dryLineR.Write(x)
+			}
 		}
 		return
 	}
 	// Crossfade entre efeito e seco (seco atrasado pela latência do módulo).
+	g := s.gain
+	s.gain = fadeDry(l, dry, s.dryLine, s.lat, g, target, s.step)
+	if r != nil {
+		fadeDry(r, dryR, s.dryLineR, s.lat, g, target, s.step)
+	}
+}
+
+func delayDry(buf []float64, line *dsp.DelayLine, lat int) {
+	for i, x := range buf {
+		buf[i] = line.ReadInt(lat)
+		line.Write(x)
+	}
+}
+
+// fadeDry mistura buf (efeito) com dry (atrasado por line, se houver) com o ganho indo de g
+// até target; devolve o ganho final.
+func fadeDry(buf, dry []float64, line *dsp.DelayLine, lat int, g, target, step float64) float64 {
 	for i, x := range dry {
 		d := x
-		if s.dryLine != nil {
-			d = s.dryLine.ReadInt(s.lat)
-			s.dryLine.Write(x)
+		if line != nil {
+			d = line.ReadInt(lat)
+			line.Write(x)
 		}
-		if s.gain < target {
-			s.gain = math.Min(target, s.gain+s.step)
-		} else if s.gain > target {
-			s.gain = math.Max(target, s.gain-s.step)
+		if g < target {
+			g = math.Min(target, g+step)
+		} else if g > target {
+			g = math.Max(target, g-step)
 		}
-		buf[i] = s.gain*buf[i] + (1-s.gain)*d
+		buf[i] = g*buf[i] + (1-g)*d
 	}
+	return g
 }
 
 // String descreve a cadeia na ordem atual, marcando o loop de efeitos e os módulos desligados:

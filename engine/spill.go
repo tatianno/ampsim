@@ -19,6 +19,7 @@ import "math"
 // Tail é uma instância de efeito tocando a cauda do som anterior.
 type Tail interface {
 	ProcessBlock(buf []float64)
+	ProcessStereo(l, r []float64)
 	Reset()
 	Silent() bool
 }
@@ -103,6 +104,7 @@ func (c *Chain) prepareTails() {
 	}
 	c.nTails = 0
 	c.tbuf = make([]float64, c.maxBlock)
+	c.tbufR = make([]float64, c.maxBlock)
 	ms := func(v float64) float64 { return 1 / (v / 1000 * c.fs) }
 	c.cutStep, c.overlapStep, c.endStep = ms(SpillCutMs), ms(SpillOverlapMs), ms(SpillEndMs)
 	c.maxTail = int(SpillMaxMs / 1000 * c.fs)
@@ -228,8 +230,9 @@ func (c *Chain) spill() {
 	}
 }
 
-// mixTails soma em b as caudas que entram antes de anchor (nil = fim da cadeia).
-func (c *Chain) mixTails(b []float64, anchor *slot) {
+// mixTails soma em b (e br, no trecho estéreo) as caudas que entram antes de anchor (nil =
+// fim da cadeia).
+func (c *Chain) mixTails(b, br []float64, anchor *slot) {
 	for i := range c.groups {
 		g := &c.groups[i]
 		if !g.on || g.anchor != anchor {
@@ -237,9 +240,18 @@ func (c *Chain) mixTails(b []float64, anchor *slot) {
 		}
 		tb := c.tbuf[:len(b)]
 		clear(tb)
+		var tr []float64
+		if br != nil {
+			tr = c.tbufR[:len(b)]
+			clear(tr)
+		}
 		silent := true
 		for _, p := range g.parts {
-			p.t.ProcessBlock(tb)
+			if tr != nil {
+				p.t.ProcessStereo(tb, tr)
+			} else {
+				p.t.ProcessBlock(tb)
+			}
 			silent = silent && p.t.Silent()
 		}
 		for k, v := range tb {
@@ -247,6 +259,9 @@ func (c *Chain) mixTails(b []float64, anchor *slot) {
 				g.gain = math.Max(0, g.gain-g.step)
 			}
 			b[k] += g.gain * v
+			if tr != nil {
+				br[k] += g.gain * tr[k]
+			}
 		}
 		g.age += len(b)
 		switch {

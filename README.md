@@ -40,6 +40,12 @@ para Go em streaming, validados contra as saídas do Python.
 - **Cadeia configurável** com **loop de efeitos** (send/return): os pedais podem ficar na
   frente do amp, entre o pré-amp e o power amp, ou depois do gabinete. A ordem muda ao vivo,
   sem estalo.
+- **Estéreo** (botão ao lado de CADEIA DE SINAL; ligado por padrão, salvo em `~/.config/ampsim/ajustes.json`): a
+  entrada do amp é mono, e depois do pré-amp a cadeia passa a ter L e R. Chorus, flanger, phaser e vibe defasam o
+  LFO do R, o tremolo vira auto-pan, o rotary ganha o segundo microfone, o reverb tem reflexões próprias no R e o
+  delay tem os modos **Duplo** (o R um pouco mais atrasado) e **Ping-pong**, todos com o knob **Largura** (0 = mono).
+  Power amp e gabinete processam os dois canais. Desligado, tudo soa como em mono, com L e R iguais. Gravar e
+  exportar saem em estéreo quando ele está ligado.
 - **Tempo real**: convolução particionada de latência zero, oversampling 4x com latência de
   32 amostras, nenhuma alocação na thread de áudio, saída idêntica com qualquer tamanho de bloco.
 - **GUI (Gio)**: cabeçote e gabinete com knobs, cadeia em que se arrastam os pedais, pedais
@@ -119,6 +125,7 @@ go run ./cmd/ampapp -console -arquivo minha_di.wav -ir meu_gabinete.wav
 # processar um arquivo offline
 go run ./cmd/ampcli -in minha_di.wav -ir meu_gabinete.wav -out saida.wav -on delay -set pre.gain=8
 go run ./cmd/ampcli -listar          # módulos e parâmetros
+go run ./cmd/ampcli -in minha_di.wav -out saida.wav -preset Ambiente -estereo -set delay.stmode=1   # estéreo, ping-pong
 ```
 
 Grave a guitarra direto na interface (DI), sem amp nem pedal, com pico entre −12 e −6 dBFS.

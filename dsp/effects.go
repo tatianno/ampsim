@@ -38,6 +38,9 @@ func (c *Chorus) Set(rate, depthMs, delayMs, mix float64) {
 // Reset zera o estado.
 func (c *Chorus) Reset() { c.line.Reset(); c.lfo.Reset() }
 
+// SyncLFO põe o LFO na fase de src mais offset ciclos (estéreo: o canal R defasado do L).
+func (c *Chorus) SyncLFO(src *Chorus, offset float64) { c.lfo.SetPhase(src.lfo.phase + offset) }
+
 // ProcessBlock processa in-place.
 func (c *Chorus) ProcessBlock(buf []float64) {
 	maxD := float64(c.line.MaxDelay() - 1)
@@ -82,6 +85,9 @@ func (f *Flanger) Set(rate, minMs, maxMs, feedback, mix float64) {
 
 // Reset zera o estado.
 func (f *Flanger) Reset() { f.line.Reset(); f.lfo.Reset() }
+
+// SyncLFO põe o LFO na fase de src mais offset ciclos (estéreo: o canal R defasado do L).
+func (f *Flanger) SyncLFO(src *Flanger, offset float64) { f.lfo.SetPhase(src.lfo.phase + offset) }
 
 // ProcessBlock processa in-place.
 func (f *Flanger) ProcessBlock(buf []float64) {
@@ -139,6 +145,9 @@ func (p *Phaser) Reset() {
 	p.last = 0
 }
 
+// SyncLFO põe o LFO na fase de src mais offset ciclos (estéreo: o canal R defasado do L).
+func (p *Phaser) SyncLFO(src *Phaser, offset float64) { p.lfo.SetPhase(src.lfo.phase + offset) }
+
 // ProcessBlock processa in-place.
 func (p *Phaser) ProcessBlock(buf []float64) {
 	for i, x := range buf {
@@ -163,11 +172,18 @@ func (p *Phaser) ProcessBlock(buf []float64) {
 // ---------------------------------------------------------------- Delay
 
 // Delay analógico: eco com realimentação e um passa-baixa de 1 polo que escurece cada repetição.
+//
+// Em estéreo (ProcessStereo) há duas linhas. No modo duplo cada canal tem a sua, e a do R
+// atrasa até DelayWideMs a mais conforme a largura. No ping-pong a entrada (L+R)/2 entra na
+// linha L e as repetições alternam L, R, L, ...; a largura vai do eco no centro (0) ao
+// ping-pong total (1).
 type Delay struct {
 	fs                   float64
-	line                 *DelayLine
-	lp                   float64
+	line, lineR          *DelayLine
+	lp, lpR              float64
 	timeSm, fb, damp, mx Smoother
+	width                Smoother
+	pingPong             bool
 	quiet                int // amostras seguidas abaixo de TailSilence (entrada, eco e o que foi gravado)
 }
 
@@ -177,12 +193,16 @@ const TailSilence = 1e-4
 // DelayMaxMs é o maior tempo de delay suportado.
 const DelayMaxMs = 2000.0
 
+// DelayWideMs é quanto o canal R atrasa a mais, com a largura toda, no modo duplo.
+const DelayWideMs = 25.0
+
 // NewDelay cria um delay.
 func NewDelay(fs float64) *Delay {
-	d := &Delay{fs: fs, line: NewDelayLine(int(DelayMaxMs/1000*fs) + 1)}
+	n := int((DelayMaxMs+DelayWideMs)/1000*fs) + 1
+	d := &Delay{fs: fs, line: NewDelayLine(n), lineR: NewDelayLine(n)}
 	d.quiet = len(d.line.buf)
 	d.timeSm.SetTime(fs, 80) // mudar o tempo "estica" a fita, como num delay analógico
-	for _, s := range []*Smoother{&d.fb, &d.damp, &d.mx} {
+	for _, s := range []*Smoother{&d.fb, &d.damp, &d.mx, &d.width} {
 		s.SetTime(fs, 20)
 	}
 	return d
@@ -197,23 +217,38 @@ func (d *Delay) Set(timeMs, feedback, damping, mix float64) {
 	d.mx.SetTarget(mix)
 }
 
+// SetStereo ajusta o estéreo: largura 0..1 e o modo (ping-pong ou duplo).
+func (d *Delay) SetStereo(width float64, pingPong bool) {
+	d.width.SetTarget(width)
+	d.pingPong = pingPong
+}
+
 // Reset zera o estado. O próximo Set vale na hora (sem rampa), como num pedal recém-ligado.
 func (d *Delay) Reset() {
 	d.line.Reset()
-	d.lp, d.quiet = 0, len(d.line.buf)
-	for _, s := range []*Smoother{&d.timeSm, &d.fb, &d.damp, &d.mx} {
+	d.lineR.Reset()
+	d.lp, d.lpR, d.quiet = 0, 0, len(d.line.buf)
+	for _, s := range []*Smoother{&d.timeSm, &d.fb, &d.damp, &d.mx, &d.width} {
 		s.Unprime()
 	}
 }
 
-// Silent informa se não sobrou nada a repetir: tudo o que entrou na linha no último trecho do
-// tamanho do tempo de delay (o atual e o alvo, se ainda estiver mudando) estava abaixo de
-// TailSilence.
+// Silent informa se não sobrou nada a repetir: tudo o que entrou nas linhas no último trecho
+// do tamanho do tempo de delay (o atual e o alvo, se ainda estiver mudando, mais o atraso do
+// R) estava abaixo de TailSilence.
 func (d *Delay) Silent() bool {
-	return float64(d.quiet) > math.Max(d.timeSm.Value(), d.timeSm.target)+2
+	return float64(d.quiet) > math.Max(d.timeSm.Value(), d.timeSm.target)+DelayWideMs/1000*d.fs+2
 }
 
-// ProcessBlock processa in-place.
+func (d *Delay) track(peak float64) {
+	if peak < TailSilence {
+		d.quiet++
+	} else {
+		d.quiet = 0
+	}
+}
+
+// ProcessBlock processa in-place (mono: só a linha L).
 func (d *Delay) ProcessBlock(buf []float64) {
 	for i, x := range buf {
 		wet := d.line.Read(d.timeSm.Next())
@@ -221,13 +256,39 @@ func (d *Delay) ProcessBlock(buf []float64) {
 		d.lp = wet*(1-a) + d.lp*a
 		w := x + d.lp*d.fb.Next()
 		d.line.Write(w)
-		if math.Abs(w) < TailSilence && math.Abs(wet) < TailSilence {
-			d.quiet++
-		} else {
-			d.quiet = 0
-		}
+		d.track(math.Max(math.Abs(w), math.Abs(wet)))
 		m := d.mx.Next()
+		d.width.Next()
 		buf[i] = (1-m)*x + m*wet
+	}
+}
+
+// ProcessStereo processa L e R in-place.
+func (d *Delay) ProcessStereo(l, r []float64) {
+	wide := DelayWideMs / 1000 * d.fs
+	for i, xl := range l {
+		xr := r[i]
+		t, w := d.timeSm.Next(), d.width.Next()
+		a, fb, m := d.damp.Next(), d.fb.Next(), d.mx.Next()
+		var wl, wr, ol, or, inL, inR float64
+		if d.pingPong {
+			wl, wr = d.line.Read(t), d.lineR.Read(t)
+			d.lp = wl*(1-a) + d.lp*a
+			d.lpR = wr*(1-a) + d.lpR*a
+			inL, inR = 0.5*(xl+xr)+fb*d.lpR, fb*d.lp // L → R → L: cada repetição passa por um filtro
+			ol, or = wl+(1-w)*wr, wr+(1-w)*wl
+		} else {
+			wl, wr = d.line.Read(t), d.lineR.Read(t+w*wide)
+			d.lp = wl*(1-a) + d.lp*a
+			d.lpR = wr*(1-a) + d.lpR*a
+			inL, inR = xl+fb*d.lp, xr+fb*d.lpR
+			ol, or = wl, wr
+		}
+		d.line.Write(inL)
+		d.lineR.Write(inR)
+		d.track(math.Max(math.Max(math.Abs(inL), math.Abs(inR)), math.Max(math.Abs(wl), math.Abs(wr))))
+		l[i] = (1-m)*xl + m*ol
+		r[i] = (1-m)*xr + m*or
 	}
 }
 
@@ -237,6 +298,10 @@ var (
 	reverbCombMs    = [4]float64{29.7, 37.1, 41.1, 43.7}
 	reverbAllpassMs = [2]float64{5.0, 1.7}
 )
+
+// reverbSpread é quanto os combs e all-pass do canal R são mais longos (23 amostras a
+// 44,1 kHz, como no Freeverb): as duas reflexões ficam descorrelacionadas.
+const reverbSpread = 23.0 / 44100
 
 type comb struct {
 	buf   []float64
@@ -249,32 +314,89 @@ type allpass struct {
 	idx int
 }
 
-// Reverb algorítmico Schroeder/Freeverb: 4 combs em paralelo + 2 all-pass em série.
+// reverbBank é um conjunto de 4 combs em paralelo + 2 all-pass em série (um canal).
+type reverbBank struct {
+	combs [4]comb
+	aps   [2]allpass
+}
+
+func newReverbBank(fs, extra float64) reverbBank {
+	var b reverbBank
+	for i, ms := range reverbCombMs {
+		b.combs[i].buf = make([]float64, max(1, int((ms/1000+extra)*fs)))
+	}
+	for i, ms := range reverbAllpassMs {
+		b.aps[i].buf = make([]float64, max(1, int((ms/1000+extra)*fs)))
+	}
+	return b
+}
+
+func (b *reverbBank) span() int {
+	n := 0
+	for _, c := range b.combs {
+		n = max(n, len(c.buf))
+	}
+	for _, a := range b.aps {
+		n += len(a.buf)
+	}
+	return n
+}
+
+func (b *reverbBank) reset() {
+	for i := range b.combs {
+		clear(b.combs[i].buf)
+		b.combs[i].idx, b.combs[i].store = 0, 0
+	}
+	for i := range b.aps {
+		clear(b.aps[i].buf)
+		b.aps[i].idx = 0
+	}
+}
+
+// next processa uma amostra; devolve a saída e o maior |valor| que passou pelos filtros.
+func (b *reverbBank) next(x, fb, damp float64) (s, peak float64) {
+	sum := 0.0
+	for k := range b.combs {
+		c := &b.combs[k]
+		y := c.buf[c.idx]
+		peak = math.Max(peak, math.Abs(y))
+		c.store = y*(1-damp) + c.store*damp
+		c.buf[c.idx] = x + c.store*fb
+		if c.idx++; c.idx == len(c.buf) {
+			c.idx = 0
+		}
+		sum += y
+	}
+	s = sum * 0.25
+	for k := range b.aps {
+		a := &b.aps[k]
+		out := a.buf[a.idx]
+		peak = math.Max(peak, math.Abs(out))
+		a.buf[a.idx] = s + out*0.5
+		s = -s + out
+		if a.idx++; a.idx == len(a.buf) {
+			a.idx = 0
+		}
+	}
+	return s, peak
+}
+
+// Reverb algorítmico Schroeder/Freeverb: 4 combs em paralelo + 2 all-pass em série. Em
+// estéreo, o R tem um segundo conjunto, um pouco mais longo; a largura vai do R igual ao L
+// (0) ao R independente (1).
 type Reverb struct {
-	combs           [4]comb
-	aps             [2]allpass
-	size, damp, mix Smoother
-	quiet, span     int // amostras seguidas em silêncio; quantas bastam (o comb e os all-pass mais longos)
+	l, r                   reverbBank
+	size, damp, mix, width Smoother
+	quiet, span            int // amostras seguidas em silêncio; quantas bastam (o comb e os all-pass mais longos)
 }
 
 // NewReverb cria um reverb.
 func NewReverb(fs float64) *Reverb {
-	r := &Reverb{}
-	for i, ms := range reverbCombMs {
-		r.combs[i].buf = make([]float64, max(1, int(ms/1000*fs)))
-	}
-	for i, ms := range reverbAllpassMs {
-		r.aps[i].buf = make([]float64, max(1, int(ms/1000*fs)))
-	}
-	for _, s := range []*Smoother{&r.size, &r.damp, &r.mix} {
+	r := &Reverb{l: newReverbBank(fs, 0), r: newReverbBank(fs, reverbSpread)}
+	for _, s := range []*Smoother{&r.size, &r.damp, &r.mix, &r.width} {
 		s.SetTime(fs, 20)
 	}
-	for _, c := range r.combs {
-		r.span = max(r.span, len(c.buf))
-	}
-	for _, a := range r.aps {
-		r.span += len(a.buf)
-	}
+	r.span = max(r.l.span(), r.r.span())
 	r.quiet = r.span
 	return r
 }
@@ -290,55 +412,50 @@ func (r *Reverb) Set(size, damping, mix float64) {
 	r.mix.SetTarget(mix)
 }
 
+// SetWidth ajusta a largura do estéreo (0..1).
+func (r *Reverb) SetWidth(width float64) { r.width.SetTarget(width) }
+
 // Reset zera o estado. O próximo Set vale na hora (sem rampa).
 func (r *Reverb) Reset() {
 	r.quiet = r.span
-	for _, s := range []*Smoother{&r.size, &r.damp, &r.mix} {
+	for _, s := range []*Smoother{&r.size, &r.damp, &r.mix, &r.width} {
 		s.Unprime()
 	}
-	for i := range r.combs {
-		clear(r.combs[i].buf)
-		r.combs[i].idx, r.combs[i].store = 0, 0
-	}
-	for i := range r.aps {
-		clear(r.aps[i].buf)
-		r.aps[i].idx = 0
+	r.l.reset()
+	r.r.reset()
+}
+
+func (r *Reverb) track(peak float64) {
+	if peak < TailSilence {
+		r.quiet++
+	} else {
+		r.quiet = 0
 	}
 }
 
-// ProcessBlock processa in-place.
+// ProcessBlock processa in-place (mono: só o conjunto L).
 func (r *Reverb) ProcessBlock(buf []float64) {
 	for i, x := range buf {
 		fb, damp := r.size.Next(), r.damp.Next()
-		sum, peak := 0.0, math.Abs(x)
-		for k := range r.combs {
-			c := &r.combs[k]
-			y := c.buf[c.idx]
-			peak = math.Max(peak, math.Abs(y))
-			c.store = y*(1-damp) + c.store*damp
-			c.buf[c.idx] = x + c.store*fb
-			if c.idx++; c.idx == len(c.buf) {
-				c.idx = 0
-			}
-			sum += y
-		}
-		s := sum * 0.25
-		for k := range r.aps {
-			a := &r.aps[k]
-			out := a.buf[a.idx]
-			peak = math.Max(peak, math.Abs(out))
-			a.buf[a.idx] = s + out*0.5
-			s = -s + out
-			if a.idx++; a.idx == len(a.buf) {
-				a.idx = 0
-			}
-		}
-		if peak < TailSilence {
-			r.quiet++
-		} else {
-			r.quiet = 0
-		}
+		s, peak := r.l.next(x, fb, damp)
+		r.track(math.Max(peak, math.Abs(x)))
 		m := r.mix.Next()
+		r.width.Next()
 		buf[i] = (1-m)*x + m*s
+	}
+}
+
+// ProcessStereo processa L e R in-place: os dois conjuntos recebem (L+R)/2.
+func (r *Reverb) ProcessStereo(l, rr []float64) {
+	for i, xl := range l {
+		xr := rr[i]
+		x := 0.5 * (xl + xr)
+		fb, damp := r.size.Next(), r.damp.Next()
+		sl, pl := r.l.next(x, fb, damp)
+		sr, pr := r.r.next(x, fb, damp)
+		r.track(math.Max(math.Max(pl, pr), math.Abs(x)))
+		m, w := r.mix.Next(), r.width.Next()
+		l[i] = (1-m)*xl + m*sl
+		rr[i] = (1-m)*xr + m*((1-w)*sl+w*sr)
 	}
 }

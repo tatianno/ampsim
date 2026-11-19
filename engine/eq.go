@@ -107,6 +107,9 @@ func (m *EQ) Reset() {
 
 func (m *EQ) Latency() int { return 0 }
 
+// Twin é o EQ do canal R (os mesmos parâmetros).
+func (m *EQ) Twin() Module { return &EQ{base: m.base, pf: m.pf, pg: m.pg, pq: m.pq} }
+
 // update recalcula os coeficientes das bandas que mudaram (sem alocar).
 func (m *EQ) update() {
 	for i := range m.filters {

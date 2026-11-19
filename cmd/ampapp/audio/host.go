@@ -1,6 +1,6 @@
 // Pacote audio liga uma fonte (arquivo ou guitarra) ao engine e à placa de som.
 //
-//	fonte.Read → engine.ProcessMono → clip de segurança → saída intercalada
+//	fonte.Read → engine.ProcessStereo → clip de segurança → saída intercalada (L, R)
 //
 // O render é separado do dispositivo (malgo) para poder ser testado sem placa de som.
 package audio
@@ -15,8 +15,9 @@ import (
 	"github.com/tatianno/ampsim/engine"
 )
 
-// OutputChannels é quantos canais de saída recebem o sinal (o primeiro par); os demais
+// OutputChannels é quantos canais de saída recebem o sinal (o primeiro par: L e R); os demais
 // ficam em silêncio. No JACK, o miniaudio abre todas as portas físicas de todas as placas.
+// Numa saída de um canal só, vai a média de L e R.
 const OutputChannels = 2
 
 // MaxBlock é o maior bloco processado de uma vez (callbacks maiores são divididos).
@@ -42,7 +43,9 @@ type Renderer struct {
 	chain    *engine.Chain
 	fs       float64
 	src      atomic.Pointer[sourceRef]
-	mono     []float64
+	mono     []float64 // entrada e, depois da cadeia, o canal L
+	right    []float64 // canal R
+	avg      []float64 // (L+R)/2, para o analisador
 	meters   *Ring[Meter]
 	dropped  atomic.Uint64
 	callback atomic.Uint64
@@ -80,7 +83,8 @@ const ABFadeMs = 10.0
 
 // NewRenderer cria o render para a cadeia (já preparada em fs com blocos de MaxBlock).
 func NewRenderer(chain *engine.Chain, fs float64) *Renderer {
-	r := &Renderer{chain: chain, fs: fs, mono: make([]float64, MaxBlock), meters: NewRing[Meter](256)}
+	r := &Renderer{chain: chain, fs: fs, mono: make([]float64, MaxBlock), right: make([]float64, MaxBlock),
+		avg: make([]float64, MaxBlock), meters: NewRing[Meter](256)}
 	r.SetSource(source.Silence{})
 	r.abGain = 1
 	r.abStep = 1 / (ABFadeMs / 1000 * fs)
@@ -151,29 +155,35 @@ func (r *Renderer) render(out []float32, channels, frames int, start time.Time, 
 		}
 		dry := r.dry[:n]
 		copy(dry, buf)
-		r.chain.ProcessMono(buf) // a cadeia sempre roda: caudas continuam e a volta do bypass é suave
-		r.mixAB(buf, dry)
-		r.applyMute(buf)
+		right := r.right[:n]
+		r.chain.ProcessStereo(buf, right) // a cadeia sempre roda: caudas continuam e a volta do bypass é suave
+		r.mixAB(buf, right, dry)
+		r.applyMute(buf, right)
 		if an := r.analyzer.Load(); an != nil && an.running.Load() {
-			an.feed(dry, buf) // entrada antes da cadeia; saída como vai para a placa
+			avg := r.avg[:n]
+			for i := range avg {
+				avg[i] = 0.5 * (buf[i] + right[i])
+			}
+			an.feed(dry, avg) // entrada antes da cadeia; saída como vai para a placa
 		}
 		if c := r.rec.Load(); c != nil && c.on.Load() {
-			c.feed(dry, buf) // DI = entrada antes da cadeia; saída = o que vai para a placa
+			c.feed(dry, buf, right) // DI = entrada antes da cadeia; saída = o que vai para a placa
 		}
 		base := off * channels
-		for i, v := range buf {
-			a := math.Abs(v)
-			m.OutPeak = max(m.OutPeak, float32(a))
-			if a > 1 { // proteção dos ouvidos e das caixas
-				m.OutClips++
-				v = math.Copysign(1, v)
-			}
-			f := float32(v)
+		for i := range buf {
+			vl, vr := r.clip(buf[i], m), r.clip(right[i], m)
 			o := out[base+i*channels : base+(i+1)*channels]
+			if channels == 1 {
+				o[0] = float32(0.5 * (vl + vr))
+				continue
+			}
 			for c := range o {
-				if c < OutputChannels {
-					o[c] = f
-				} else {
+				switch c {
+				case 0:
+					o[c] = float32(vl)
+				case 1:
+					o[c] = float32(vr)
+				default:
 					o[c] = 0 // canais além do primeiro par (ex.: outras placas no JACK) ficam mudos
 				}
 			}
@@ -186,6 +196,17 @@ func (r *Renderer) render(out []float32, channels, frames int, start time.Time, 
 		m.GateOpen = true
 	}
 	r.finish(m, frames, start)
+}
+
+// clip mede o pico e corta acima de ±1 (proteção dos ouvidos e das caixas).
+func (r *Renderer) clip(v float64, m *Meter) float64 {
+	a := math.Abs(v)
+	m.OutPeak = max(m.OutPeak, float32(a))
+	if a > 1 {
+		m.OutClips++
+		v = math.Copysign(1, v)
+	}
+	return v
 }
 
 // finish fecha o medidor do callback (carga de CPU) e envia para a GUI.
@@ -203,7 +224,7 @@ func (r *Renderer) finish(m *Meter, frames int, start time.Time) {
 
 // mixAB aplica o crossfade do bypass A/B. O seco é atrasado pela latência da cadeia
 // para ficar alinhado com o processado (a troca não "pula" no tempo).
-func (r *Renderer) mixAB(wet, dry []float64) {
+func (r *Renderer) mixAB(wet, wetR, dry []float64) {
 	target := 1.0
 	if r.bypass.Load() {
 		target = 0
@@ -221,12 +242,13 @@ func (r *Renderer) mixAB(wet, dry []float64) {
 		}
 		if r.abGain != 1 {
 			wet[i] = r.abGain*wet[i] + (1-r.abGain)*d
+			wetR[i] = r.abGain*wetR[i] + (1-r.abGain)*d
 		}
 	}
 }
 
 // applyMute aplica a rampa de mudo (a cadeia continua rodando por baixo).
-func (r *Renderer) applyMute(buf []float64) {
+func (r *Renderer) applyMute(buf, right []float64) {
 	target := 1.0
 	if r.mute.Load() {
 		target = 0
@@ -241,5 +263,6 @@ func (r *Renderer) applyMute(buf []float64) {
 			r.muteGain = math.Max(target, r.muteGain-r.muteStep)
 		}
 		buf[i] *= r.muteGain
+		right[i] *= r.muteGain
 	}
 }

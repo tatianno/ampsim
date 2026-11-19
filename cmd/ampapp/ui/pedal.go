@@ -68,18 +68,32 @@ func NewPedal(chain *engine.Chain, mod engine.Module) *Pedal {
 
 // visibleKnobs devolve os knobs a mostrar: todos, ou só os do modo atual (com o nome do modo)
 // nos módulos que mudam de controles com o modo (engine.ParamViewer).
+// Com a saída em mono, os controles só de estéreo (Largura) ficam escondidos.
 func (p *Pedal) visibleKnobs() []*Knob {
-	pv, ok := p.mod.(engine.ParamViewer)
-	if !ok {
-		return p.knobs
-	}
-	var out []*Knob
-	for _, s := range pv.ParamView() {
-		for _, k := range p.knobs {
-			if k.P.Info().ID == s.ID {
-				k.Label = s.Name
-				out = append(out, k)
+	out := p.knobs
+	if pv, ok := p.mod.(engine.ParamViewer); ok {
+		out = nil
+		for _, s := range pv.ParamView() {
+			for _, k := range p.knobs {
+				if k.P.Info().ID == s.ID {
+					k.Label = s.Name
+					out = append(out, k)
+				}
 			}
+		}
+	}
+	return withoutStereo(p.chain, out, func(k *Knob) string { return k.P.Info().ID })
+}
+
+// withoutStereo tira de xs os controles só de estéreo quando a saída está em mono.
+func withoutStereo[T any](chain *engine.Chain, xs []T, id func(T) string) []T {
+	if chain == nil || chain.Stereo() {
+		return xs
+	}
+	var out []T
+	for _, x := range xs {
+		if !engine.StereoOnly(id(x)) {
+			out = append(out, x)
 		}
 	}
 	return out
@@ -87,19 +101,18 @@ func (p *Pedal) visibleKnobs() []*Knob {
 
 // visibleSels devolve as chaves a mostrar: todas, ou as do modo atual (engine.SelectorViewer).
 func (p *Pedal) visibleSels() []*Selector {
-	sv, ok := p.mod.(engine.SelectorViewer)
-	if !ok {
-		return p.sels
-	}
-	var out []*Selector
-	for _, id := range sv.SelectorView() {
-		for _, s := range p.sels {
-			if s.P.Info().ID == id {
-				out = append(out, s)
+	out := p.sels
+	if sv, ok := p.mod.(engine.SelectorViewer); ok {
+		out = nil
+		for _, id := range sv.SelectorView() {
+			for _, s := range p.sels {
+				if s.P.Info().ID == id {
+					out = append(out, s)
+				}
 			}
 		}
 	}
-	return out
+	return withoutStereo(p.chain, out, func(s *Selector) string { return s.P.Info().ID })
 }
 
 // namControls é a escolha da captura do Drive no tipo NAM: o botão com o nome, canais e tamanho

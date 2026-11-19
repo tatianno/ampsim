@@ -50,6 +50,7 @@ func run() error {
 		set       = flag.String("set", "", "parâmetros modulo.param=valor, separados por vírgula")
 		tail      = flag.Float64("cauda", 2, "segundos de silêncio no fim para delay/reverb terminarem")
 		block     = flag.Int("bloco", 256, "tamanho de bloco (simula o buffer da placa)")
+		estereo   = flag.Bool("estereo", false, "saída estéreo (modulações e ambiências com Largura)")
 		format    = flag.String("formato", "pcm16", "formato de saída: pcm16 ou float32")
 		normalize = flag.Float64("normalizar", 0, "se > 0, normaliza o pico para este valor em dBFS negativo (ex.: 1 → -1 dBFS)")
 		list      = flag.Bool("listar", false, "lista módulos e parâmetros e sai")
@@ -149,30 +150,35 @@ func run() error {
 	lat := chain.Latency()
 	start := time.Now()
 	// mesma renderização offline da GUI ("Exportar…"): cadeia nova com o estado atual
-	y, err := engine.RenderOffline(chain.State(), x, float64(fs), *tail, *block, nil)
+	ys, err := engine.RenderOfflineChannels(chain.State(), x, float64(fs), *tail, *block, *estereo, nil)
 	if err != nil {
 		return err
 	}
 	elapsed := time.Since(start)
 
 	pk := 0.0
-	for _, v := range y {
-		pk = math.Max(pk, math.Abs(v))
+	for _, y := range ys {
+		for _, v := range y {
+			pk = math.Max(pk, math.Abs(v))
+		}
 	}
 	if *normalize > 0 && pk > 0 {
 		g := math.Pow(10, -*normalize/20) / pk
-		for i := range y {
-			y[i] *= g
+		for _, y := range ys {
+			for i := range y {
+				y[i] *= g
+			}
 		}
 		pk *= g
 	}
+	y := ys[0]
 
 	if dir := filepath.Dir(*out); dir != "." {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 	}
-	if err := wav.WriteMonoFile(*out, fs, y, wf); err != nil {
+	if err := wav.WriteFile(*out, fs, ys, wf); err != nil {
 		return err
 	}
 

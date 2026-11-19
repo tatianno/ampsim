@@ -74,6 +74,7 @@ func (m *Gate) Prepare(fs float64, _ int) {
 }
 func (m *Gate) Reset()       { m.g.Reset() }
 func (m *Gate) Latency() int { return 0 }
+func (m *Gate) Twin() Module { return &Gate{base: m.base} }
 func (m *Gate) Process(buf []float64) {
 	m.g.SetThreshold(m.get("threshold"))
 	m.g.SetTimes(1, m.get("release"))
@@ -338,6 +339,7 @@ func (m *Power) Prepare(fs float64, maxBlock int) {
 
 func (m *Power) Reset()       { m.presence.Reset(); m.sim = m.simTarget() }
 func (m *Power) Latency() int { return 0 }
+func (m *Power) Twin() Module { return &Power{base: m.base, ampMode: m.ampMode} }
 
 func (m *Power) Process(buf []float64) {
 	m.volume.SetTarget(math.Pow(10, m.get("volume")/20))
@@ -380,10 +382,11 @@ type Cab struct {
 	base
 	fs              float64
 	hp, lp          dsp.Cascade
-	lowCut, highCut float64 // valores aplicados nos filtros
+	hpR, lpR        dsp.Cascade // canal R (estéreo)
+	lowCut, highCut float64     // valores aplicados nos filtros
 
-	conv    *dsp.Convolver                // usado só pela thread de áudio
-	pending atomic.Pointer[dsp.Convolver] // nova IR preparada fora da thread de áudio
+	conv, convR       *dsp.Convolver                // usados só pela thread de áudio
+	pending, pendingR atomic.Pointer[dsp.Convolver] // nova IR preparada fora da thread de áudio
 
 	mu     sync.Mutex // protege os campos abaixo (fora da thread de áudio)
 	irRaw  []float64
@@ -410,48 +413,77 @@ func (m *Cab) Prepare(fs float64, _ int) {
 	m.fs = fs
 	m.hp = dsp.NewCascade(dsp.ButterworthHighpass(cabHPOrder, fs, m.get("lowcut")))
 	m.lp = dsp.NewCascade(dsp.ButterworthLowpass(cabLPOrder, fs, m.get("highcut")))
+	m.hpR = dsp.NewCascade(dsp.ButterworthHighpass(cabHPOrder, fs, m.get("lowcut")))
+	m.lpR = dsp.NewCascade(dsp.ButterworthLowpass(cabLPOrder, fs, m.get("highcut")))
 	m.lowCut, m.highCut = m.get("lowcut"), m.get("highcut")
 
 	m.mu.Lock()
 	m.prepFS = fs
+	var ir []float64
 	if m.irRaw != nil {
-		m.conv = dsp.NewConvolver(dsp.PrepareIR(m.irRaw, m.irFS, int(fs), IRMaxMs), IRPartition)
+		ir = dsp.PrepareIR(m.irRaw, m.irFS, int(fs), IRMaxMs)
 	} else {
 		// sem IR escolhida: o gabinete interno (sem gabinete o amp soa áspero e chiado)
-		m.conv = dsp.NewConvolver(builtinIR(fs), IRPartition)
+		ir = builtinIR(fs)
 	}
+	m.conv = dsp.NewConvolver(ir, IRPartition)
+	m.convR = dsp.NewConvolver(ir, IRPartition)
 	m.pending.Store(nil)
+	m.pendingR.Store(nil)
 	m.mu.Unlock()
 }
 
 func (m *Cab) Reset() {
-	m.hp.Reset()
-	m.lp.Reset()
-	if m.conv != nil {
-		m.conv.Reset()
+	for _, c := range []dsp.Cascade{m.hp, m.lp, m.hpR, m.lpR} {
+		c.Reset()
+	}
+	for _, c := range []*dsp.Convolver{m.conv, m.convR} {
+		if c != nil {
+			c.Reset()
+		}
 	}
 }
 
 func (m *Cab) Latency() int { return 0 }
 
-func (m *Cab) Process(buf []float64) {
-	if c := m.pending.Swap(nil); c != nil {
-		m.conv = c
-	}
-	// Filtros recalculados só quando o knob muda (sem alocar: os estágios já existem).
+// filters recalcula os filtros (dos dois canais) só quando o knob muda (sem alocar: os
+// estágios já existem).
+func (m *Cab) filters() {
 	if f := m.get("lowcut"); f != m.lowCut {
 		setCascade(m.hp, dsp.ButterworthHighpassInto, cabHPOrder, f, m.fs)
+		setCascade(m.hpR, dsp.ButterworthHighpassInto, cabHPOrder, f, m.fs)
 		m.lowCut = f
 	}
 	if f := m.get("highcut"); f != m.highCut {
 		setCascade(m.lp, dsp.ButterworthLowpassInto, cabLPOrder, f, m.fs)
+		setCascade(m.lpR, dsp.ButterworthLowpassInto, cabLPOrder, f, m.fs)
 		m.highCut = f
 	}
+}
+
+func (m *Cab) Process(buf []float64) {
+	if c := m.pending.Swap(nil); c != nil {
+		m.conv = c
+	}
+	m.filters()
 	if m.conv != nil {
 		m.conv.ProcessBlock(buf)
 	}
 	m.hp.ProcessBlock(buf)
 	m.lp.ProcessBlock(buf)
+}
+
+// ProcessStereo processa L e R com a mesma IR e os mesmos filtros (estado separado).
+func (m *Cab) ProcessStereo(l, r []float64) {
+	if c := m.pendingR.Swap(nil); c != nil {
+		m.convR = c
+	}
+	m.Process(l)
+	if m.convR != nil {
+		m.convR.ProcessBlock(r)
+	}
+	m.hpR.ProcessBlock(r)
+	m.lpR.ProcessBlock(r)
 }
 
 // Ordens dos filtros do gabinete (as mesmas do main.py).
@@ -485,7 +517,9 @@ func (m *Cab) LoadIR(raw []float64, fsIR int, path string) {
 	defer m.mu.Unlock()
 	m.irRaw, m.irFS, m.irPath = raw, fsIR, path
 	if m.prepFS > 0 {
-		m.pending.Store(dsp.NewConvolver(dsp.PrepareIR(raw, fsIR, int(m.prepFS), IRMaxMs), IRPartition))
+		ir := dsp.PrepareIR(raw, fsIR, int(m.prepFS), IRMaxMs)
+		m.pending.Store(dsp.NewConvolver(ir, IRPartition))
+		m.pendingR.Store(dsp.NewConvolver(ir, IRPartition))
 	}
 }
 
@@ -566,7 +600,9 @@ func (m *Cab) ApplyExtraState(s map[string]string) error {
 // Chorus é o pedal de chorus.
 type Chorus struct {
 	base
-	c *dsp.Chorus
+	c   *dsp.Chorus
+	fs  float64
+	off phaseOffset
 }
 
 // NewChorus cria o módulo de chorus.
@@ -576,12 +612,19 @@ func NewChorus() *Chorus {
 		ParamInfo{ID: "depth", Name: "Depth", Unit: "ms", Min: 0, Max: 5, Default: 2},
 		ParamInfo{ID: "delay", Name: "Delay", Unit: "ms", Min: 7, Max: 40, Default: 22},
 		ParamInfo{ID: "mix", Name: "Mix", Unit: "%", Min: 0, Max: 100, Default: 50},
+		widthInfo(100),
 	)}}
 }
 
-func (m *Chorus) Prepare(fs float64, _ int) { m.c = dsp.NewChorus(fs) }
-func (m *Chorus) Reset()                    { m.c.Reset() }
+func (m *Chorus) Prepare(fs float64, _ int) { m.c = dsp.NewChorus(fs); m.fs = fs }
+func (m *Chorus) Reset()                    { m.c.Reset(); m.off.reset() }
 func (m *Chorus) Latency() int              { return 0 }
+func (m *Chorus) Twin() Module              { return &Chorus{base: m.base} }
+
+// SyncTwin defasa o LFO do R em até 180° (Largura).
+func (m *Chorus) SyncTwin(t Module, n int) {
+	t.(*Chorus).c.SyncLFO(m.c, m.off.step(0.5*m.pct(WidthParam), n, m.fs))
+}
 func (m *Chorus) Process(buf []float64) {
 	m.c.Set(m.get("rate"), m.get("depth"), m.get("delay"), m.pct("mix"))
 	m.c.ProcessBlock(buf)
@@ -592,7 +635,9 @@ func (m *Chorus) Process(buf []float64) {
 // Flanger é o pedal de flanger. Manual = atraso central; Depth = quanto varia em torno dele.
 type Flanger struct {
 	base
-	f *dsp.Flanger
+	f   *dsp.Flanger
+	fs  float64
+	off phaseOffset
 }
 
 // NewFlanger cria o módulo de flanger.
@@ -603,12 +648,19 @@ func NewFlanger() *Flanger {
 		ParamInfo{ID: "depth", Name: "Depth", Unit: "ms", Min: 0, Max: 2.5, Default: 1.75},
 		ParamInfo{ID: "feedback", Name: "Feedback", Unit: "%", Min: -90, Max: 90, Default: 60},
 		ParamInfo{ID: "mix", Name: "Mix", Unit: "%", Min: 0, Max: 100, Default: 50},
+		widthInfo(100),
 	)}}
 }
 
-func (m *Flanger) Prepare(fs float64, _ int) { m.f = dsp.NewFlanger(fs) }
-func (m *Flanger) Reset()                    { m.f.Reset() }
+func (m *Flanger) Prepare(fs float64, _ int) { m.f = dsp.NewFlanger(fs); m.fs = fs }
+func (m *Flanger) Reset()                    { m.f.Reset(); m.off.reset() }
 func (m *Flanger) Latency() int              { return 0 }
+func (m *Flanger) Twin() Module              { return &Flanger{base: m.base} }
+
+// SyncTwin defasa o LFO do R em até 180° (Largura).
+func (m *Flanger) SyncTwin(t Module, n int) {
+	t.(*Flanger).f.SyncLFO(m.f, m.off.step(0.5*m.pct(WidthParam), n, m.fs))
+}
 func (m *Flanger) Process(buf []float64) {
 	man, dep := m.get("manual"), m.get("depth")
 	m.f.Set(m.get("rate"), math.Max(0.05, man-dep), man+dep, m.pct("feedback"), m.pct("mix"))
@@ -623,7 +675,9 @@ const PhaserMinHz = 200
 // Phaser é o pedal de phaser. Range = largura da varredura em oitavas acima de 200 Hz.
 type Phaser struct {
 	base
-	p *dsp.Phaser
+	p   *dsp.Phaser
+	fs  float64
+	off phaseOffset
 }
 
 // NewPhaser cria o módulo de phaser.
@@ -634,12 +688,19 @@ func NewPhaser() *Phaser {
 		ParamInfo{ID: "feedback", Name: "Feedback", Unit: "%", Min: -90, Max: 90, Default: 50},
 		ParamInfo{ID: "mix", Name: "Mix", Unit: "%", Min: 0, Max: 100, Default: 50},
 		ParamInfo{ID: "stages", Name: "Estágios", Min: 4, Max: 8, Default: 4, Step: 2},
+		widthInfo(100),
 	)}}
 }
 
-func (m *Phaser) Prepare(fs float64, _ int) { m.p = dsp.NewPhaser(fs) }
-func (m *Phaser) Reset()                    { m.p.Reset() }
+func (m *Phaser) Prepare(fs float64, _ int) { m.p = dsp.NewPhaser(fs); m.fs = fs }
+func (m *Phaser) Reset()                    { m.p.Reset(); m.off.reset() }
 func (m *Phaser) Latency() int              { return 0 }
+func (m *Phaser) Twin() Module              { return &Phaser{base: m.base} }
+
+// SyncTwin defasa o LFO do R em até 180° (Largura).
+func (m *Phaser) SyncTwin(t Module, n int) {
+	t.(*Phaser).p.SyncLFO(m.p, m.off.step(0.5*m.pct(WidthParam), n, m.fs))
+}
 func (m *Phaser) Process(buf []float64) {
 	hi := PhaserMinHz * math.Pow(2, m.get("range"))
 	m.p.Set(m.get("rate"), PhaserMinHz, hi, int(m.get("stages")), m.pct("feedback"), m.pct("mix"))
@@ -662,8 +723,17 @@ func NewDelay() *Delay {
 		ParamInfo{ID: "feedback", Name: "Feedback", Unit: "%", Min: 0, Max: 90, Default: 45},
 		ParamInfo{ID: "tone", Name: "Tone", Unit: "%", Min: 10, Max: 100, Default: 65},
 		ParamInfo{ID: "mix", Name: "Mix", Unit: "%", Min: 0, Max: 100, Default: 35},
+		widthInfo(100),
+		ParamInfo{ID: StereoModeParam, Name: "Estéreo", Min: 0, Max: 1, Default: DelayDual, Step: 1,
+			Choices: []string{"Duplo", "Ping-pong"}},
 	)}}
 }
+
+// Modos estéreo do delay: duplo (o R um pouco mais atrasado, conforme a Largura) e ping-pong.
+const (
+	DelayDual = iota
+	DelayPingPong
+)
 
 func (m *Delay) Prepare(fs float64, _ int) { m.d = dsp.NewDelay(fs); m.fs = fs }
 func (m *Delay) Reset()                    { m.d.Reset() }
@@ -677,9 +747,19 @@ func (m *Delay) SwapTail(fresh Tail) Tail {
 	m.d.Reset()
 	return old
 }
-func (m *Delay) Process(buf []float64) {
+func (m *Delay) set() {
 	m.d.Set(m.get("time"), m.pct("feedback"), 1-m.pct("tone"), m.pct("mix"))
+	m.d.SetStereo(m.pct(WidthParam), int(m.get(StereoModeParam)) == DelayPingPong)
+}
+
+func (m *Delay) Process(buf []float64) {
+	m.set()
 	m.d.ProcessBlock(buf)
+}
+
+func (m *Delay) ProcessStereo(l, r []float64) {
+	m.set()
+	m.d.ProcessStereo(l, r)
 }
 
 // ---------------------------------------------------------------- Reverb
@@ -697,6 +777,7 @@ func NewReverb() *Reverb {
 		ParamInfo{ID: "size", Name: "Size", Unit: "%", Min: 0, Max: 98, Default: 80},
 		ParamInfo{ID: "damping", Name: "Damping", Unit: "%", Min: 0, Max: 100, Default: 40},
 		ParamInfo{ID: "mix", Name: "Mix", Unit: "%", Min: 0, Max: 100, Default: 35},
+		widthInfo(100),
 	)}}
 }
 
@@ -712,9 +793,19 @@ func (m *Reverb) SwapTail(fresh Tail) Tail {
 	m.r.Reset()
 	return old
 }
-func (m *Reverb) Process(buf []float64) {
+func (m *Reverb) set() {
 	m.r.Set(m.pct("size"), m.pct("damping"), m.pct("mix"))
+	m.r.SetWidth(m.pct(WidthParam))
+}
+
+func (m *Reverb) Process(buf []float64) {
+	m.set()
 	m.r.ProcessBlock(buf)
+}
+
+func (m *Reverb) ProcessStereo(l, r []float64) {
+	m.set()
+	m.r.ProcessStereo(l, r)
 }
 
 // ---------------------------------------------------------------- Compressor
@@ -762,6 +853,7 @@ func NewCompressor() *Compressor {
 func (m *Compressor) Prepare(fs float64, _ int) { m.c = dsp.NewCompressor(fs) }
 func (m *Compressor) Reset()                    { m.c.Reset(); m.gr.Store(0) }
 func (m *Compressor) Latency() int              { return 0 }
+func (m *Compressor) Twin() Module              { return &Compressor{base: m.base} }
 func (m *Compressor) Process(buf []float64) {
 	m.c.Set(m.get("threshold"), m.get("ratio"), m.get("attack"), m.get("release"), m.get("level"), m.pct("mix"))
 	m.c.ProcessBlock(buf)
@@ -776,7 +868,9 @@ func (m *Compressor) GainReductionDB() float64 { return math.Float64frombits(m.g
 // Tremolo é o pedal de tremolo (volume modulado).
 type Tremolo struct {
 	base
-	t *dsp.Tremolo
+	t   *dsp.Tremolo
+	fs  float64
+	off phaseOffset
 }
 
 // NewTremolo cria o módulo de tremolo.
@@ -786,12 +880,19 @@ func NewTremolo() *Tremolo {
 		ParamInfo{ID: "depth", Name: "Depth", Unit: "%", Min: 0, Max: 100, Default: 50},
 		ParamInfo{ID: "shape", Name: "Forma", Min: 0, Max: 2, Default: dsp.WaveSine, Step: 1,
 			Choices: []string{"Seno", "Triângulo", "Quadrada"}},
+		widthInfo(0),
 	)}}
 }
 
-func (m *Tremolo) Prepare(fs float64, _ int) { m.t = dsp.NewTremolo(fs) }
-func (m *Tremolo) Reset()                    { m.t.Reset() }
+func (m *Tremolo) Prepare(fs float64, _ int) { m.t = dsp.NewTremolo(fs); m.fs = fs }
+func (m *Tremolo) Reset()                    { m.t.Reset(); m.off.reset() }
 func (m *Tremolo) Latency() int              { return 0 }
+func (m *Tremolo) Twin() Module              { return &Tremolo{base: m.base} }
+
+// SyncTwin defasa o R em até 180° (Largura): com 100% o tremolo vira auto-pan.
+func (m *Tremolo) SyncTwin(t Module, n int) {
+	t.(*Tremolo).t.SyncLFO(m.t, m.off.step(0.5*m.pct(WidthParam), n, m.fs))
+}
 func (m *Tremolo) Process(buf []float64) {
 	m.t.Set(m.get("rate"), m.pct("depth"), int(m.get("shape")))
 	m.t.ProcessBlock(buf)
@@ -817,6 +918,7 @@ func NewVibrato() *Vibrato {
 func (m *Vibrato) Prepare(fs float64, _ int) { m.v = dsp.NewVibrato(fs) }
 func (m *Vibrato) Reset()                    { m.v.Reset() }
 func (m *Vibrato) Latency() int              { return 0 }
+func (m *Vibrato) Twin() Module              { return &Vibrato{base: m.base} }
 func (m *Vibrato) Process(buf []float64) {
 	m.v.Set(m.get("rate"), m.get("depth"))
 	m.v.ProcessBlock(buf)

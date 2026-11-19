@@ -313,13 +313,14 @@ func Write(w io.Writer, sampleRate int, channels [][]float64, f Format) error {
 	return nil
 }
 
-// StreamWriter grava um WAV mono aos poucos (gravação ao vivo): o cabeçalho é escrito com
+// StreamWriter grava um WAV aos poucos (gravação ao vivo): o cabeçalho é escrito com
 // tamanho zero e corrigido no Close. Não é para a thread de áudio (faz I/O).
 type StreamWriter struct {
 	f          *os.File
 	w          *bufio.Writer
 	format     Format
 	sampleRate int
+	channels   int
 	bytesPer   int
 	samples    int64
 	buf        []byte
@@ -327,6 +328,12 @@ type StreamWriter struct {
 
 // Create começa a gravar um WAV mono em path.
 func Create(path string, sampleRate int, f Format) (*StreamWriter, error) {
+	return CreateChannels(path, sampleRate, 1, f)
+}
+
+// CreateChannels começa a gravar um WAV com channels canais (Write recebe as amostras
+// intercaladas: L, R, L, R...).
+func CreateChannels(path string, sampleRate, channels int, f Format) (*StreamWriter, error) {
 	bits, _, err := f.layout()
 	if err != nil {
 		return nil, err
@@ -335,8 +342,9 @@ func Create(path string, sampleRate int, f Format) (*StreamWriter, error) {
 	if err != nil {
 		return nil, err
 	}
-	hdr, _ := header(sampleRate, 1, f, 0)
-	sw := &StreamWriter{f: file, w: bufio.NewWriterSize(file, 1<<16), format: f, sampleRate: sampleRate, bytesPer: int(bits) / 8}
+	hdr, _ := header(sampleRate, channels, f, 0)
+	sw := &StreamWriter{f: file, w: bufio.NewWriterSize(file, 1<<16), format: f, sampleRate: sampleRate,
+		channels: channels, bytesPer: int(bits) / 8}
 	if _, err := sw.w.Write(hdr); err != nil {
 		file.Close()
 		return nil, err
@@ -359,8 +367,11 @@ func (s *StreamWriter) Write(x []float64) error {
 	return err
 }
 
-// Samples devolve quantas amostras já foram escritas.
+// Samples devolve quantas amostras já foram escritas (somando os canais).
 func (s *StreamWriter) Samples() int64 { return s.samples }
+
+// Frames devolve quantos quadros (instantes de tempo) já foram escritos.
+func (s *StreamWriter) Frames() int64 { return s.samples / int64(s.channels) }
 
 // Close corrige o cabeçalho com o tamanho final e fecha o arquivo.
 func (s *StreamWriter) Close() error {
@@ -368,7 +379,7 @@ func (s *StreamWriter) Close() error {
 		s.f.Close()
 		return err
 	}
-	hdr, _ := header(s.sampleRate, 1, s.format, int(s.samples)*s.bytesPer)
+	hdr, _ := header(s.sampleRate, s.channels, s.format, int(s.samples)*s.bytesPer)
 	if _, err := s.f.WriteAt(hdr, 0); err != nil {
 		s.f.Close()
 		return err

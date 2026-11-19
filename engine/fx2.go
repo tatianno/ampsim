@@ -298,7 +298,9 @@ func (m *Octave) Process(buf []float64) {
 // Rotary é a caixa rotativa (Leslie): Lento/Rápido com aceleração.
 type Rotary struct {
 	base
-	r *dsp.Rotary
+	r   *dsp.Rotary
+	fs  float64
+	off phaseOffset
 }
 
 // NewRotary cria o módulo da caixa rotativa.
@@ -309,12 +311,19 @@ func NewRotary() *Rotary {
 		ParamInfo{ID: "mix", Name: "Mix", Unit: "%", Min: 0, Max: 100, Default: 100},
 		ParamInfo{ID: "speed", Name: "Velocidade", Min: 0, Max: 1, Default: 0, Step: 1,
 			Choices: []string{"Lento", "Rápido"}},
+		widthInfo(100),
 	)}}
 }
 
-func (m *Rotary) Prepare(fs float64, _ int) { m.r = dsp.NewRotary(fs) }
-func (m *Rotary) Reset()                    { m.r.Reset() }
+func (m *Rotary) Prepare(fs float64, _ int) { m.r = dsp.NewRotary(fs); m.fs = fs }
+func (m *Rotary) Reset()                    { m.r.Reset(); m.off.reset() }
 func (m *Rotary) Latency() int              { return 0 }
+func (m *Rotary) Twin() Module              { return &Rotary{base: m.base} }
+
+// SyncTwin põe o segundo microfone até o lado oposto da caixa (Largura).
+func (m *Rotary) SyncTwin(t Module, n int) {
+	t.(*Rotary).r.SyncFrom(m.r, m.off.step(0.5*m.pct(WidthParam), n, m.fs))
+}
 func (m *Rotary) Process(buf []float64) {
 	m.r.Set(m.get("speed") >= 1, m.pct("depth"), m.pct("balance"), m.pct("mix"))
 	m.r.ProcessBlock(buf)
@@ -325,7 +334,9 @@ func (m *Rotary) Process(buf []float64) {
 // Vibe é o modulador de fase com lâmpada (estilo Uni-Vibe), nos modos Chorus e Vibrato.
 type Vibe struct {
 	base
-	v *dsp.Vibe
+	v   *dsp.Vibe
+	fs  float64
+	off phaseOffset
 }
 
 // NewVibe cria o módulo de vibe.
@@ -335,12 +346,19 @@ func NewVibe() *Vibe {
 		ParamInfo{ID: "intensity", Name: "Intensity", Unit: "%", Min: 0, Max: 100, Default: 70},
 		ParamInfo{ID: "mode", Name: "Modo", Min: 0, Max: 1, Default: 0, Step: 1,
 			Choices: []string{"Chorus", "Vibrato"}},
+		widthInfo(100),
 	)}}
 }
 
-func (m *Vibe) Prepare(fs float64, _ int) { m.v = dsp.NewVibe(fs) }
-func (m *Vibe) Reset()                    { m.v.Reset() }
+func (m *Vibe) Prepare(fs float64, _ int) { m.v = dsp.NewVibe(fs); m.fs = fs }
+func (m *Vibe) Reset()                    { m.v.Reset(); m.off.reset() }
 func (m *Vibe) Latency() int              { return 0 }
+func (m *Vibe) Twin() Module              { return &Vibe{base: m.base} }
+
+// SyncTwin defasa o LFO do R em até 180° (Largura).
+func (m *Vibe) SyncTwin(t Module, n int) {
+	t.(*Vibe).v.SyncLFO(m.v, m.off.step(0.5*m.pct(WidthParam), n, m.fs))
+}
 func (m *Vibe) Process(buf []float64) {
 	m.v.Set(m.get("rate"), m.pct("intensity"), m.get("mode") >= 1)
 	m.v.ProcessBlock(buf)
@@ -369,6 +387,7 @@ func NewPitch() *Pitch {
 func (m *Pitch) Prepare(fs float64, _ int) { m.p = dsp.NewPitchShifter(fs) }
 func (m *Pitch) Reset()                    { m.p.Reset() }
 func (m *Pitch) Latency() int              { return 0 }
+func (m *Pitch) Twin() Module              { return &Pitch{base: m.base} }
 func (m *Pitch) Process(buf []float64) {
 	det := m.get("detune")
 	m.p.Set(dsp.Semitones(m.get("voice1"), det), dsp.Semitones(m.get("voice2"), -det), m.pct("level2"), m.pct("mix"))

@@ -92,6 +92,14 @@ func (r *Rotary) Reset() {
 	}
 }
 
+// SyncFrom copia a rotação de src com a fase adiantada em offset ciclos: o segundo
+// microfone (estéreo; 0,5 = do lado oposto da caixa).
+func (r *Rotary) SyncFrom(src *Rotary, offset float64) {
+	r.horn.speed, r.drum.speed = src.horn.speed, src.drum.speed
+	r.horn.phase = wrap1(src.horn.phase + offset)
+	r.drum.phase = wrap1(src.drum.phase + offset)
+}
+
 // ProcessBlock processa in-place.
 func (r *Rotary) ProcessBlock(buf []float64) {
 	th, td := rotHornSlow, rotDrumSlow
@@ -144,6 +152,9 @@ func (v *Vibe) Set(rate, intensity float64, vibrato bool) {
 
 // Reset zera o estado.
 func (v *Vibe) Reset() { v.ap = [4]float64{}; v.lfo.Reset(); v.lamp = 0 }
+
+// SyncLFO põe o LFO na fase de src mais offset ciclos (estéreo: o canal R defasado do L).
+func (v *Vibe) SyncLFO(src *Vibe, offset float64) { v.lfo.SetPhase(src.lfo.phase + offset) }
 
 // ProcessBlock processa in-place.
 func (v *Vibe) ProcessBlock(buf []float64) {

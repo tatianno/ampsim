@@ -651,3 +651,62 @@ func TestAnalisadorNaoAlocaNoRender(t *testing.T) {
 		t.Errorf("render com o analisador ligado alocou %.1f vezes por bloco", n)
 	}
 }
+
+// Em estéreo, o render entrega L e R diferentes nos dois canais da placa e a gravação sai
+// com dois canais (ping-pong: o eco do pulso só no L, o seguinte só no R).
+func TestRenderEGravacaoEstereo(t *testing.T) {
+	const fs = 48000
+	chain := engine.NewChain(engine.NewDelay())
+	m := chain.Module("delay")
+	for id, v := range map[string]float64{"time": 100, "feedback": 50, "tone": 100, "mix": 100,
+		engine.WidthParam: 100, engine.StereoModeParam: engine.DelayPingPong} {
+		m.Param(id).Set(v)
+	}
+	chain.SetStereo(true)
+	chain.Prepare(fs, MaxBlock)
+	r := NewRenderer(chain, fs)
+	src := &pulsoSource{}
+	r.SetSource(src)
+	rec := NewRecorder(r)
+	if _, err := rec.Start(t.TempDir(), false); err != nil {
+		t.Fatal(err)
+	}
+	const n, blocos = 256, 75 // 0,4 s
+	out := make([]float32, 2*n*blocos)
+	for k := 0; k < blocos; k++ {
+		r.Render(out[2*n*k:2*n*(k+1)], 2, n)
+		r.Meters().Pop()
+		time.Sleep(100 * time.Microsecond)
+	}
+	take, err := rec.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+	d := int(0.1 * fs)
+	if l, rr := out[2*d], out[2*d+1]; l < 0.9 || math.Abs(float64(rr)) > 1e-6 {
+		t.Errorf("1º eco na placa: L %.3f R %.3f", l, rr)
+	}
+	if l, rr := out[4*d], out[4*d+1]; math.Abs(float64(rr)-0.5) > 0.02 || math.Abs(float64(l)) > 1e-6 {
+		t.Errorf("2º eco na placa: L %.3f R %.3f", l, rr)
+	}
+	a, err := wav.ReadFile(take.Out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Channels) != 2 || len(a.Channels[0]) != n*blocos {
+		t.Fatalf("gravação: %d canais, %d quadros", len(a.Channels), len(a.Channels[0]))
+	}
+	if a.Channels[0][d] < 0.9 || math.Abs(a.Channels[1][2*d]-0.5) > 0.02 {
+		t.Errorf("gravação: L %.3f no 1º eco, R %.3f no 2º", a.Channels[0][d], a.Channels[1][2*d])
+	}
+}
+
+// pulsoSource entrega um pulso unitário na primeira amostra e depois silêncio.
+type pulsoSource struct{ done bool }
+
+func (p *pulsoSource) Read(buf []float64) {
+	clear(buf)
+	if !p.done {
+		buf[0], p.done = 1, true
+	}
+}

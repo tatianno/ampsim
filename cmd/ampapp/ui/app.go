@@ -69,6 +69,8 @@ type App struct {
 	meters     Meters
 	pedals     map[string]*Pedal
 	bypass     widget.Clickable
+	stereoBtn  widget.Clickable
+	settings   string // ajustes.json ("" = não salva)
 	closeBtn   widget.Clickable
 	recBtn     widget.Clickable
 	diBtn      widget.Clickable
@@ -194,6 +196,20 @@ func (a *App) UsePresetDir(dir string) {
 		cfg = filepath.Join(filepath.Dir(dir), "pedaleira.json")
 	}
 	a.pedalboard = NewPedalboard(a.presetBar, cfg, a.setStatus, func(id string) { a.open = id })
+	a.settings = presets.SettingsPath(dir)
+	st, err := presets.LoadSettings(a.settings)
+	if err != nil {
+		a.setStatus("ajustes.json inválido: usando os padrões", true)
+	}
+	a.Chain.SetStereo(st.StereoOn())
+}
+
+// SetStereo liga ou desliga a saída estéreo e salva em ajustes.json.
+func (a *App) SetStereo(on bool) error {
+	a.Chain.SetStereo(on)
+	st, _ := presets.LoadSettings(a.settings)
+	st.Stereo = &on
+	return st.Save(a.settings)
 }
 
 // Pedalboard devolve a pedaleira de presets.
@@ -303,6 +319,18 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 		a.Renderer.SetBypass(!a.Renderer.Bypass())
 		a.recDry = false // o usuário assumiu o A/B
 	}
+	if a.stereoBtn.Clicked(gtx) {
+		on := !a.Chain.Stereo()
+		msg := "saída estéreo: modulações e ambiências abrem em L e R (knob Largura)"
+		if !on {
+			msg = "saída mono: L e R iguais, como antes"
+		}
+		if err := a.SetStereo(on); err != nil {
+			a.setStatus("ajustes: "+err.Error(), true)
+		} else {
+			a.setStatus(msg, false)
+		}
+	}
 	if a.recDry {
 		if c := a.Player.Clip(); a.Session.Source() != audio.SourceFile || c == nil || c.Path != a.recPath {
 			a.Renderer.SetBypass(false)
@@ -362,9 +390,13 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 				return panel(gtx, th.Panel, 10, 12, func(gtx layout.Context) layout.Dimensions {
 					return layout.Flex{Axis: layout.Vertical}.Layout(gtx,
 						layout.Rigid(func(gtx layout.Context) layout.Dimensions {
-							return layout.Flex{Alignment: layout.Baseline}.Layout(gtx,
+							return layout.Flex{Alignment: layout.Middle}.Layout(gtx,
 								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 									return drawText(gtx, th, "CADEIA DE SINAL", textOpts{size: 12, color: th.Dim, bold: true})
+								}),
+								layout.Rigid(spacer(8, 0)),
+								layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+									return toggle(gtx, th, &a.stereoBtn, a.Chain.Stereo(), "Estéreo")
 								}),
 								layout.Rigid(spacer(14, 0)),
 								layout.Flexed(1, func(gtx layout.Context) layout.Dimensions {
@@ -695,17 +727,18 @@ func (a *App) exportAsync() {
 		return
 	}
 	st := a.Chain.State() // o som de agora; mexer nos knobs durante a exportação não afeta
+	stereo := a.Chain.Stereo()
 	suggested := strings.TrimSuffix(clip.Name, filepath.Ext(clip.Name)) + "-ampsim.wav"
 	a.exporting, a.exportPct = true, 0
 	go func() {
 		path, err := a.PickSave("Exportar áudio processado", suggested)
 		if err == nil && path != "" {
-			var out []float64
-			out, err = engine.RenderOffline(st, clip.Samples, float64(clip.FS), 2, 512, func(f float64) {
+			var out [][]float64
+			out, err = engine.RenderOfflineChannels(st, clip.Samples, float64(clip.FS), 2, 512, stereo, func(f float64) {
 				a.Post(func() { a.exportPct = f })
 			})
 			if err == nil {
-				err = wav.WriteMonoFile(path, clip.FS, out, wav.PCM24)
+				err = wav.WriteFile(path, clip.FS, out, wav.PCM24)
 			}
 		}
 		a.Post(func() {
