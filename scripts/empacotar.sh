@@ -17,8 +17,13 @@ mkdir -p "$DIST"
 
 echo "== compilando $VERSAO ($ARCH)"
 LDFLAGS="-s -w -X main.version=$VERSAO"
+# SIMD experimental do Go (AVX2 + FMA no WaveNet do NAM, ~3× menos CPU no modelo completo);
+# em CPUs sem AVX2/FMA o binário usa o caminho escalar sozinho
+export GOEXPERIMENT="${GOEXPERIMENT:-simd}"
 CGO_ENABLED=1 go build -trimpath -ldflags "$LDFLAGS" -o "$TMP/ampsim" ./cmd/ampapp
 CGO_ENABLED=1 go build -trimpath -ldflags "-s -w" -o "$TMP/ampsim-cli" ./cmd/ampcli
+
+"$TMP/ampsim" -versao | grep -q 'AVX2' || echo "aviso: binário sem os núcleos SIMD (GOEXPERIMENT=$GOEXPERIMENT; CPU sem AVX2/FMA?)"
 
 echo "== tar.gz"
 T="$TMP/ampsim-$VERSAO-linux-$ARCH"

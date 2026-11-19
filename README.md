@@ -74,6 +74,9 @@ para Go em streaming, validados contra as saídas do Python.
 ## Requisitos
 
 - Go 1.26+ e um compilador C (o áudio usa [malgo](https://github.com/gen2brain/malgo) / miniaudio via cgo)
+- Recomendado: compilar com `GOEXPERIMENT=simd` (SIMD experimental do Go): o NAM usa AVX2 + FMA e o modelo
+  completo gasta ~3× menos CPU. Os pacotes prontos já vêm assim; `ampsim -versao` mostra qual caminho está em uso.
+  Para deixar como padrão nos seus builds: `go env -w GOEXPERIMENT=simd`
 - Para a janela (Gio), no Ubuntu/Debian:
   ```
   sudo apt install libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev \
@@ -103,6 +106,7 @@ Sem nenhuma IR escolhida, o gabinete usa a 2x12 SM57 incluída. Para gerar os pa
 ```sh
 go install github.com/tatianno/ampsim/cmd/ampcli@latest   # CLI (offline)
 go install github.com/tatianno/ampsim/cmd/ampapp@latest   # app em tempo real (precisa das bibliotecas acima)
+GOEXPERIMENT=simd go install github.com/tatianno/ampsim/cmd/ampapp@latest   # idem, com o NAM em SIMD
 go install -tags nogui github.com/tatianno/ampsim/cmd/ampapp@latest   # app só console
 ```
 
@@ -157,6 +161,7 @@ Sem esses arquivos, os testes que dependem deles são pulados e o resto roda nor
 ```sh
 go test ./...          # sem placa de som e sem janela (a GUI é testada simulando mouse e teclado)
 go test -race ./...
+GOEXPERIMENT=simd go test ./...   # os núcleos SIMD do NAM (comparados com os escalares)
 ```
 
 ## Estrutura

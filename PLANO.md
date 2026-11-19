@@ -820,9 +820,28 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   rápida para subir e lenta para descer. Compacto na linha da ENTRADA (clique abre o grande); grande com Saída,
   Entrada, EQ e gabinete, Entrada alinhada (pela média de 100 Hz a 5 kHz) e Ligado, escalas e leitura sob o
   ponteiro. Janela minimizada: a fila enche e o áudio descarta (sem custo)
-- [ ] **Atrasos (callbacks fora do tempo) com a captura Sat7** (19/11, prints do teste ao vivo): CPU 52% e
-  299–436 atrasos no Solo Hard Rock e no Metal, contra 12% e ~60 nos limpos, com buffer 256. Investigar (tamanho do
-  modelo em uso, drive + NAM, picos de CPU); atraso não aumenta a latência, mas pode estalar
+- [x] **Atrasos (callbacks fora do tempo) com a captura Sat7** (19/11, prints do teste ao vivo): CPU 52% e
+  299–436 atrasos no Solo Hard Rock e no Metal, contra 12% e ~60 nos limpos, com buffer 256. Investigado (19/11):
+  - **a Sat7 não é mais cara**: todas as capturas do GT208 têm a mesma rede; NAM sozinho, blocos de 256: ~4,6% no
+    Lite e ~25% no Completo, igual no Clean V10 e na Sat7 MD. A troca do passado nos rings não dá pico periódico
+  - os 52% da tela são a **maior** carga de um callback (não a média) e só aparecem com o amp no **Completo**: cadeia
+    do Solo Hard Rock offline ~10% (p99 18%) no Lite e ~29% (p99 49%, máx 50%) no Completo. Os presets de fábrica
+    gravam `nam_size` = Lite; no teste o Completo provavelmente estava ligado à mão
+  - sem alocação no processamento (todos os presets, Lite e Completo, mono e estéreo)
+  - profiler do Completo: 73% no `axpy4` (escalar) → **núcleos SIMD** (`nam/kernels_simd_amd64.go`, pacote
+    experimental `simd/archsimd`, só com `GOEXPERIMENT=simd`; CPU sem AVX2/FMA ou build sem o experimento usa os
+    escalares de `nam/kernels.go`). O `convRows` percorre a saída em pedaços de 32 amostras em 4 registradores,
+    somando todos os pares (tap, entrada) com FMA: a saída é lida e gravada uma vez só (o `axpy4` vetorizado
+    direto deu só 1,7×). O resto do bloco (< 8) vai por um vetor na pilha nas mesmas instruções (silêncio continua
+    dando saída constante; a carga parcial do archsimd é acusada pelo checkptr do `-race`)
+  - resultado (i5-10310U, blocos de 256): **modelo completo ~3× mais rápido** (33–37% → 11–12% do tempo real);
+    cadeia do Solo Hard Rock no Completo 36% → 16% de média e 60% → 30% de pico; no Lite 10% → 7%. Contra a NAM
+    core: SNR 95 dB (APP-5153 completo, antes 99,6) e 121 dB (Sat7), dentro da tolerância
+  - `scripts/empacotar.sh` compila com `GOEXPERIMENT=simd` (avisa se o binário saiu sem); `ampsim -versao` mostra
+    "NAM: AVX2 + FMA" ou "escalar"; teste `TestConvRowsIgualAoEscalar` (kernels, dilatação, resto, 1×1)
+- [ ] **Atrasos: conferir ao vivo** com o build SIMD (Solo Hard Rock no Lite e no Completo, buffer 256 e 64). Se os
+  atrasos dos limpos (~60 com 12% de carga) continuarem, eles vêm de agendamento/pausas do Go (ver D7: `GOGC`,
+  prioridade da thread do JACK), não do DSP
 - [ ] **Atraso sutil ao tocar** (19/11): conferir o botão **Mixer** da AudioBox todo em Playback (senão o seco
   direto soma com o processado ~30–40 ms depois e soa dobrado); o teste foi com buffer 256 (a medição de 31 ms foi
   com 64); aplicar o D1 (regra do WirePlumber, −9 ms)
@@ -879,7 +898,7 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 - [ ] Calibração de nível a partir de `input_level_dbu` (as capturas incluídas não têm; a da EVH tem 13 dBu):
   hoje o ajuste é o knob Entrada + o trim da Fase 4
 - [ ] Testar ao vivo com a guitarra (CPU no callback com o completo, crossfades, nível de entrada ideal)
-- [ ] Medir a CPU com standard (A1, 16 canais) quando houver um arquivo; otimizar se precisar (SIMD experimental do Go)
+- [ ] Medir a CPU com standard (A1, 16 canais) quando houver um arquivo (o SIMD de 19/11 já vale para ele)
 - [ ] (Depois) LSTM
 
 **Consequências para o projeto**

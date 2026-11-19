@@ -22,6 +22,7 @@ import (
 	"github.com/tatianno/ampsim/cmd/ampapp/audio"
 	"github.com/tatianno/ampsim/cmd/ampapp/source"
 	"github.com/tatianno/ampsim/engine"
+	"github.com/tatianno/ampsim/nam"
 	"github.com/tatianno/ampsim/presets"
 	"github.com/tatianno/ampsim/wav"
 )
@@ -78,6 +79,11 @@ func run() error {
 
 	if *versao {
 		fmt.Println("AmpSim", version)
+		if nam.SIMD() {
+			fmt.Println("NAM: AVX2 + FMA")
+		} else {
+			fmt.Println("NAM: escalar (compile com GOEXPERIMENT=simd para ~3× menos CPU no modelo completo)")
+		}
 		return nil
 	}
 	if *listar {

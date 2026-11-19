@@ -42,22 +42,6 @@ func (r *ring) write(x mat, n int) int {
 	return base
 }
 
-// axpy faz dst += w·src.
-func axpy(dst []float32, w float32, src []float32) {
-	src = src[:len(dst)]
-	i := 0
-	for ; i+4 <= len(dst); i += 4 {
-		d, s := dst[i:i+4:i+4], src[i:i+4:i+4]
-		d[0] += w * s[0]
-		d[1] += w * s[1]
-		d[2] += w * s[2]
-		d[3] += w * s[3]
-	}
-	for ; i < len(dst); i++ {
-		dst[i] += w * src[i]
-	}
-}
-
 func fill(dst []float32, v float32) {
 	for i := range dst {
 		dst[i] = v
@@ -85,61 +69,17 @@ func (c *conv) run1x1(x mat, n int, y mat, acc bool) {
 				dst[f] += b
 			}
 		}
-		w := c.w[o*c.in : (o+1)*c.in]
-		i := 0
-		for ; i+4 <= c.in; i += 4 {
-			axpy4(dst, w[i], x.row(i), w[i+1], x.row(i+1), w[i+2], x.row(i+2), w[i+3], x.row(i+3))
-		}
-		for ; i+2 <= c.in; i += 2 {
-			axpy2(dst, w[i], x.row(i), w[i+1], x.row(i+1))
-		}
-		if i < c.in {
-			axpy(dst, w[i], x.row(i)[:n])
-		}
+		convRows(dst, c.w[o*c.in:(o+1)*c.in], x.d, x.stride, c.in, 1, 0, 0)
 	}
 }
 
 // runRing faz y = conv(x) a partir do passado guardado em r (o bloco atual começa em base).
-// Os pares (tap, entrada) de cada saída são somados de 4 em 4 numa só passada.
 func (c *conv) runRing(r *ring, base, n int, y mat) {
 	total := c.k * c.in
-	src := func(j int) []float32 {
-		k, i := j/c.in, j%c.in
-		start := base - (c.k-1-k)*c.dil
-		return r.data[i*r.size+start : i*r.size+start+n]
-	}
 	for o := range c.out {
 		dst := y.row(o)[:n]
 		c.startRow(dst, o)
-		w := c.w[o*total : (o+1)*total]
-		j := 0
-		for ; j+4 <= total; j += 4 {
-			axpy4(dst, w[j], src(j), w[j+1], src(j+1), w[j+2], src(j+2), w[j+3], src(j+3))
-		}
-		for ; j+2 <= total; j += 2 {
-			axpy2(dst, w[j], src(j), w[j+1], src(j+1))
-		}
-		if j < total {
-			axpy(dst, w[j], src(j))
-		}
-	}
-}
-
-// axpy2 faz dst += w0·s0 + w1·s1.
-func axpy2(dst []float32, w0 float32, s0 []float32, w1 float32, s1 []float32) {
-	s0, s1 = s0[:len(dst)], s1[:len(dst)]
-	for f := range dst {
-		dst[f] += w0*s0[f] + w1*s1[f]
-	}
-}
-
-// axpy4 faz dst += w0·s0 + w1·s1 + w2·s2 + w3·s3.
-func axpy4(dst []float32, w0 float32, s0 []float32, w1 float32, s1 []float32,
-	w2 float32, s2 []float32, w3 float32, s3 []float32) {
-	n := len(dst)
-	s0, s1, s2, s3 = s0[:n], s1[:n], s2[:n], s3[:n]
-	for f := range dst {
-		dst[f] += (w0*s0[f] + w1*s1[f]) + (w2*s2[f] + w3*s3[f])
+		convRows(dst, c.w[o*total:(o+1)*total], r.data, r.size, c.in, c.k, c.dil, base)
 	}
 }
 
