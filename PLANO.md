@@ -9,7 +9,8 @@ Portar para Go os estudos de modulação e simulação de amplificador feitos em
 
 1. **Aplicação standalone** com GUI: amp (Ganho, Grave, Médio, Agudo, Presença, Volume), gabinete por IR e pedais
    (Gate, Chorus, Flanger, Phaser, Delay, Reverb), tocando ao vivo pela guitarra ou a partir de um arquivo WAV.
-2. **Plugin** (LV2/LADSPA, para Audacity e DAWs Linux) num segundo momento, reaproveitando o mesmo núcleo de DSP.
+2. **Plugin** que aplica os presets da app a uma faixa (gravada ou ao vivo), reaproveitando o mesmo núcleo de DSP:
+   LV2 para o Audacity primeiro, depois CLAP para o Reaper.
 
 ## 2. Decisões tomadas
 
@@ -20,7 +21,8 @@ Portar para Go os estudos de modulação e simulação de amplificador feitos em
 | Áudio I/O | `gen2brain/malgo` (miniaudio) | Full-duplex, multiplataforma, C embutido |
 | GUI | Gio (`gioui.org`) | Go puro, bom para desenhar knobs e medidores |
 | Pedais na GUI | Sobreposição (overlay) dentro do app | Simples e portátil; janelas do SO podem vir depois |
-| Plugin | LV2/LADSPA com UI genérica do host | Audacity suporta; GUI própria no plugin é opcional |
+| Plugin | Aplicador de presets (Preset, Entrada, Saída, Bypass) com UI genérica do host; LV2 (Audacity) e depois CLAP (Reaper) | Edição fica na app; a GUI Gio não encaixa em janela de host (19/11/2026) |
+| Plugin: estado | Cópia do JSON do preset no projeto da DAW | O projeto soa igual mesmo se o preset mudar na app |
 | Plugin: binário | Um único `.so` com todos os efeitos | Só um runtime Go por processo |
 | Tone stack | Começa com biquads (RBJ); depois modelo Fender/Marshall | Funciona rápido; o modelo analógico é um ótimo estudo |
 | FFT (IR) | FFT radix-2 própria em `dsp/fft.go` (antes: gonum) | Mantém `dsp/` sem dependências; é pequena e testada contra a DFT |
@@ -510,16 +512,63 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
   - seletor de arquivo nativo em cada sistema (hoje usa `zenity`); build com cgo de cada plataforma (Xcode, MinGW)
   - teste de latência em cada sistema (precisa de alguém com a máquina e um cabo de loopback)
 
-### Fase 6: Plugin (~1 a 2 semanas)
-**Meta:** o amp e os pedais carregando no Audacity, com sliders genéricos.
+### Fase 6: Plugin "aplicador de presets" (~1 a 2 semanas)
+**Redefinida em 19/11/2026.** O plugin **não edita** o som: ele aplica um preset da app a uma faixa (gravada ou
+tocada ao vivo). A edição continua na standalone. Com isso a cadeia variável, os arquivos externos e a GUI deixam de
+ser problema: a cadeia inteira vem do preset e a **UI genérica do host** basta. A GUI Gio não entra no plugin (nenhum
+formato deixa o plugin ser dono da janela e do laço de eventos, que é como o Gio funciona).
 
-- [ ] `plugin/lv2`: build `-buildmode=c-shared` + camada C com `//export`
-- [ ] Um único `.so` com todos os plugins (amp + 6 efeitos)
-- [ ] Gerar os `.ttl` (LV2) a partir da tabela `ParamInfo`
-- [ ] Informar a latência ao host; estado via JSON do engine
-- [ ] Testar no Audacity e no Ardour/Carla
-- [ ] (Opcional) LADSPA, que é mais simples, sem seletor de IR
-- [ ] (Opcional, longo prazo) GUI própria no plugin; CLAP ou VST3
+**Parâmetros (os únicos expostos ao host):**
+
+| Parâmetro | Tipo | Observação |
+|---|---|---|
+| Preset | lista (enumeração) | 18 de fábrica pelo nome + posições da pedaleira ("Pedaleira 1·1" … "10·6", lidas de `pedaleira.json` ao abrir; posição vazia = sem efeito) |
+| Entrada (dB) | knob | Trim: o nível da DI muda conforme a placa e a gravação, e o NAM/drive saturam conforme o nível |
+| Saída (dB) | knob | Volume na mixagem |
+| Bypass | chave | Liga/desliga, com rampa |
+
+A lista é fixa no `.ttl`/descritor (o host automatiza por índice); por isso as posições da pedaleira têm rótulos
+genéricos e o conteúdo é resolvido em tempo de execução.
+
+**Estado salvo no projeto da DAW: cópia do preset.** O state guarda o **JSON completo** do preset escolhido (mais
+entrada/saída). Ao reabrir o projeto, o plugin usa a cópia, não o preset atual da app: a faixa soa como no dia da
+mixagem mesmo que o preset seja editado, renomeado ou apagado depois. Escolher outro preset na lista substitui a cópia.
+Capturas NAM e IRs de fábrica estão embutidas; as do usuário são referenciadas pelo caminho do preset (se o arquivo
+sumir, avisar no log e seguir sem o bloco).
+
+**Uso ao vivo:** funciona em hosts que monitoram a entrada pelo efeito (Reaper, Ardour, Carla). O Audacity só aplica
+na reprodução ou processando a faixa: nele o fluxo é gravar a DI limpa e aplicar o preset depois.
+
+**Regras de implementação (valem para os dois formatos):**
+- Trocar de preset monta a cadeia nova **fora da thread de áudio** (LV2 worker; no CLAP, thread própria) e troca
+  pronta, com crossfade/spillover como na app. Nada de alocar ou ler arquivo em `run`/`process`.
+- O host escolhe o tamanho do bloco e ele pode variar: blocos maiores que `Chain.MaxBlock()` são fatiados.
+- Informar a latência ao host (porta de latência no LV2; `latency` no CLAP) para alinhar a faixa.
+- Taxa do host: a cadeia é preparada na taxa que o host informar; o NAM já reamostra (`dsp.RateBridge`).
+- Um único `.so` por formato (um runtime Go por processo).
+
+#### Fase 6a: LV2 no Audacity (primeiro)
+**Meta:** aplicar um preset a uma faixa DI no Audacity, como efeito e como efeito em tempo real.
+
+- [ ] `plugin/lv2`: build `-buildmode=c-shared` + camada C fina com `//export` (instantiate, connect_port, run,
+  state, worker)
+- [ ] Gerar o `.ttl` (manifest + plugin, com a enumeração de presets) por um `cmd/` a partir de `presets.Factory`
+- [ ] Carregar presets de fábrica e da pedaleira (`~/.config/ampsim/`), trim de entrada, saída e bypass
+- [ ] State LV2 com a cópia do JSON do preset; worker para trocar de preset
+- [ ] Conferir no Audacity: enumeração na UI genérica, efeito em tempo real, se ele salva o state LV2 no projeto
+  (se não salvar, documentar: no Audacity o projeto guarda só o índice; o efeito aplicado já fica gravado no áudio)
+- [ ] Empacotar: instalar em `~/.lv2/ampsim.lv2/` pelo `.tar.gz` e em `/usr/lib/lv2/` pelo `.deb`
+- [ ] Testar também no Carla/Ardour (ao vivo)
+
+#### Fase 6b: Reaper (depois)
+**Meta:** o mesmo plugin no Reaper, tocando ao vivo com monitoração.
+
+- [ ] Formato: **CLAP** primeiro (API em C pura, MIT, suportada pelo Reaper; encaixa no `c-shared` do Go). VST3 só
+  se houver demanda (API em C++, mais trabalho na camada)
+- [ ] Reaproveitar o núcleo do 6a (parâmetros, state, troca de preset); só a camada do formato muda
+- [ ] Testar ao vivo no Reaper com a AudioBox: latência informada, troca de preset por automação sem estalo
+- [ ] (Longo prazo, opcional) GUI própria: janela Gio separada (LV2 external UI no Ardour/Carla); encaixada na
+  janela da DAW só com outra biblioteca ou reparentando no X11
 
 ### Pós-MVP: suporte a modelos NAM (Neural Amp Modeler) (~1,5 a 2 semanas)
 **Decidido em 18/11/2026:** fica para depois da entrega do MVP. A ordem em relação às Fases 5 e 6 será decidida então.
@@ -967,7 +1016,8 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 | App com GUI (Fase 3) | ✅ concluído (v0.1.0) |
 | **MVP:** tocando ao vivo (Fase 4) | ✅ concluído (18/11; latência 31 ms, débitos em 6.1) |
 | Standalone completo (Fase 5) | ~9 semanas |
-| Plugin LV2 no Audacity (Fase 6) | ~11 semanas |
+| Plugin LV2 no Audacity (Fase 6a) | ~11 semanas |
+| Plugin CLAP no Reaper (Fase 6b) | +~1 semana |
 | Suporte a NAM (pós-MVP) | ~1,5 a 2 semanas, quando for priorizado |
 
 ## 8. Riscos
@@ -978,7 +1028,7 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 | Latência alta ao vivo | Buffers pequenos; oversampling de fase mínima; primeira partição da IR pequena |
 | Diferença de nível entre a DI gravada e a guitarra ao vivo | Trim de entrada com medidor |
 | Dois runtimes Go no mesmo host (plugin) | Um único `.so` para todos os efeitos |
-| GUI do plugin dentro da janela da DAW | Começar com a UI genérica do host |
+| GUI do plugin dentro da janela da DAW | Plugin só aplica presets: UI genérica do host (Fase 6) |
 | NAM standard pesado demais em Go puro | Validar com lite/feather primeiro; otimizar; em último caso, cgo com a NAM core |
 
 ## 9. Referência Python (`referencia_python/`)
