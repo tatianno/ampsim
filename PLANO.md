@@ -644,6 +644,9 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 - [x] **Pedaleira de presets** (18/11, `cmd/ampapp/ui/pedalboard.go`): abaixo da cadeia, 6 footswitches por banco
   (◀ BANCO ▶), LED no preset atual, teclas 1 a 6; o banco acompanha o preset atual. Some em janelas com menos de
   720 dp de altura (o rodapé tem prioridade; as teclas continuam valendo). A dica da cadeia subiu para a linha do título
+- [x] **Release v0.13.0** (19/11/2026): grave dos TMB com a curva do circuito, limitador de segurança na saída,
+  reamostragem em tempo real do NAM (placa a 44,1 kHz), calibração de entrada por `input_level_dbu` e partida
+  silenciosa ao abrir a placa (D4)
 - [x] **Release v0.12.1** (19/11/2026): NAM com núcleos SIMD (AVX2 + FMA), modelo completo ~3× mais rápido
   (os atrasos com a Sat7 vinham do amp no Completo)
 - [x] **Release v0.12.0** (19/11/2026): spillover na troca de preset (botão na pedaleira) e saída estéreo
