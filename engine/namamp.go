@@ -45,18 +45,73 @@ var DefaultDriveNAM = capturas.Prefix + "TS7 TS9 D5 T5 L5 (Medium Drive)"
 
 // NAMInfo descreve o modelo carregado (para a GUI).
 type NAMInfo struct {
-	Ref      string // "embutida:<nome>" ou caminho do arquivo
-	Name     string // nome para exibir
-	Channels int    // canais da rede em uso
-	Size     string // "lite" ou "completo" (vazio se o arquivo só tem uma rede)
-	Warning  string // ex.: taxa da placa diferente da do modelo
+	Ref       string // "embutida:<nome>" ou caminho do arquivo
+	Name      string // nome para exibir
+	Channels  int    // canais da rede em uso
+	Size      string // "lite" ou "completo" (vazio se o arquivo só tem uma rede)
+	Warning   string // ex.: taxa da placa diferente da do modelo, sem reamostragem possível
+	Resampled string // ex.: "44,1↔48 kHz" (reamostrado; vazio se o modelo roda na taxa do áudio)
 }
 
-// namInst é um modelo pronto para a thread de áudio: uma Net (aquecida) por submodelo.
+// namNet é uma rede pronta para a thread de áudio, na taxa do áudio: se o modelo foi
+// treinado em outra taxa, roda dentro de uma dsp.RateBridge (reamostragem em streaming).
+// A saída sai atrasada de exatamente lat amostras (a latência que o bloco compensa).
+type namNet struct {
+	net   *nam.Net
+	rb    *dsp.RateBridge // nil: modelo na taxa do áudio
+	delay *dsp.DelayLine
+	pad   int // atraso que falta para completar lat (lat − latência da ponte)
+}
+
+func newNamNet(spec *nam.Spec, modelFS, fs float64, maxBlock, lat int) (*namNet, error) {
+	nn := &namNet{pad: lat}
+	var err error
+	if modelFS > 0 && modelFS != fs {
+		inner := dsp.BridgeMaxInner(fs, modelFS, maxBlock)
+		nn.net = nam.NewNet(spec, inner)
+		if nn.rb, err = dsp.NewRateBridge(fs, modelFS, maxBlock, lat, nn.net); err == nil {
+			nn.pad = lat - nn.rb.Latency()
+		}
+	} else {
+		nn.net = nam.NewNet(spec, maxBlock)
+	}
+	if nn.pad > 0 {
+		nn.delay = dsp.NewDelayLine(nn.pad)
+	}
+	nn.net.Prewarm()
+	return nn, err
+}
+
+func (nn *namNet) reset() {
+	nn.net.Reset()
+	if nn.rb != nil {
+		nn.rb.Reset()
+	}
+	if nn.delay != nil {
+		nn.delay.Reset()
+	}
+}
+
+func (nn *namNet) process(in, out []float32) {
+	if nn.rb != nil {
+		nn.rb.Process(in, out)
+	} else {
+		nn.net.Process(in, out)
+	}
+	if nn.delay != nil {
+		for i, v := range out {
+			d := nn.delay.ReadInt(nn.pad)
+			nn.delay.Write(float64(v))
+			out[i] = float32(d)
+		}
+	}
+}
+
+// namInst é um modelo pronto para a thread de áudio: uma rede (aquecida) por submodelo.
 type namInst struct {
 	model *nam.Model
 	ref   string
-	nets  []*nam.Net
+	nets  []*namNet
 	infos []*NAMInfo // um por rede (montados fora da thread de áudio)
 	gain  float32    // normalização pelo loudness
 }
@@ -74,11 +129,10 @@ type namBlock struct {
 
 	// thread de áudio
 	inst      *namInst
-	cur, old  *nam.Net
+	cur, old  *namNet
 	curIdx    int
 	xf, xstep float64
 	in, a, b  []float32
-	delay     *dsp.DelayLine
 	pending   atomic.Pointer[namInst]
 
 	info atomic.Pointer[NAMInfo]
@@ -134,8 +188,7 @@ func (n *namBlock) Ref() string {
 func (n *namBlock) build(m *nam.Model, ref string) *namInst {
 	in := &namInst{model: m, ref: ref, gain: 1}
 	for i, sm := range m.Submodels {
-		net := nam.NewNet(sm.Spec, n.maxBlock)
-		net.Prewarm()
+		net, err := newNamNet(sm.Spec, m.SampleRate, n.fs, n.maxBlock, n.latency)
 		in.nets = append(in.nets, net)
 		info := &NAMInfo{Ref: ref, Name: displayName(m, ref), Channels: sm.Spec.Channels}
 		if len(m.Submodels) > 1 {
@@ -144,8 +197,11 @@ func (n *namBlock) build(m *nam.Model, ref string) *namInst {
 				info.Size = "lite"
 			}
 		}
-		if sr := m.SampleRate; sr > 0 && sr != n.fs {
+		if sr := m.SampleRate; err != nil {
+			// sem reamostragem possível: o modelo roda na taxa do áudio
 			info.Warning = fmt.Sprintf("modelo treinado a %g kHz, áudio a %g kHz: o timbre muda um pouco", sr/1000, n.fs/1000)
+		} else if net.rb != nil {
+			info.Resampled = strings.ReplaceAll(fmt.Sprintf("%g↔%g kHz", n.fs/1000, sr/1000), ".", ",")
 		}
 		in.infos = append(in.infos, info)
 	}
@@ -163,7 +219,6 @@ func (n *namBlock) prepare(fs float64, maxBlock int) {
 	n.a = make([]float32, maxBlock)
 	n.b = make([]float32, maxBlock)
 	n.xstep = 1 / (AmpFadeMs / 1000 * fs)
-	n.delay = dsp.NewDelayLine(n.latency)
 
 	n.mu.Lock()
 	if n.model == nil && n.def != "" {
@@ -182,10 +237,9 @@ func (n *namBlock) prepare(fs float64, maxBlock int) {
 
 func (n *namBlock) reset() {
 	if n.cur != nil {
-		n.cur.Reset()
+		n.cur.reset()
 	}
 	n.old, n.xf = nil, 1
-	n.delay.Reset()
 }
 
 // netFor devolve o índice da rede para o tamanho pedido.
@@ -207,7 +261,7 @@ func (n *namBlock) process(buf []float64, inGain float64, size int) {
 		if n.inst != nil {
 			if idx := n.inst.netFor(size); idx != n.curIdx {
 				next := n.inst.nets[idx]
-				next.Reset()
+				next.reset()
 				n.old, n.cur, n.curIdx = n.cur, next, idx
 				if n.old != nil {
 					n.xf = 0
@@ -227,11 +281,11 @@ func (n *namBlock) process(buf []float64, inGain float64, size int) {
 		x[i] = float32(v) * g
 	}
 	a := n.a[:k]
-	n.cur.Process(x, a)
+	n.cur.process(x, a)
 	gain := n.inst.gain
 	if n.xf < 1 {
 		b := n.b[:k]
-		n.old.Process(x, b)
+		n.old.process(x, b)
 		for i := range a {
 			n.xf = math.Min(1, n.xf+n.xstep)
 			a[i] = float32(n.xf)*a[i] + float32(1-n.xf)*b[i]
@@ -241,8 +295,7 @@ func (n *namBlock) process(buf []float64, inGain float64, size int) {
 		}
 	}
 	for i, v := range a {
-		buf[i] = n.delay.ReadInt(n.latency)
-		n.delay.Write(float64(v * gain))
+		buf[i] = float64(v * gain)
 	}
 }
 

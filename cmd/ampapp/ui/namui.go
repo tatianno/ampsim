@@ -85,6 +85,9 @@ func namDetail(info *engine.NAMInfo) string {
 	if info.Size != "" {
 		d += " · " + info.Size
 	}
+	if info.Resampled != "" {
+		d += " · " + info.Resampled
+	}
 	return d
 }
 

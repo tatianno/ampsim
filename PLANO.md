@@ -910,8 +910,19 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
   vira "NAM". Conferido em captura de tela nos dois modos
 - [x] `ampcli -nam "<captura>"` ou `-nam arquivo.nam` (reamostra a entrada para 48 kHz no modo NAM);
   `ampcli -listar` mostra as capturas incluídas
-- [ ] Taxa de amostragem: hoje o app roda a 48 kHz por padrão (= taxa dos modelos); com a placa em outra taxa o
-  modelo roda nela mesma e a GUI avisa. Falta **reamostrar em tempo real** (polifásico em streaming, 44,1 ↔ 48 kHz)
+- [x] **Reamostragem em tempo real** (19/11): com a placa em outra taxa (ex.: 44,1 kHz), cada rede NAM (amp e Drive)
+  roda dentro de uma `dsp.RateBridge`: polifásico racional em streaming (44,1→48→44,1 usa L/M = 160/147), FIR de
+  fase linear com janela de Kaiser, mesmo protótipo na ida e na volta (mesma taxa alta)
+  - banda útil até 0,41·min(fs, 48k) (18 kHz), rejeição a partir de 0,59·min (nada dobra para dentro da banda)
+  - a latência da ida e volta é inteira e cabe nas 32 amostras que o bloco NAM já compensava (o que falta vira
+    atraso): **a latência da cadeia não muda**. A 44,1 kHz: 28 amostras, 80 dB, 29/31 coeficientes por fase,
+    ~0,2% de CPU (13,6 µs por bloco de 256). A 88,2/96 kHz as 32 amostras são só 0,33 ms: ~50 dB
+  - a amostra j da volta fica pronta quando a amostra j da entrada chega, então não há FIFO com atraso extra e a
+    saída não depende do tamanho do bloco (testado bit a bit com 1/37/64/500/512)
+  - contra o caminho offline (`resample_poly` na DI inteira): erro −50 dB nas limpas e −44 dB nas distorcidas
+    até 15 kHz (a diferença que sobra vem do que a rede recebe acima de 18 kHz); impulso alinhado com o simulado
+  - a GUI mostra "44,1↔48 kHz" na linha de detalhes do modelo; o aviso de taxa só aparece se não der para
+    reamostrar (taxa não inteira ou razão L/M > 4096). O `ampcli` continua reamostrando a entrada offline para 48 kHz
 - [ ] Calibração de nível a partir de `input_level_dbu` (as capturas incluídas não têm; a da EVH tem 13 dBu):
   hoje o ajuste é o knob Entrada + o trim da Fase 4
 - [ ] Testar ao vivo com a guitarra (CPU no callback com o completo, crossfades, nível de entrada ideal)
