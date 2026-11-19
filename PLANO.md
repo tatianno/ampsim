@@ -644,6 +644,9 @@ Depende do trim de entrada da Fase 4 (o modelo é sensível ao nível de entrada
 - [x] **Pedaleira de presets** (18/11, `cmd/ampapp/ui/pedalboard.go`): abaixo da cadeia, 6 footswitches por banco
   (◀ BANCO ▶), LED no preset atual, teclas 1 a 6; o banco acompanha o preset atual. Some em janelas com menos de
   720 dp de altura (o rodapé tem prioridade; as teclas continuam valendo). A dica da cadeia subiu para a linha do título
+- [x] **Release v0.12.0** (19/11/2026): spillover na troca de preset (botão na pedaleira) e saída estéreo
+  (modulações e ambiências com Largura, delay Duplo/Ping-pong, botão Estéreo na cadeia, gravação e exportação
+  em 2 canais)
 - [x] **Release v0.11.0** (19/11/2026): Drive com tipo NAM e 10 capturas de pedal (TS7 e SD-1), presets Rock
   Clássico, Blues, Worship e Solo Hard Rock com o drive NAM, voz High Gain no amp simulado (Metal passa a usá-la),
   correções no carregamento de presets antigos e no `ampcli -drive-nam`
