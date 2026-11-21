@@ -18,6 +18,11 @@ type Settings struct {
 	// placa em dBu para 0 dBFS (ausente = engine.DefaultInputLevelDBu).
 	InputCal      *bool    `json:"calibrar_entrada,omitempty"`
 	InputLevelDBu *float64 `json:"nivel_entrada_dbu,omitempty"`
+	// Metrônomo: andamento, tempos por compasso (1 = sem acento) e volume do clique (dBFS).
+	// Ausentes = os padrões do app; ele sempre abre desligado.
+	MetroBPM    *float64 `json:"metronomo_bpm,omitempty"`
+	MetroBeats  *float64 `json:"metronomo_compasso,omitempty"`
+	MetroVolume *float64 `json:"metronomo_volume_db,omitempty"`
 }
 
 // StereoOn informa se a saída estéreo está ligada (o padrão é ligada).

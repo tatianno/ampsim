@@ -64,7 +64,7 @@ func run() error {
 		saida    = flag.Int("saida", -1, "índice da saída de áudio (-1 = padrão; veja -listar-dispositivos)")
 		entrada  = flag.Int("entrada", -1, "índice da entrada (-1 = padrão, -2 = sem entrada)")
 		canal    = flag.Int("canal", 1, "canal da entrada onde está a guitarra (1, 2, ...; 0 = média dos canais)")
-		fonte    = flag.String("fonte", "arquivo", "fonte inicial: arquivo ou guitarra")
+		fonte    = flag.String("fonte", "", "fonte inicial: arquivo ou guitarra (vazio = guitarra na janela, arquivo no console)")
 		backend  = flag.String("backend", "", "backend de áudio: jack, pulseaudio ou alsa (vazio = automático: JACK próprio se houver)")
 		taxa     = flag.Uint("taxa", 48000, "taxa de amostragem")
 		buffer   = flag.Uint("buffer", 256, "tamanho do buffer em quadros (64, 128, 256...)")
@@ -119,6 +119,17 @@ func run() error {
 
 	s := audio.NewSession(chain, float64(*taxa))
 	defer s.Close()
+	if dir, err := presets.Dir(); err == nil { // andamento, compasso e volume salvos pela janela
+		st, _ := presets.LoadSettings(presets.SettingsPath(dir))
+		for _, v := range []struct {
+			p *engine.Param
+			v *float64
+		}{{s.Metro.BPM, st.MetroBPM}, {s.Metro.Beats, st.MetroBeats}, {s.Metro.Volume, st.MetroVolume}} {
+			if v.v != nil {
+				v.p.Set(*v.v)
+			}
+		}
+	}
 	s.Player.SetLoop(!*semLoop)
 	if optionalFile("arquivo", *arquivo) {
 		if err := s.Player.Load(*arquivo); err != nil {
@@ -127,6 +138,10 @@ func run() error {
 	}
 	setCanal(s.Live, *canal)
 	switch *fonte {
+	case "": // padrão: a janela abre na guitarra; o console, que já sai tocando, no arquivo
+		if !*console {
+			s.SetSource(audio.SourceGuitar)
+		}
 	case "arquivo":
 	case "guitarra":
 		s.SetSource(audio.SourceGuitar)
@@ -273,6 +288,7 @@ const ajuda = `comandos:
   latencia                       mede a latência real (precisa de um cabo da saída para a entrada!)
   afinar [segundos]              afinador (saída muda enquanto afina; padrão 15 s)
   bpm <andamento> [1/4|1/8.|1/8|1/16]   tempo do delay pelo andamento (ex.: bpm 120 1/8.)
+  metronomo [on|off|<bpm>] [compasso <n>] [volume <dB>]   clique só na saída (não entra no rec)
   rec [sem-di]                   começa/termina a gravação (saída + DI) na pasta de Música/ampsim
   gravacoes                      lista as gravações (som + DI) da pasta
   exportar <arquivo.wav>         processa o arquivo carregado pelo som atual e salva (24 bits)
@@ -442,6 +458,8 @@ func (a *app) exec(line string) bool {
 		} else {
 			fmt.Println("spillover: desligado (a cauda é cortada na troca de preset)")
 		}
+	case "metronomo", "metrônomo":
+		err = a.metronomo(args)
 	case "fonte":
 		switch rest {
 		case "arquivo":
@@ -766,4 +784,52 @@ func (a *app) afinar(secs float64) {
 		}
 		fmt.Printf("  %-3s%d  %s  %+4.0f cents  %7.2f Hz%s\n", rd.Note, rd.Octave, string(bar), rd.Cents, rd.Freq, ok)
 	}
+}
+
+// metronomo trata "metronomo [on|off|<bpm>] [compasso <n>] [volume <dB>]"; sem argumentos,
+// mostra o estado.
+func (a *app) metronomo(args []string) error {
+	m := a.s.Metro
+	for i := 0; i < len(args); i++ {
+		switch w := args[i]; w {
+		case "on":
+			m.Start()
+		case "off":
+			m.Stop()
+		case "compasso", "volume":
+			if i+1 >= len(args) {
+				return fmt.Errorf("%s precisa de um valor", w)
+			}
+			v, err := strconv.ParseFloat(strings.Replace(args[i+1], ",", ".", 1), 64)
+			if err != nil {
+				return fmt.Errorf("%s: %q não é um número", w, args[i+1])
+			}
+			if w == "compasso" {
+				m.Beats.Set(v)
+			} else {
+				m.Volume.Set(v)
+			}
+			i++
+		default:
+			v, err := strconv.ParseFloat(strings.Replace(w, ",", ".", 1), 64)
+			if err != nil {
+				return fmt.Errorf("use: metronomo [on|off|<bpm>] [compasso <n>] [volume <dB>]")
+			}
+			m.BPM.Set(v)
+			if !m.Running() {
+				m.Start()
+			}
+		}
+	}
+	estado := "desligado"
+	if m.Running() {
+		estado = "ligado"
+	}
+	compasso := "sem acento"
+	if b := int(m.Beats.Get()); b > 1 {
+		compasso = fmt.Sprintf("%d tempos", b)
+	}
+	fmt.Printf("metrônomo %s: %.0f BPM, %s, volume %.0f dB (o clique não entra na gravação)\n",
+		estado, m.BPM.Get(), compasso, m.Volume.Get())
+	return nil
 }

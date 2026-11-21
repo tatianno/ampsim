@@ -163,7 +163,7 @@ func TestAtalhosListados(t *testing.T) {
 		all = append(all, s.keys)
 	}
 	got := strings.Join(all, "|")
-	for _, k := range []string{"T", "A", "1 a 6", "Espaço", "Esc"} {
+	for _, k := range []string{"T", "A", "M", "1 a 6", "Espaço", "Esc"} {
 		if !strings.Contains(got, k) {
 			t.Errorf("a tecla %q não está na lista de atalhos", k)
 		}

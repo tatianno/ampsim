@@ -22,6 +22,7 @@ import (
 const (
 	MenuAudio = iota
 	MenuTuner
+	MenuMetro
 	MenuBackup
 	MenuRestore
 	MenuShortcuts
@@ -29,8 +30,8 @@ const (
 	menuItems
 )
 
-var menuLabels = [menuItems]string{"Áudio…", "Afinador", "Backup dos presets…", "Restaurar presets…", "Atalhos", "Sobre"}
-var menuHints = [menuItems]string{MenuTuner: "A"}
+var menuLabels = [menuItems]string{"Áudio…", "Afinador", "Metrônomo", "Backup dos presets…", "Restaurar presets…", "Atalhos", "Sobre"}
+var menuHints = [menuItems]string{MenuTuner: "A", MenuMetro: "M"}
 var menuSepBefore = [menuItems]bool{MenuBackup: true, MenuShortcuts: true}
 
 // Menu é o botão "Menu" da barra de topo e a lista que ele abre.
@@ -137,6 +138,8 @@ func (a *App) menuActions(gtx layout.Context) {
 		a.Open(AudioID)
 	case MenuTuner:
 		a.open = TunerID
+	case MenuMetro:
+		a.open = MetroID
 	case MenuBackup:
 		a.backupAsync()
 	case MenuRestore:

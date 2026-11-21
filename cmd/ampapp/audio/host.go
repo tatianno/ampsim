@@ -1,7 +1,7 @@
 // Pacote audio liga uma fonte (arquivo ou guitarra) ao engine e à placa de som.
 //
-//	fonte.Read → engine.ProcessStereo (com o limitador, se ligado) → clip de segurança →
-//	saída intercalada (L, R)
+//	fonte.Read → engine.ProcessStereo (com o limitador, se ligado) → gravador →
+//	+ clique do metrônomo → clip de segurança → saída intercalada (L, R)
 //
 // O render é separado do dispositivo (malgo) para poder ser testado sem placa de som.
 package audio
@@ -64,10 +64,11 @@ type Renderer struct {
 	live atomic.Pointer[source.LiveInput] // entrada ao vivo (alimentada em RenderDuplex)
 	lt   latencyTest
 
-	tuner    atomic.Pointer[Tuner]    // afinador (recebe a entrada quando ligado)
-	analyzer atomic.Pointer[Analyzer] // analisador de espectro (entrada e saída, quando ligado)
-	rec      atomic.Pointer[Recorder] // gravador (recebe DI e saída quando gravando)
-	mute     atomic.Bool              // saída muda (ex.: enquanto afina), com rampa
+	tuner    atomic.Pointer[Tuner]     // afinador (recebe a entrada quando ligado)
+	analyzer atomic.Pointer[Analyzer]  // analisador de espectro (entrada e saída, quando ligado)
+	rec      atomic.Pointer[Recorder]  // gravador (recebe DI e saída quando gravando)
+	metro    atomic.Pointer[Metronome] // clique: somado depois do gravador (não vai para o arquivo)
+	mute     atomic.Bool               // saída muda (ex.: enquanto afina), com rampa
 	muteGain float64
 	muteStep float64
 
@@ -196,6 +197,9 @@ func (r *Renderer) render(out []float32, channels, frames int, start time.Time, 
 		}
 		if c := r.rec.Load(); c != nil && c.on.Load() {
 			c.feed(dry, buf, right) // DI = entrada antes da cadeia; saída = o que vai para a placa
+		}
+		if mt := r.metro.Load(); mt != nil {
+			mt.mix(buf, right, r.mute.Load() || r.warm > 0) // só para a placa: depois do gravador
 		}
 		base := off * channels
 		for i := range buf {

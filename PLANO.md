@@ -465,6 +465,20 @@ Registrados para resolver depois do MVP. Em ordem de ganho esperado.
   - testes: senos de Si 1 a Si 5 com erro < 0,5 cent, corda grave com harmônicos fortes sem erro de oitava, ruído e
     silêncio sem nota, nome da nota e cents (inclusive A4 = 432), afinador na GUI (abre, mostra G3, Esc fecha e
     devolve a saída), render sem alocação com afinador ligado; conferido também na DI real (linha melódica coerente)
+- [x] **Metrônomo** (pedido em 21/11: "o click não entra na gravação, mas toca enquanto grava"), `audio.Metronome`:
+  - o clique é somado **só na saída para a placa**, depois do gravador e do analisador; assim ele não entra no
+    arquivo gravado (nem na DI) e não aparece no espectro
+  - de 30 a 300 BPM, compasso de 2 a 7 tempos com acento no 1º (1600 Hz; os demais em 1000 Hz) ou sem acento,
+    volume de −40 a 0 dBFS; clique de 30 ms (ataque de 0,5 ms e fade no fim, sem estalo); o andamento conta
+    amostras (sem deriva); mudar o BPM vale no próximo tempo; com a saída muda (afinador) segue contando sem som
+  - GUI: botão **Metrônomo** na barra de topo (mostra o BPM e pisca no tempo quando ligado) e no Menu; painel com
+    BPM grande e setas, knob de andamento, **TAP** (e a tecla T com o painel aberto), knob de volume, compasso, LEDs
+    dos tempos e Ligar/Parar; fechar o painel não para o clique; **tecla M** liga e desliga; andamento, compasso e
+    volume ficam em `ajustes.json` (sempre abre desligado); console `metronomo [on|off|<bpm>] [compasso n] [volume dB]`
+  - testes: clique na amostra certa a 120 BPM, acento no 1º tempo de cada compasso, L = R, clique na placa e
+    **fora da gravação**, mudo, render sem alocação; GUI: tecla M, botão, TAP, ajustes salvos, painel em todos os
+    compassos
+- [x] **Fonte Guitarra ao abrir a janela** (pedido em 21/11): `-fonte` vazio = guitarra na janela, arquivo no console
 - [x] **Tone stack modelado Fender/Marshall** (18/11), `dsp/tmb.go`, a partir do circuito (Yeh e Smith, DAFx 2006):
   - o circuito TMB passivo (C1–C3, R1–R4, pots de agudo, grave e médio) resolvido por **análise nodal com polinômios
     em s** (regra de Cramer): H(s) de 3ª ordem exato para cada posição dos knobs, sem fórmulas copiadas

@@ -39,6 +39,8 @@ func FormatValue(in engine.ParamInfo, v float64) string {
 		} else {
 			s = fmt.Sprintf("%.0f ms", v)
 		}
+	case "BPM":
+		s = fmt.Sprintf("%.0f BPM", v)
 	case "%":
 		s = fmt.Sprintf("%.0f%%", v)
 	case ":1": // razão de compressão

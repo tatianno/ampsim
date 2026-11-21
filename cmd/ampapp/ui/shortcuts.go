@@ -16,8 +16,9 @@ type shortcut struct{ keys, what string }
 // (TestAtalhosListados confere as teclas).
 var (
 	keyShortcuts = []shortcut{
-		{"T", "Tap tempo no pedal aberto; sem pedal aberto, no Delay, Tremolo e Synth"},
+		{"T", "Tap tempo no metrônomo ou no pedal aberto; sem nada aberto, no Delay, Tremolo e Synth"},
 		{"A", "Abre e fecha o afinador"},
+		{"M", "Liga e desliga o metrônomo (o clique não entra na gravação)"},
 		{"1 a 6", "Footswitches da pedaleira (presets do banco atual)"},
 		{"Espaço", "Play / pause do arquivo (com a fonte em Arquivo)"},
 		{"Esc", "Fecha o menu ou o painel aberto"},

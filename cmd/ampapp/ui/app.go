@@ -66,6 +66,8 @@ type App struct {
 	presetBar  *PresetBar
 	presetHook func([]presets.Preset) // veja OnPresetsChanged
 	tuner      *TunerPanel
+	metro      *MetroPanel
+	metroBtn   widget.Clickable
 	prevOpen   string // para saber quando o afinador abre/fecha
 	meters     Meters
 	pedals     map[string]*Pedal
@@ -124,6 +126,7 @@ func NewApp(s *audio.Session) *App {
 		a.open = AudioID
 	}
 	a.tuner = NewTunerPanel(s)
+	a.metro = NewMetroPanel(s.Metro)
 	a.spectrum = NewSpectrumView(s.Analyzer, chain, func(id string) { a.open = id })
 	a.input.Extra = func(gtx layout.Context) layout.Dimensions { return a.spectrum.MiniLayout(gtx, a.th) }
 	a.menu = &Menu{}
@@ -209,6 +212,36 @@ func (a *App) UsePresetDir(dir string) {
 	a.Chain.SetStereo(st.StereoOn())
 	a.Chain.SetLimiter(st.LimiterOn())
 	a.Chain.SetInputCalibration(st.InputCalOn(), st.InputLevel())
+	m := a.Session.Metro
+	for _, v := range []struct {
+		p *engine.Param
+		v *float64
+	}{{m.BPM, st.MetroBPM}, {m.Beats, st.MetroBeats}, {m.Volume, st.MetroVolume}} {
+		if v.v != nil {
+			v.p.Set(*v.v)
+		} else {
+			v.p.Reset()
+		}
+	}
+}
+
+// saveMetronome guarda andamento, compasso e volume do metrônomo em ajustes.json (se mudaram).
+func (a *App) saveMetronome() error {
+	m := a.Session.Metro
+	st, _ := presets.LoadSettings(a.settings)
+	bpm, beats, vol := m.BPM.Get(), m.Beats.Get(), m.Volume.Get()
+	same := func(p *float64, v float64, def float64) bool {
+		if p == nil {
+			return v == def
+		}
+		return *p == v
+	}
+	if same(st.MetroBPM, bpm, m.BPM.Info().Default) && same(st.MetroBeats, beats, m.Beats.Info().Default) &&
+		same(st.MetroVolume, vol, m.Volume.Info().Default) {
+		return nil
+	}
+	st.MetroBPM, st.MetroBeats, st.MetroVolume = &bpm, &beats, &vol
+	return st.Save(a.settings)
 }
 
 // SetStereo liga ou desliga a saída estéreo e salva em ajustes.json.
@@ -260,7 +293,7 @@ func (a *App) Open(id string) {
 	switch id {
 	case AudioID:
 		a.input.OnAudio()
-	case PresetListID, TunerID, AboutID, NAMListID, DriveNAMListID, IRListID, AddPedalID, AnalyzerID, ShortcutsID:
+	case PresetListID, TunerID, MetroID, AboutID, NAMListID, DriveNAMListID, IRListID, AddPedalID, AnalyzerID, ShortcutsID:
 		a.open = id
 	case RecordingsID:
 		a.recs.dir = a.RecordDir
@@ -394,6 +427,9 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 	if a.recsBtn.Clicked(gtx) {
 		a.Open(RecordingsID)
 	}
+	if a.metroBtn.Clicked(gtx) {
+		a.Open(MetroID)
+	}
 	a.menuActions(gtx)
 	th := a.th
 	paint.Fill(gtx.Ops, th.Bg)
@@ -491,7 +527,7 @@ func (a *App) Layout(gtx layout.Context) layout.Dimensions {
 }
 
 // tunerTransitions liga o afinador quando a sobreposição dele abre e desliga quando fecha
-// (por Esc, clique fora, × ou trocando de painel).
+// (por Esc, clique fora, × ou trocando de painel); ao fechar o metrônomo, salva os ajustes dele.
 func (a *App) tunerTransitions() {
 	if a.open == a.prevOpen {
 		return
@@ -499,15 +535,24 @@ func (a *App) tunerTransitions() {
 	if a.prevOpen == TunerID {
 		a.tuner.Close()
 	}
+	if a.prevOpen == MetroID && a.settings != "" {
+		if err := a.saveMetronome(); err != nil {
+			a.setStatus("ajustes: "+err.Error(), true)
+		}
+	}
 	if a.open == TunerID {
 		a.tuner.Open()
 	}
 	a.prevOpen = a.open
 }
 
-// Tap toca o tap tempo (tecla T): com um pedal com TAP aberto, só nele; senão, em todos os
+// Tap toca o tap tempo (tecla T): com o metrônomo ou um pedal com TAP aberto, só nele; senão, em todos os
 // pedais com TAP (delay, tremolo e synth), como um andamento global.
 func (a *App) Tap(now time.Time) {
+	if a.open == MetroID {
+		a.metro.TapAt(now)
+		return
+	}
 	if p := a.pedals[a.open]; p != nil && p.tap != nil {
 		p.tap.TapAt(now)
 		return
@@ -521,7 +566,7 @@ func (a *App) Tap(now time.Time) {
 
 func (a *App) keys(gtx layout.Context) {
 	for {
-		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameSpace}, key.Filter{Name: "T"}, key.Filter{Name: "A"},
+		ev, ok := gtx.Event(key.Filter{Name: key.NameEscape}, key.Filter{Name: key.NameSpace}, key.Filter{Name: "T"}, key.Filter{Name: "A"}, key.Filter{Name: "M"},
 			key.Filter{Name: "1"}, key.Filter{Name: "2"}, key.Filter{Name: "3"}, key.Filter{Name: "4"}, key.Filter{Name: "5"}, key.Filter{Name: "6"})
 		if !ok {
 			return
@@ -548,6 +593,8 @@ func (a *App) keys(gtx layout.Context) {
 			} else {
 				a.open = TunerID
 			}
+		case "M": // metrônomo: liga e desliga (sem abrir o painel)
+			a.metro.Toggle()
 		case key.NameSpace:
 			// play/pause do arquivo: só com a fonte em Arquivo
 			if a.Session.Source() == audio.SourceFile {
@@ -589,6 +636,10 @@ func (a *App) topBar(gtx layout.Context) layout.Dimensions {
 			return drawText(gtx, th, info, textOpts{size: 12, color: th.Dim, align: text.End, width: gtx.Constraints.Max.X})
 		}),
 		layout.Rigid(spacer(12, 0)),
+		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
+			return a.metro.BarButton(gtx, th, &a.metroBtn)
+		}),
+		layout.Rigid(spacer(6, 0)),
 		layout.Rigid(func(gtx layout.Context) layout.Dimensions {
 			return a.menu.Button(gtx, th)
 		}),
@@ -673,6 +724,8 @@ func (a *App) overlay(gtx layout.Context) {
 		content = func(gtx layout.Context) layout.Dimensions { return a.recs.Layout(gtx, th) }
 	} else if a.open == TunerID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.tuner.Layout(gtx, th) }
+	} else if a.open == MetroID {
+		content = func(gtx layout.Context) layout.Dimensions { return a.metro.Layout(gtx, th) }
 	} else if a.open == PedalboardEditID {
 		content = func(gtx layout.Context) layout.Dimensions { return a.pedalboard.EditLayout(gtx, th) }
 	} else if a.open == AddPedalID {

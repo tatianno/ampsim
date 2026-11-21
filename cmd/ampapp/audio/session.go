@@ -34,6 +34,7 @@ type Session struct {
 	Tuner    *Tuner
 	Analyzer *Analyzer
 	Recorder *Recorder
+	Metro    *Metronome
 
 	mode atomic.Int32
 }
@@ -55,6 +56,7 @@ func NewSession(chain *engine.Chain, fs float64) *Session {
 	s.Tuner = NewTuner(r)
 	s.Analyzer = NewAnalyzer(r)
 	s.Recorder = NewRecorder(r)
+	s.Metro = NewMetronome(r)
 	s.SetSource(SourceFile)
 	return s
 }

@@ -59,10 +59,12 @@ para Go em streaming, validados contra as saídas do Python.
 - **Gravar** a saída e a DI (para reamplificar) em WAV 24 bits, e **exportar** um arquivo processado pelo som atual.
 - **Afinador** (YIN, saída muda enquanto afina; pelo **Menu** ou tecla A) e **tap tempo** no delay e no tremolo
   (botão TAP ou tecla T, com subdivisões).
+- **Metrônomo** (botão na barra de topo, Menu ou tecla M): 30 a 300 BPM, TAP, compasso com acento e volume. O clique
+  sai só nos fones/caixas: dá para ouvir enquanto grava, e ele **não entra na gravação**.
 - **Analisador de espectro** na linha da ENTRADA: espectro da saída e da entrada (a guitarra antes da cadeia,
   alinhada pela média para comparar o formato), com a curva do EQ e os cortes do gabinete por cima; clique para
   abrir a versão grande, com leitura sob o ponteiro.
-- **Menu** (canto superior direito): Áudio…, Afinador, **Backup dos presets…** (um `.zip` com os seus presets, a
+- **Menu** (canto superior direito): Áudio…, Afinador, Metrônomo, **Backup dos presets…** (um `.zip` com os seus presets, a
   pedaleira e os `.nam`/IRs que eles usam), **Restaurar presets…** (guarda antes o estado atual em
   `~/.config/ampsim/backups`), **Atalhos** (teclado e mouse) e Sobre.
 - **Presets**: 24 de fábrica em 4 bancos temáticos da pedaleira: **Limpos** (Clean, Country, Funk, Surf, New
@@ -124,11 +126,12 @@ Ou clone o repositório e use `go run`, como abaixo.
 ## Uso
 
 ```sh
-# GUI: toca um WAV em loop pelo amp (abre pausada: Play ou barra de espaço)
-go run ./cmd/ampapp -arquivo minha_di.wav -ir meu_gabinete.wav
+# GUI: abre com a fonte em Guitarra (entrada ao vivo); escolha a entrada e o canal
+# (veja os índices com -listar-dispositivos)
+go run ./cmd/ampapp -entrada 0 -canal 1 -buffer 64
 
-# guitarra ao vivo: escolha a entrada e o canal (veja os índices com -listar-dispositivos)
-go run ./cmd/ampapp -fonte guitarra -entrada 0 -canal 1 -buffer 64
+# GUI tocando um WAV em loop pelo amp (abre pausada: Play ou barra de espaço)
+go run ./cmd/ampapp -fonte arquivo -arquivo minha_di.wav -ir meu_gabinete.wav
 go run ./cmd/ampapp -listar-dispositivos
 
 # console interativo (comandos: play, set pre.gain=8, on delay, mover delay depois cab, ab,
